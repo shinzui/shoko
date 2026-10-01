@@ -1053,10 +1053,6 @@ The first milestone should demonstrate:
                        same scenario
                             │
                   ┌─────────┼─────────┐
-
-                                         same scenario
-                            │
-                  ┌─────────┼─────────┐
                   │         │         │
                   ▼         ▼         ▼
                 Local    Staging   Production
@@ -1066,1307 +1062,6 @@ The first milestone should demonstrate:
 ```
 
 Production should initially be restricted to read-only observation or explicitly synthetic operations.
-
----
-
-## Suggested Package Structure
-
-The project can begin as a monorepo containing a small core and separate adapters.
-
-```text
-shoko/
-├── shoko-core/
-├── shoko-runner/
-├── shoko-http/
-├── shoko-postgres/
-├── shoko-messagedb/
-├── shoko-opentelemetry/
-└── shoko-cli/
-```
-
-### `shoko-core`
-
-Contains the semantic DSL.
-
-Responsibilities include:
-
-- scenarios;
-- actions;
-- observations;
-- expectations;
-- temporal assertions;
-- execution identity;
-- correlation;
-- safety capabilities;
-- evidence representation.
-
-It should have minimal infrastructure dependencies.
-
-### `shoko-runner`
-
-Interprets scenarios.
-
-Responsibilities include:
-
-- scenario execution;
-- environment configuration;
-- adapter selection;
-- retries;
-- timeouts;
-- evidence collection;
-- safety enforcement;
-- structured results.
-
-### `shoko-http`
-
-Provides HTTP actions and observations.
-
-For example:
-
-```haskell
-request
-  :: Request
-  -> Action safety Response
-```
-
-It may also be responsible for propagating Shōko execution metadata through HTTP headers.
-
-### `shoko-postgres`
-
-Provides PostgreSQL-backed observations.
-
-This adapter should primarily provide low-level capabilities.
-
-Application code can define semantic observations on top of them.
-
-For example:
-
-```haskell
-accountExists agent =
-  postgresObservation $ ...
-```
-
-The scenario itself should never need to know that the observation is implemented using PostgreSQL.
-
-### `shoko-messagedb`
-
-Provides event-store observations.
-
-This is likely to be one of the most important initial adapters for event-sourced systems.
-
-Capabilities should include:
-
-```text
-event occurred
-event occurred exactly once
-event ordering
-event causation
-event correlation
-stream state
-category observations
-```
-
-### `shoko-opentelemetry`
-
-Provides trace-based evidence.
-
-Capabilities may include:
-
-```text
-span occurred
-span failed
-span attributes
-trace relationships
-service participation
-latency
-```
-
-### `shoko-cli`
-
-Provides a command-line interface.
-
-Potential commands:
-
-```bash
-shoko run registration --env staging
-
-shoko observe registration --env production
-
-shoko replay execution.json
-
-shoko inspect execution-id
-
-shoko list scenarios
-```
-
----
-
-## Evidence Model
-
-Internally, Shōko should normalize observations into an evidence model.
-
-For example:
-
-```haskell
-data Evidence a = Evidence
-  { source      :: EvidenceSource
-  , observedAt  :: UTCTime
-  , executionId :: ExecutionId
-  , value       :: a
-  , metadata    :: EvidenceMetadata
-  }
-```
-
-Possible evidence sources:
-
-```haskell
-data EvidenceSource
-  = DomainEvent
-  | Database
-  | Http
-  | Trace
-  | Metric
-  | Log
-  | Message
-  | ExternalSystem
-```
-
-The evidence model should preserve enough source information for debugging while keeping scenarios independent of the source.
-
-This creates an important distinction:
-
-```text
-Observation
-    │
-    │ asks a question
-    ▼
-Adapter
-    │
-    │ discovers something
-    ▼
-Evidence
-    │
-    │ evaluated against
-    ▼
-Expectation
-```
-
-An observation is therefore not itself an assertion.
-
-It is a request for evidence.
-
-An expectation determines whether the evidence satisfies the scenario.
-
----
-
-## Evidence Provenance
-
-Evidence should retain provenance.
-
-For example:
-
-```text
-AgentQualified
-
-Source:
-  MessageDB
-
-Stream:
-  agent-01H...
-
-Global Position:
-  18299182
-
-Correlation:
-  shoko_01J...
-
-Causation:
-  qualification-requested-01J...
-
-Observed:
-  2026-09-29T18:42:01Z
-```
-
-This is valuable both for debugging and for determining how trustworthy an observation is.
-
-A future version of Shōko could potentially require corroborating evidence from multiple sources:
-
-```haskell
-corroborate $ do
-  occurred @AgentQualified agent
-  agentStatus agent `shouldBe` Qualified
-```
-
-This could verify that both the domain history and externally visible state agree.
-
----
-
-## Scenario Identity
-
-Scenarios should have stable identities independent of individual executions.
-
-For example:
-
-```haskell
-scenario
-  "agent-registration"
-  "Agent registration"
-  $ do
-    ...
-```
-
-Each invocation creates an execution:
-
-```text
-Scenario ID:
-  agent-registration
-
-Execution ID:
-  shoko_01J...
-
-Environment:
-  production
-
-Mode:
-  observe
-```
-
-Stable scenario identities make it possible to compare results over time.
-
-For example:
-
-```text
-agent-registration
-
-Last 100 executions:
-
-98 passed
-2 failed
-
-p50 completion: 430ms
-p95 completion: 1.8s
-p99 completion: 4.2s
-```
-
-Shōko can therefore eventually provide useful production reliability information without becoming a general-purpose observability platform.
-
----
-
-## Failure Semantics
-
-Failures should distinguish between different classes of problems.
-
-For example:
-
-```haskell
-data VerificationFailure
-  = ExpectationFailed
-  | ObservationUnavailable
-  | ObservationTimedOut
-  | ActionFailed
-  | AdapterFailed
-  | UnsafeActionRejected
-  | CorrelationLost
-```
-
-These differences matter.
-
-For example:
-
-```text
-AgentQualified was not observed
-```
-
-is fundamentally different from:
-
-```text
-Shōko could not connect to MessageDB
-```
-
-The former suggests a system behavior failure.
-
-The latter means Shōko could not establish whether the behavior occurred.
-
-The framework should avoid reporting both simply as:
-
-```text
-FAILED
-```
-
----
-
-## Unknown Results
-
-Distributed verification benefits from a three-state model:
-
-```text
-Pass
-Fail
-Unknown
-```
-
-rather than only:
-
-```text
-Pass
-Fail
-```
-
-For example:
-
-```text
-Expected:
-
-  AgentQualified
-
-Evidence source:
-
-  MessageDB
-
-Result:
-
-  MessageDB unavailable
-```
-
-Shōko does not know that the system failed.
-
-It knows that verification could not be completed.
-
-The result should therefore be:
-
-```text
-UNKNOWN
-```
-
-rather than:
-
-```text
-FAIL
-```
-
-This distinction becomes particularly important for production verification.
-
----
-
-## Production Verification Philosophy
-
-Production should not merely be another environment.
-
-It has fundamentally different constraints.
-
-Shōko should assume:
-
-- production contains real users;
-- actions may have irreversible consequences;
-- external integrations may charge money;
-- notifications may reach real people;
-- analytics may be polluted;
-- synthetic data may trigger business processes;
-- verification itself can create load;
-- observation infrastructure can fail independently.
-
-Production verification should therefore default to:
-
-```text
-observe, don't mutate
-```
-
-When mutation is necessary:
-
-```text
-synthetic before real
-```
-
-When synthetic mutation is used:
-
-```text
-constrain the blast radius
-```
-
-The production interpreter should always fail closed.
-
-If Shōko cannot establish that an operation is permitted, it should not perform the operation.
-
----
-
-## Safety as Capabilities
-
-Rather than relying only on a linear safety classification, the framework may eventually model safety through capabilities.
-
-For example:
-
-```haskell
-data Capability
-  = ReadProduction
-  | CreateSyntheticData
-  | SendExternalRequest
-  | SendEmail
-  | ModifyRealData
-  | DeleteData
-  | FinancialSideEffect
-```
-
-A scenario declares what it requires.
-
-An environment declares what it permits.
-
-Execution is possible only when:
-
-```text
-required capabilities
-        ⊆
-permitted capabilities
-```
-
-For example:
-
-```text
-Scenario:
-
-  ReadProduction
-  CreateSyntheticData
-
-Production Environment:
-
-  ReadProduction
-  CreateSyntheticData
-  SendExternalRequest
-
-Result:
-
-  allowed
-```
-
-Whereas:
-
-```text
-Scenario:
-
-  ReadProduction
-  SendEmail
-
-Production Environment:
-
-  ReadProduction
-  CreateSyntheticData
-
-Result:
-
-  rejected
-```
-
-This may ultimately provide a more expressive safety system than a single `Safety` enum.
-
----
-
-## Dry Run
-
-Production execution should support a dry-run mode.
-
-For example:
-
-```bash
-shoko run registration \
-  --env production \
-  --dry-run
-```
-
-Output:
-
-```text
-Scenario:
-  agent-registration
-
-Required capabilities:
-
-  ✓ ReadProduction
-  ✓ CreateSyntheticData
-  ✓ SendExternalRequest
-
-Actions:
-
-  1. Create synthetic agent
-  2. POST /registration
-  3. Observe RegistrationSubmitted
-  4. Observe AccountCreated
-  5. Observe AgentQualified
-
-External effects:
-
-  MLS API request
-
-Suppressed effects:
-
-  Welcome email
-
-Production policy:
-
-  ALLOWED
-```
-
-Dry runs make the safety model inspectable rather than implicit.
-
----
-
-## Cleanup
-
-Synthetic scenarios frequently require cleanup.
-
-Cleanup should be part of the execution model rather than an ad-hoc final action.
-
-For example:
-
-```haskell
-withSyntheticAgent $ \agent -> do
-  register agent
-
-  eventually $
-    agentStatus agent `shouldBe` Qualified
-```
-
-The runner knows that `agent` is a managed synthetic resource.
-
-It can therefore perform cleanup regardless of whether the scenario succeeds.
-
-Conceptually:
-
-```text
-Acquire
-   │
-   ▼
-Execute
-   │
-   ▼
-Verify
-   │
-   ▼
-Release
-```
-
-This resembles resource management through `bracket`.
-
-Cleanup failure should also be reported independently from scenario verification failure.
-
----
-
-## Concurrency
-
-Distributed scenarios may contain independent expectations.
-
-For example:
-
-```haskell
-expectConcurrently $ do
-  accountExists agent
-  userExists agent
-  welcomeEmailRequested agent
-```
-
-There should be no requirement that these observations occur sequentially.
-
-The execution engine should eventually be capable of constructing an expectation graph and evaluating independent observations concurrently.
-
-For example:
-
-```text
-             RegistrationSubmitted
-                      │
-          ┌───────────┼───────────┐
-          │           │           │
-          ▼           ▼           ▼
-    AccountCreated UserCreated EmailRequested
-          │
-          ▼
- QualificationRequested
-          │
-          ▼
-    AgentQualified
-```
-
-This graph representation may eventually become useful for both execution and visualization.
-
----
-
-## Scenario Graph
-
-Although scenarios are written using `do` notation, internally Shōko may benefit from representing them as a graph rather than immediately interpreting them.
-
-For example:
-
-```text
-Scenario
-   │
-   ▼
-Scenario AST
-   │
-   ▼
-Dependency Graph
-   │
-   ├── safety analysis
-   ├── dry run
-   ├── visualization
-   ├── execution
-   └── replay
-```
-
-This argues for a free or freer representation of the scenario language rather than directly embedding everything in `IO`.
-
-The DSL should preserve enough structure to inspect a scenario before executing it.
-
-That becomes particularly important for production safety.
-
----
-
-## DSL Representation
-
-An initial implementation might use a GADT describing scenario operations.
-
-Conceptually:
-
-```haskell
-data ScenarioF next where
-  Perform
-    :: Action safety a
-    -> (a -> next)
-    -> ScenarioF next
-
-  Observe
-    :: Observation a
-    -> (a -> next)
-    -> ScenarioF next
-
-  Expect
-    :: Expectation
-    -> next
-    -> ScenarioF next
-```
-
-The exact representation should remain an implementation detail.
-
-The important property is that scenarios remain inspectable.
-
-Shōko should be able to answer:
-
-```text
-What actions will this scenario perform?
-
-What capabilities does it require?
-
-What external systems can it touch?
-
-What observations will it make?
-
-Can this scenario safely execute in production?
-```
-
-before executing anything.
-
----
-
-## Configuration
-
-Environment configuration should remain separate from scenario definitions.
-
-For example:
-
-```yaml
-environment: production
-
-adapters:
-  events:
-    type: message-db
-    connection: production-read-replica
-
-  accounts:
-    type: graphql
-    endpoint: account-service
-
-  traces:
-    type: opentelemetry
-
-policy:
-  capabilities:
-    - ReadProduction
-    - CreateSyntheticData
-
-  max-concurrency: 2
-
-  synthetic-prefix: "shoko-"
-```
-
-Secrets should come from the environment or an external secret provider rather than scenario configuration.
-
----
-
-## CLI
-
-Potential CLI design:
-
-```text
-shoko run <scenario>
-
-shoko observe <scenario>
-
-shoko replay <execution>
-
-shoko inspect <execution>
-
-shoko explain <scenario>
-
-shoko list
-```
-
-Examples:
-
-```bash
-shoko run agent-registration --env local
-
-shoko run agent-registration --env staging
-
-shoko run agent-registration --env production --dry-run
-
-shoko observe agent-registration --env production
-
-shoko inspect shoko_01J...
-
-shoko explain agent-registration
-```
-
-`explain` should show the scenario without executing it:
-
-```text
-Scenario:
-  agent-registration
-
-Actions:
-  CreateSyntheticAgent
-  RegisterAgent
-
-Expectations:
-  RegistrationSubmitted
-  AccountCreated
-  UserCreated
-  AgentQualified
-
-Required capabilities:
-  CreateSyntheticData
-  SendExternalRequest
-
-Production:
-  Allowed
-
-Estimated timeout:
-  30 seconds
-```
-
----
-
-## What Shōko Is Not
-
-Shōko should deliberately avoid becoming several adjacent tools.
-
-It is not a unit testing framework.
-
-Use:
-
-```text
-tasty
-HUnit
-Hedgehog
-QuickCheck
-```
-
-for unit and property testing.
-
-It is not primarily a contract testing framework.
-
-Use Pact or schema-level compatibility testing for service contracts.
-
-It is not a load-testing framework.
-
-Use k6 or dedicated load-testing infrastructure.
-
-It is not an observability platform.
-
-Use OpenTelemetry, Prometheus, Grafana, and logging infrastructure.
-
-It is not a workflow engine.
-
-It observes and verifies workflows; it does not own their execution.
-
-Shōko sits above these systems and asks:
-
-> What evidence demonstrates that this distributed behavior is correct?
-
----
-
-## Development Strategy
-
-Shōko should be built from concrete distributed-system problems rather than designing the entire DSL up front.
-
-The first implementation should choose one real workflow.
-
-For example:
-
-```text
-Agent Registration
-```
-
-Implement only enough DSL to express that workflow cleanly.
-
-Then add another substantially different workflow.
-
-For example:
-
-```text
-MLS Qualification
-```
-
-Then another:
-
-```text
-Referral Creation
-```
-
-Every new abstraction should be justified by multiple concrete scenarios.
-
-This should help prevent the DSL from becoming an overly general effect system before its semantics are understood.
-
----
-
-## Phase 1 — Basic Distributed Verification
-
-Goal:
-
-> Verify one distributed workflow locally and in staging using the same scenario.
-
-Implement:
-
-- scenario DSL;
-- HTTP actions;
-- MessageDB observations;
-- PostgreSQL observations;
-- correlation IDs;
-- `eventually`;
-- structured results.
-
-Example:
-
-```haskell
-scenario "agent registration" $ do
-  agent <- given uniqueAgent
-
-  register agent
-
-  expect $
-    occurred @RegistrationSubmitted agent
-
-  eventually $
-    accountExists agent
-
-  eventually $
-    agentStatus agent `shouldBe` Qualified
-```
-
----
-
-## Phase 2 — Production Safety
-
-Goal:
-
-> Safely execute or observe scenarios in production.
-
-Implement:
-
-- capability model;
-- environment policies;
-- dry-run;
-- synthetic resources;
-- cleanup;
-- production read-only adapters;
-- fail-closed execution.
-
-Production execution should initially require explicit opt-in.
-
----
-
-## Phase 3 — Production Observation
-
-Goal:
-
-> Verify naturally occurring production behavior without initiating it.
-
-Implement:
-
-```haskell
-observe @RegistrationSubmitted
-```
-
-along with:
-
-- correlation discovery;
-- event subscriptions;
-- observation windows;
-- sampling;
-- rate limits;
-- continuous verification.
-
-At this stage, Shōko begins functioning as an executable specification of production invariants.
-
----
-
-## Phase 4 — Causal Verification
-
-Goal:
-
-> Verify distributed workflows rather than isolated outcomes.
-
-Implement:
-
-```text
-P causes Q
-
-P eventuallyCauses Q
-
-P causesExactlyOnce Q
-```
-
-and workflow expressions such as:
-
-```haskell
-expectFlow $
-  RegistrationSubmitted
-    --> AccountCreated
-    --> QualificationRequested
-    --> AgentQualified
-```
-
-Use event correlation and causation metadata wherever available.
-
----
-
-## Phase 5 — Capture and Replay
-
-Goal:
-
-> Turn real distributed executions into reproducible verification cases.
-
-Implement:
-
-```bash
-shoko capture production --execution <id>
-
-shoko replay <capture> --against local
-```
-
-Captured executions should use a normalized evidence format rather than storing infrastructure-specific responses wherever possible.
-
-This enables production failures to become regression scenarios.
-
----
-
-## Phase 6 — Property-Based Distributed Verification
-
-Eventually Shōko may integrate with Hedgehog.
-
-For example:
-
-```haskell
-property $ do
-  agent <- forAll genValidAgent
-
-  verify $
-    scenario $ do
-      register agent
-
-      eventually $
-        accountExists agent
-```
-
-This combines:
-
-```text
-generated inputs
-       +
-distributed verification
-```
-
-and could uncover system-level edge cases that example-based E2E tests miss.
-
-Shrinking distributed failures would be particularly interesting but should not be an initial goal.
-
----
-
-## Open Questions
-
-Several architectural questions should remain deliberately unresolved until the first scenarios are implemented.
-
-### How much should the type system enforce?
-
-Potentially:
-
-```text
-environment safety
-available adapters
-action capabilities
-observation capabilities
-synthetic resources
-```
-
-could all appear in types.
-
-This may provide excellent guarantees but could also make scenario authoring cumbersome.
-
-The initial implementation should bias toward usability and move proven invariants into the type system later.
-
-### Should observations be domain-specific or generic?
-
-For example:
-
-```haskell
-accountExists agent
-```
-
-versus:
-
-```haskell
-postgres $
-  rowExists "accounts" ...
-```
-
-The likely answer is both layers:
-
-```text
-Domain Observation
-       │
-       ▼
-Infrastructure Observation
-       │
-       ▼
-Adapter
-```
-
-Scenarios should normally use the domain layer.
-
-### How much should OpenTelemetry matter?
-
-OpenTelemetry provides rich structural evidence, but domain events are generally more semantically meaningful.
-
-The likely hierarchy is:
-
-```text
-Domain Events
-    ↓
-Domain State / APIs
-    ↓
-Telemetry
-    ↓
-Logs
-```
-
-depending on the assertion being made.
-
-Shōko should not require OpenTelemetry.
-
-### Should continuous verification be part of Shōko?
-
-Probably eventually.
-
-A scenario such as:
-
-```haskell
-scenario "registration" ...
-```
-
-could potentially be:
-
-```text
-run during CI
-
-run against staging
-
-synthetically run against production
-
-observe real production executions continuously
-```
-
-This is one of the strongest consequences of treating scenarios as portable specifications rather than tests.
-
----
-
-## Long-Term Vision
-
-Shōko should make distributed-system specifications executable across the entire software lifecycle.
-
-A single scenario:
-
-```haskell
-scenario "agent registration" $ do
-  ...
-```
-
-should eventually be usable for:
-
-```text
-development
-      │
-      ▼
-local verification
-      │
-      ▼
-CI
-      │
-      ▼
-staging
-      │
-      ▼
-
-      production verification
-      │
-      ▼
-continuous observation
-      │
-      ▼
-capture and replay
-```
-
-The same behavioral specification should survive across all of these contexts.
-
-The long-term model is:
-
-```text
-                         Scenario
-                            │
-           ┌────────────────┼────────────────┐
-           │                │                │
-          Run            Observe          Replay
-           │                │                │
-           ▼                ▼                ▼
-     Active execution   Real behavior   Recorded behavior
-           │                │                │
-           └────────────────┼────────────────┘
-                            │
-                            ▼
-                         Evidence
-                            │
-                            ▼
-                       Verification
-```
-
-This turns tests from disposable environment-specific scripts into durable descriptions of expected system behavior.
-
----
-
-## Desired Properties
-
-Shōko should aim for the following properties.
-
-### Declarative
-
-Scenarios describe expected behavior rather than execution mechanics.
-
-```haskell
-eventually $
-  agentStatus agent `shouldBe` Qualified
-```
-
-rather than:
-
-```haskell
-threadDelay 5_000_000
-
-status <- queryPostgres ...
-
-status `shouldBe` "qualified"
-```
-
-### Portable
-
-The same scenario should be executable across environments whenever the required capabilities are available.
-
-```text
-                Scenario
-                   │
-       ┌───────────┼───────────┐
-       ▼           ▼           ▼
-      Local      Staging    Production
-```
-
-### Observable
-
-Verification should be based on evidence gathered from the distributed system.
-
-### Correlated
-
-Evidence should be attributable to the specific execution being verified whenever possible.
-
-### Eventually Consistent
-
-Asynchronous convergence should be represented directly rather than hidden behind sleeps.
-
-### Production Safe
-
-A scenario should be inspectable before execution and rejected when its required capabilities exceed the environment's policy.
-
-### Diagnosable
-
-Failures should explain the observed distributed behavior rather than simply report a failed assertion.
-
-### Extensible
-
-New evidence sources should be introduced through adapters without requiring changes to scenario semantics.
-
-### Domain Oriented
-
-Application scenarios should primarily speak in terms of domain concepts rather than infrastructure.
-
----
-
-## Non-Goals
-
-The initial project should explicitly avoid several tempting directions.
-
-### General-Purpose Test Framework
-
-Shōko does not need to replace Tasty, HUnit, Hedgehog, or QuickCheck.
-
-It should integrate with them where useful.
-
-### General-Purpose Effect System
-
-The DSL should not attempt to model arbitrary application effects.
-
-Only concepts necessary for distributed verification should enter the core language.
-
-### Full Temporal Logic
-
-Temporal operators are useful, but the initial implementation should not attempt to become a complete temporal-logic language or model checker.
-
-Start with operations demanded by real scenarios:
-
-```text
-eventually
-never
-within
-consistently
-exactlyOnce
-```
-
-### Observability Backend
-
-Shōko should consume telemetry rather than becoming a telemetry storage platform.
-
-### Distributed Tracing Replacement
-
-OpenTelemetry already solves propagation and trace representation.
-
-Shōko should use it where useful.
-
-### Production Workflow Engine
-
-Shōko verifies production behavior.
-
-It should not become responsible for orchestrating normal production business processes.
 
 ---
 
@@ -3775,6 +2470,182 @@ oneOf $ do
 or richer state-machine specifications.
 
 This should be driven by concrete scenarios rather than designed prematurely.
+
+---
+
+## Long-Term Vision
+
+Shōko should make distributed-system specifications executable across the entire software lifecycle.
+
+A single scenario:
+
+```haskell
+scenario "agent registration" $ do
+  ...
+```
+
+should eventually be usable for:
+
+```text
+development
+      │
+      ▼
+local verification
+      │
+      ▼
+CI
+      │
+      ▼
+staging
+      │
+      ▼
+
+      production verification
+      │
+      ▼
+continuous observation
+      │
+      ▼
+capture and replay
+```
+
+The same behavioral specification should survive across all of these contexts.
+
+The long-term model is:
+
+```text
+                         Scenario
+                            │
+           ┌────────────────┼────────────────┐
+           │                │                │
+          Run            Observe          Replay
+           │                │                │
+           ▼                ▼                ▼
+     Active execution   Real behavior   Recorded behavior
+           │                │                │
+           └────────────────┼────────────────┘
+                            │
+                            ▼
+                         Evidence
+                            │
+                            ▼
+                       Verification
+```
+
+This turns tests from disposable environment-specific scripts into durable descriptions of expected system behavior.
+
+---
+
+## Desired Properties
+
+Shōko should aim for the following properties.
+
+### Declarative
+
+Scenarios describe expected behavior rather than execution mechanics.
+
+```haskell
+eventually $
+  agentStatus agent `shouldBe` Qualified
+```
+
+rather than:
+
+```haskell
+threadDelay 5_000_000
+
+status <- queryPostgres ...
+
+status `shouldBe` "qualified"
+```
+
+### Portable
+
+The same scenario should be executable across environments whenever the required capabilities are available.
+
+```text
+                Scenario
+                   │
+       ┌───────────┼───────────┐
+       ▼           ▼           ▼
+      Local      Staging    Production
+```
+
+### Observable
+
+Verification should be based on evidence gathered from the distributed system.
+
+### Correlated
+
+Evidence should be attributable to the specific execution being verified whenever possible.
+
+### Eventually Consistent
+
+Asynchronous convergence should be represented directly rather than hidden behind sleeps.
+
+### Production Safe
+
+A scenario should be inspectable before execution and rejected when its required capabilities exceed the environment's policy.
+
+### Diagnosable
+
+Failures should explain the observed distributed behavior rather than simply report a failed assertion.
+
+### Extensible
+
+New evidence sources should be introduced through adapters without requiring changes to scenario semantics.
+
+### Domain Oriented
+
+Application scenarios should primarily speak in terms of domain concepts rather than infrastructure.
+
+---
+
+## Non-Goals
+
+The initial project should explicitly avoid several tempting directions.
+
+### General-Purpose Test Framework
+
+Shōko does not need to replace Tasty, HUnit, Hedgehog, or QuickCheck.
+
+It should integrate with them where useful.
+
+### General-Purpose Effect System
+
+The DSL should not attempt to model arbitrary application effects.
+
+Only concepts necessary for distributed verification should enter the core language.
+
+### Full Temporal Logic
+
+Temporal operators are useful, but the initial implementation should not attempt to become a complete temporal-logic language or model checker.
+
+Start with operations demanded by real scenarios:
+
+```text
+eventually
+never
+within
+consistently
+exactlyOnce
+```
+
+### Observability Backend
+
+Shōko should consume telemetry rather than becoming a telemetry storage platform.
+
+### Distributed Tracing Replacement
+
+OpenTelemetry already solves propagation and trace representation.
+
+Shōko should use it where useful.
+
+### Production Workflow Engine
+
+Shōko verifies production behavior.
+
+It should not become responsible for orchestrating normal production business processes.
 
 ---
 
