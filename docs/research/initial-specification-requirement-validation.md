@@ -4,7 +4,7 @@ title: Validate the initial Shōko specification before planning
 description: Assess whether the initial specification is internally consistent, bounded enough for a first milestone, and feasible against the services it names and the Haskell building blocks available locally.
 generated:
   by: process:claude-code
-  at: "2026-10-01T03:02:21Z"
+  at: "2026-10-01T03:09:17Z"
 researchId: RES-1
 status: active
 scope: The specification at docs/intial-spec.md as of 2026-09-30 (commit 73efafb plus the author's uncommitted completion, 4272 lines), the tan services its registration example names, and the Haskell libraries registered in the local mori registry. No code was written and no service was run; the author was still completing the specification while this record was produced. The platform-rewrite context was added on 2026-10-01 from the author's statement and the tan-platform modernization notes.
@@ -76,8 +76,8 @@ sources:
 reviews:
   - kind: model
     reviewer: claude-code
-    reviewed_at: "2026-10-01T03:02:21Z"
-    document_timestamp: "2026-10-01T03:02:21Z"
+    reviewed_at: "2026-10-01T03:09:17Z"
+    document_timestamp: "2026-10-01T03:09:17Z"
     scope: content-and-metadata
     outcome: commented
     provider: Anthropic
@@ -113,7 +113,7 @@ The author then clarified that Shōko is the core verification tool for rewritin
 
 ## Findings on the document itself
 
-**F1. A large block is duplicated.** Every section from "Suggested Package Structure" through "Open Questions" appears twice, at lines 1072 to 2196 and again at lines 2373 to 3780. The second copy is a revision of the first: it adds the ordering-versus-causation distinction, the four replay strategies, the evidence-persistence question, the observation-versus-expectation boundary, and the nondeterminism question. The first copy should be deleted and the second kept. The "first milestone" diagram at lines 1050 to 1063 is likewise a truncated copy immediately followed by the complete one. The filename misspells "initial".
+**F1. A large block is duplicated.** Every section from "Suggested Package Structure" through "Open Questions" appears twice, at lines 1072 to 2196 and again at lines 2373 to 3780. The second copy is a revision of the first: it adds the ordering-versus-causation distinction, the four replay strategies, the evidence-persistence question, the observation-versus-expectation boundary, and the nondeterminism question. The first copy should be deleted and the second kept. The "first milestone" diagram at lines 1050 to 1063 is likewise a truncated copy immediately followed by the complete one. The filename misspells "initial". Resolved on 2026-10-01: the first copy and the truncated diagram header were removed, and the Long-Term Vision, Desired Properties, and Non-Goals sections that sat between the copies were placed after the revised Open Questions, where the first copy had them. The filename is unchanged.
 
 ## Findings on internal consistency
 
@@ -257,7 +257,7 @@ The first milestone is now a parity run: the same scenario passing against the l
 
 ## Recommendations before planning
 
-1. Apply F1 and commit the specification so later records can cite stable line numbers.
+1. Apply F1 and commit the specification so later records can cite stable line numbers. Done on 2026-10-01; line numbers cited in F1 refer to the working copy before the cleanup.
 2. Record the following as architecture decisions before the Phase 1 ExecPlan: the capability model (F2), the canonical DSL surface and the `when` naming (F3), temporal semantics including the `never` window and the Unknown exit mapping (F4, F5, F8), the correlation strategy and the compatibility contract on services (F7), environment as configuration (F10), and where application vocabularies live (F11).
 3. Rewrite the specification's registration example against the real vocabulary and flow in S1, or mark it as illustrative, so the first scenario is not planned against events that do not exist.
 4. Write the Phase 1 ExecPlan against the registration workflow only, taking the staging validation plan as the first scenario (S7), correlating on `registrationId` (S2), and reading staging state through REST or PostgreSQL (S5).
