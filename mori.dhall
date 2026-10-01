@@ -17,4 +17,14 @@ in  Schema.Project::{
       , owners = [ "shinzui" ]
       }
     , repos = [ Schema.Repo::{ name = "shoko", github = Some "shinzui/shoko" } ]
+    , okfBundles =
+      [ Schema.OkfBundle::{
+        , name = "research"
+        , path = "docs/research"
+        , profile = Some "docs/research/profile.dhall"
+        , okfVersion = "0.2"
+        , description = Some
+            "Bounded investigations that validate and inform the Shōko specification and design"
+        }
+      ]
     }
