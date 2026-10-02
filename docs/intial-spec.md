@@ -1,5 +1,7 @@
 # 証拠 (Shōko)
 
+> Bootstrap planning note (2026-10-01): the examples in this design document are illustrative, particularly the registration event chain and welcome email. The executable first-workflow contract must follow [the requirement validation](research/initial-specification-requirement-validation.md), findings S1–S9 and M1–M8. The revised milestones near the end supersede the earlier local/staging first milestone. The bootstrap decisions in [docs/adr](adr/) resolve the initial DSL, capabilities, finite temporal semantics, correlation, and domain-vocabulary ownership before implementation.
+
 > **証拠（しょうこ） — evidence, proof**
 
 Shōko is a Haskell DSL for specifying and verifying observable behavior across distributed systems.
