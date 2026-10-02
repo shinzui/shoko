@@ -4,6 +4,7 @@ slug: expose-scenario-inspection-execution-and-structured-reports
 title: "Expose scenario inspection execution and structured reports"
 kind: exec-plan
 created_at: 2026-10-02T03:52:03Z
+intention: "intention_01m3xdacr3exqajqfcgh9btgev"
 master_plan: "docs/masterplans/1-bootstrap-shoko-for-evidence-based-workflow-parity.md"
 provenance:
   created_by:

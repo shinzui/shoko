@@ -4,12 +4,19 @@ slug: implement-postgresql-and-http-evidence-bindings
 title: "Implement PostgreSQL and HTTP evidence bindings"
 kind: exec-plan
 created_at: 2026-10-02T03:52:02Z
+intention: "intention_01m3xdacr3exqajqfcgh9btgev"
 master_plan: "docs/masterplans/1-bootstrap-shoko-for-evidence-based-workflow-parity.md"
 provenance:
   created_by:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-02T03:52:02Z
+  revisions:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-02T04:18:41Z
+      mode: "update"
+      note: "Associate the bootstrap plan with the shared Mina intention requested by the user."
 ---
 
 # Implement PostgreSQL and HTTP evidence bindings

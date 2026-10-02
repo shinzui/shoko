@@ -4,6 +4,7 @@ slug: bootstrap-shoko-for-evidence-based-workflow-parity
 title: "Bootstrap Shoko for evidence-based workflow parity"
 kind: master-plan
 created_at: 2026-10-02T03:52:02Z
+intention: "intention_01m3xdacr3exqajqfcgh9btgev"
 provenance:
   created_by:
     model: "gpt-6-astra"
