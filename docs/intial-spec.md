@@ -1,6 +1,6 @@
 # 証拠 (Shōko)
 
-> Bootstrap planning note (2026-10-01): the examples in this design document are illustrative, particularly the registration event chain and welcome email. The executable first-workflow contract must follow [the requirement validation](research/initial-specification-requirement-validation.md), findings S1–S9 and M1–M8. The revised milestones near the end supersede the earlier local/staging first milestone. The bootstrap decisions in [docs/adr](adr/) resolve the initial DSL, capabilities, finite temporal semantics, correlation, and domain-vocabulary ownership before implementation.
+> Bootstrap planning note (2026-10-01, revised after user clarification): examples in this document are illustrative, particularly the registration event chain and welcome email. The current first acceptance target is the complete system already running in a Kubernetes staging test namespace, with positive and negative scenarios. The user explicitly chose this before legacy/Keiro comparison; the local-pair milestones later in this document are future migration direction, not the bootstrap gate. CI is optional invocation automation. The [MasterPlan](masterplans/1-bootstrap-shoko-for-evidence-based-workflow-parity.md) and [bootstrap ADRs](adr/) govern current scope, DSL, capabilities, expected domain rejections, temporal evidence, correlation, and configuration. The [requirement validation](research/initial-specification-requirement-validation.md) remains the historical service/research evidence, subject to this scope correction.
 
 > **証拠（しょうこ） — evidence, proof**
 
@@ -8,7 +8,7 @@ Shōko is a Haskell DSL for specifying and verifying observable behavior across 
 
 Rather than treating testing as a sequence of implementation-specific operations, Shōko describes the **evidence that must exist for a system behavior to be considered correct**.
 
-The same scenario should be usable across local development, CI, staging, and production by changing how actions and observations are interpreted.
+The same scenario should be usable across target environments by changing how actions and observations are interpreted. The bootstrap targets the existing staging system; CI can invoke the verifier against that same target. Production support remains later work.
 
 Shōko is designed particularly for microservice and event-driven architectures where a single operation may produce side effects across multiple services, databases, event streams, queues, workers, external APIs, and asynchronous projections.
 

@@ -30,29 +30,19 @@ The first application is the [TAN platform](mori://tan/tan-platform) rewrite ont
 The following illustrates the proposed DSL and domain vocabulary. It is a design sketch, not a compilable example or a settled API.
 
 ```haskell
-registrationParity :: Scenario
-registrationParity =
-  scenario "registration-parity" $ do
-    agent <- given syntheticAgent
-
-    when $
-      register agent
+registrationCompletion :: Scenario
+registrationCompletion =
+  scenario "registration-completion-staging" "Complete registration" $ do
+    agent <- given qualifiedAgent
+    registration <- act $ completeQualifiedAgentRegistration agent
 
     expect $ do
-      eventually $
-        registrationApproved agent
-
-      eventually $
-        accountExists agent
-
-      eventually $
-        userExists agent
-
-      eventually $
-        qualificationVerified agent
+      eventually $ registrationCompleted registration
+      eventually $ accountExists registration
+      eventually $ userExists registration
 ```
 
-The real registration workflow includes approval and one-time-password steps. An executable scenario must arrange those steps and valid test identities; the outline omits that setup. The [requirement validation](docs/research/initial-specification-requirement-validation.md) explains the actual flow and the gaps in the specification's earlier examples.
+This reference slice starts from an already-qualified agent and exercises the one-time-password and completion steps through a declared composite action. Qualification/approval is a precondition of this slice. An executable scenario must use supported test identities and the approved staging delivery path; the outline omits that setup. The [requirement validation](docs/research/initial-specification-requirement-validation.md) explains the actual flow and the gaps in the specification's earlier examples.
 
 Parity scenarios use domain observations such as `qualificationVerified`. Each implementation can satisfy them through its own events, state, and APIs. The bounded context owns this vocabulary in an application package beside the domain. Assertions about specific event names or internal causal chains belong in scenarios for that implementation.
 
@@ -76,9 +66,11 @@ Three independent choices determine how a scenario is used:
 
 | Axis | Intended choices |
 | --- | --- |
-| Environment | Local development, CI, staging, production |
+| Target environment | Existing Kubernetes staging system first; local fixtures for library development; production later |
 | Implementation | Legacy or Keiro |
 | Execution mode | Run, Observe, Replay |
+
+CI means an automated caller of the verifier. The same staging command can run from an operator shell or automation with the approved access; the application remains deployed in its test namespace.
 
 An environment paired with an implementation forms a **binding**, which selects the adapters. Production policy continues to apply whichever implementation is selected.
 
@@ -86,7 +78,7 @@ An environment paired with an implementation forms a **binding**, which selects 
 - **Observe** attaches expectations to naturally occurring activity without initiating the business operation. During migration, this can support shadow verification.
 - **Replay** evaluates recorded evidence or re-executes captured inputs against another environment. These are distinct strategies; input replay is particularly useful for turning legacy executions into regression cases for the rewrite.
 
-Temporal assertions should express asynchronous behavior directly. The initial recommendation is to start with `eventually`, `never`, and `exactlyOnce`, with explicit deadlines and observation windows. A finite `never` assertion can establish absence only within its window and the coverage of its evidence sources. Exact timeout, polling, and composition rules remain design work.
+Temporal assertions should express asynchronous behavior directly. The initial recommendation is to start with `eventually`, `never`, and `exactlyOnce`, with explicit deadlines and observation windows. A finite `never` assertion can establish absence only within its window and the coverage of its evidence sources. The bootstrap ADRs define finite budgets, polling, and composition rules; staging settings are chosen explicitly for the accepted workflow.
 
 ## Evidence and results
 
@@ -105,19 +97,19 @@ Results are intended to distinguish three outcomes:
 | Fail | Verification establishes that an expectation was violated. |
 | Unknown | Verification cannot establish the outcome, for example because an evidence source is unavailable. |
 
-Reports should retain collected evidence even when verification fails: source identifiers, timestamps, correlation and causation details, and the expectation that could not be satisfied. This should help locate a broken projection, missing event, or failed interaction. The mapping of `Unknown` into CI outcomes remains to be decided.
+Reports should retain collected evidence even when verification fails: source identifiers, timestamps, correlation and causation details, and the expectation that could not be satisfied. This should help locate a broken projection, missing event, or failed interaction. Planned exit codes are 0 Pass, 1 Fail, 2 invalid invocation/configuration/policy, 3 Unknown, and 4 unexpected runner faults. CI preserves those outcomes.
 
 ## Initial scope and milestones
 
-The first milestone is **one domain-level scenario passing against both a legacy local stack and a Keiro local stack**. Registration is the motivating example; the actual first workflow should be whichever exists on both sides first. This revised milestone takes precedence over the specification's earlier local-versus-staging milestone.
+The first milestone is **verification of the complete system already running in a Kubernetes test namespace**. It includes a real successful workflow and a documented negative scenario, with attributable evidence of their downstream effects. Registration completion is the researched reference; the accepted contract follows the actual deployed workflow.
 
-The initial implementation should provide the small core above, bounded assertions, correlation, structured results, and HTTP, PostgreSQL, and Message DB adapters. Kiroku is the primary target evidence source for the rewrite. Kafka observations follow the integration transport used by both sides.
+A negative scenario passes when the expected rejection or invariant holds: for example, a documented invalid-input rejection with unchanged domain state, or duplicate prevention under the service's contract. An unexpected success/rejection is Fail; a timeout or unavailable evidence is Unknown. Expected rejection must be typed evidence, not a rule that turns any error into success. Continuous absence and exactly-once claims require suitable durable coverage, rather than mutable-state snapshots alone.
 
-Legacy support stays thin and primarily read-only. Generic PostgreSQL observations—row existence, count, column value, and absence—provide the baseline for services whose database is their only evidence source. Existing event stores and REST endpoints can supply additional evidence where available. Legacy bindings can be removed after cutover.
+The bootstrap provides the small core, inspection, capability enforcement, bounded assertions, correlation, structured results, and HTTP/PostgreSQL/Message DB/Kiroku adapters. A context-owned host supplies the actual staging scenarios and bindings. Haskell practices follow Jitsurei, Nix tooling comes from the Seihou template, and Settei owns configuration resolution at the CLI boundary.
 
-The first parity run needs composed local environments for both implementations, a shared domain vocabulary, and a usable correlation strategy. The validation also identified staging prerequisites, including a controlled OTP path and machine-callable REST or PostgreSQL reads. Several early examples assume events, GraphQL access, or email effects that the surveyed workflow does not provide.
+The staging contract records the approved cluster/namespace, observed deployment identities, access route, controlled test inputs, evidence credentials, permitted external effects, and run-owned cleanup or retention. Shōko connects to the existing system; it does not create, reset, or tear down the application namespace. Local fixtures validate Shōko's own implementation. CI may invoke the same staging command later and must not silently skip unavailable staging.
 
-Later milestones add inspection and production safety, observation of live workflows, stronger causal verification, and capture/replay. Input replay moves earlier when it helps verify the migration. Remote trace and metrics adapters, property-based generation, complex temporal logic, and visualization remain outside the first implementation.
+Legacy/Keiro comparison remains a later application of the same scenario/binding architecture. A second implementation is not required for first staging acceptance. Production execution, continuous observation, stronger causal verification, capture/replay, and generic transport/trace/metrics extensions remain later work.
 
 ## Production safety
 
@@ -129,8 +121,10 @@ Shōko's scope is application behavior across services. Existing unit tests, pro
 
 ## Design documents
 
+- [Bootstrap MasterPlan](docs/masterplans/1-bootstrap-shoko-for-evidence-based-workflow-parity.md) — the current staging-first scope and seven implementation plans.
+- [Implementation explainer](docs/artifacts/shoko-bootstrap-explainer.html) — a light-themed visual guide with interactive evidence examples.
 - [Initial specification](docs/intial-spec.md) — the full design, examples, open questions, and revised migration milestones.
 - [Initial specification requirement validation](docs/research/initial-specification-requirement-validation.md) — consistency findings, service and library surveys, prerequisites, and recommendations before implementation planning.
 - [Research index](docs/research/index.md) — the repository's research records.
 
-The specification describes the intended direction. The validation records where examples differ from the surveyed systems and which decisions remain open, including the canonical DSL, capability enforcement, temporal budgets, and CI result handling.
+The specification describes the broader direction and the validation records the surveyed evidence. The MasterPlan and bootstrap ADRs resolve implementation decisions and carry the user’s later staging-first scope correction.
