@@ -26,6 +26,7 @@ in  Schema.Project::{
         , description = Some "Public core library and bounded verification runner"
         , dependencies =
           [ Schema.Dependency.ByName "haskell/text:text"
+          , Schema.Dependency.ByName "haskell/containers:containers"
           , Schema.Dependency.ByName "UnkindPartition/tasty:tasty"
           , Schema.Dependency.ByName "UnkindPartition/tasty:tasty-hedgehog"
           , Schema.Dependency.ByName "hedgehogqa/haskell-hedgehog:hedgehog"
@@ -34,6 +35,12 @@ in  Schema.Project::{
       ]
     , dependencyRefs =
       [ Schema.MoriRef::{
+        , namespace = "haskell"
+        , name = "containers"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "containers"
+        }
+      , Schema.MoriRef::{
         , namespace = "haskell"
         , name = "text"
         , kind = Some Schema.MoriArtifactKind.Package

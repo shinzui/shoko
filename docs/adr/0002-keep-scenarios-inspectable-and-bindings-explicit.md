@@ -30,6 +30,8 @@ The host integration resolves actual staging target/deployment identity and pass
 
 Inspection and execution consume the same scenario and resolved binding plan. The implementation starts with runtime policy validation; type-level capability enforcement is deferred. `observe` mode, replay, and causality operators remain future work. If a later feature requires runtime branching, its inspection and capability rules must be designed explicitly before it enters the public DSL.
 
+The first public implementation uses `scenario id title revision`. Context-owned `Vocabulary op` GADTs describe each operation's public identifier, capability set, symbolic dependencies, and composite substep inventory. Applicative `Input` values combine typed references without inspecting runtime fixture values; inspection omits literal payloads. Named fixture/action nodes carry explicit allowed outcome tags. The scenario revision must change when predicate or recipe semantics change, because functions and secret inputs do not belong in the canonical public description. Binding metadata contributes additional capabilities, cleanup requirements, sources, and correlation support before acquisition.
+
 Revision 2026-10-01: select Settei explicitly after the configuration discussion, replacing the unspecified configuration implementation with its typed resolver and existing source adapters. The capability-policy boundary is unchanged.
 
 Revision 2026-10-01: make existing Kubernetes staging the first execution target and define explicit typed outcomes for positive and negative scenarios.

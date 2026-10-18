@@ -40,18 +40,33 @@ library
   hs-source-dirs: src
   exposed-modules:
     Shoko
+    Shoko.Action
+    Shoko.Binding
+    Shoko.Correlation
+    Shoko.Environment
+    Shoko.Expectation
+    Shoko.Observation
     Shoko.Prelude
+    Shoko.Scenario
+
+  other-modules: Shoko.Internal.Reference
+  build-depends: containers >=0.7 && <0.8
 
 test-suite shoko-core-test
   import: common
   type: exitcode-stdio-1.0
   hs-source-dirs: test
   main-is: Main.hs
+  other-modules:
+    Consumer.Account
+    ScenarioSpec
+
   ghc-options:
     -threaded
     -rtsopts
 
   build-depends:
+    containers >=0.7 && <0.8,
     hedgehog >=1.5 && <1.8,
     shoko-core,
     tasty >=1.5.4 && <1.6,

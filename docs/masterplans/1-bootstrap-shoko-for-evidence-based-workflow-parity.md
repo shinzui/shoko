@@ -74,7 +74,7 @@ Research F2/F3/F5/F7/F10/F12 inform EP-3/EP-6; F4/F8/F9 inform evidence/results;
 |---|-------|------|-----------|-----------|--------|
 | 1 | Haskell/Seihou foundation | [Plan 1](../plans/1-bootstrap-the-haskell-workspace-with-seihou-and-jitsurei-standards.md) | None | None | Complete |
 | 2 | Registration workflow and Kubernetes staging target | [Plan 2](../plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md) | M1: None; M2: EP-1 | None | Not Started |
-| 3 | Inspectable DSL and bounded runner | [Plan 3](../plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md) | EP-1 | EP-2 M1 | Not Started |
+| 3 | Inspectable DSL and bounded runner | [Plan 3](../plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md) | EP-1 | EP-2 M1 | In Progress |
 | 4 | PostgreSQL and HTTP bindings | [Plan 4](../plans/4-implement-postgresql-and-http-evidence-bindings.md) | EP-3 | EP-2 M1 | Not Started |
 | 5 | Kiroku and Message DB bindings | [Plan 5](../plans/5-implement-kiroku-and-message-db-evidence-bindings.md) | EP-3; EP-4 M1 | EP-2 M1 | Not Started |
 | 6 | CLI inspection, execution, reports | [Plan 6](../plans/6-expose-scenario-inspection-execution-and-structured-reports.md) | EP-3 | EP-4; EP-5 | Not Started |

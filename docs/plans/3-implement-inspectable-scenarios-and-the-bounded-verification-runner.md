@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-18T17:14:48Z
       mode: "update"
       note: "Clarify terminal actions, bounded cleanup, and sanitized input evidence."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-18T17:48:58Z
+      mode: "implement"
+      note: "Implement typed descriptions and policy resolution before bounded execution and result codecs."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -43,7 +48,7 @@ A Haskell consumer can describe actions and evidence expectations once, inspect 
 ## Progress
 
 
-- [ ] M1: A typed scenario can be inspected and bound without IO, and undeclared operations or disallowed capabilities are rejected before fixture/action execution.
+- [x] M1 (2026-10-18): Typed context-owned GADT operations, symbolic/applicative inputs, explicit outcome contracts, and temporal descriptions inspect without IO. The public consumer suite passes seven checks, including zero acquisition/action calls under inspection and denied policy, hidden binding capabilities, synthetic consent, production denial, invalid descriptions, and missing handlers/correlation support.
 - [ ] M2: The effectful runner evaluates eventually, never, and exactlyOnce with correct deadlines, correlation, coverage, and cancellation.
 - [ ] M3: Two concrete consumer scenarios exercise the public API and stable versioned results through deterministic and real-clock checks.
 
@@ -54,6 +59,8 @@ A Haskell consumer can describe actions and evidence expectations once, inspect 
 
 
 On 2026-10-01, keep an inspectable scenario description above effectful, with symbolic references and a fixed initial composition model. This resolves RES-1 F3 while making later inspection consume the same artifact as execution. Define observation/coverage semantics in core so adapters cannot each invent their own treatment of missing evidence.
+
+On 2026-10-18, use `scenario id title revision` with context-owned `Vocabulary op` GADTs, explicit named nodes, and applicative `Input` values. Static dependency descriptions and the binding's additional capabilities resolve before resource acquisition. Response contracts select allowed domain tags; raw operation/input values have no rendering path in inspection. The revision identifies predicate/recipe semantics that cannot be derived from a canonical data description.
 
 On 2026-10-01, clarify multiple positive/negative scenarios and explicit expected domain outcomes after the user asked about negative testing. Preserve Kubernetes-independent core semantics; the integration host supplies actual staging target identity.
 
