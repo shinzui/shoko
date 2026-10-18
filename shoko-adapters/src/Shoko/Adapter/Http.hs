@@ -48,7 +48,7 @@ newHttp :: HttpConfig -> IO Http
 newHttp config =
   Http config
     <$> H.newManager
-      tlsManagerSettings
+      (H.managerSetInsecureProxy H.noProxy (H.managerSetSecureProxy H.noProxy tlsManagerSettings))
         { H.managerRetryableException = const False,
           H.managerIdleConnectionCount = 0
         }

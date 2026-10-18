@@ -72,13 +72,20 @@ GRANT SELECT ON ALL TABLES IN SCHEMA fixture TO shoko_reader;
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             env["SHOKO_TEST_UNAVAILABLE_HTTP"] = "http://127.0.0.1:" + str(closed.getsockname()[1])
+        # Request.proxy = Nothing alone still permits manager-level ambient
+        # proxies. Every actual transport test must ignore this unusable route.
+        env.update({"http_proxy": env["SHOKO_TEST_UNAVAILABLE_HTTP"],
+                    "https_proxy": env["SHOKO_TEST_UNAVAILABLE_HTTP"],
+                    "HTTP_PROXY": env["SHOKO_TEST_UNAVAILABLE_HTTP"],
+                    "HTTPS_PROXY": env["SHOKO_TEST_UNAVAILABLE_HTTP"],
+                    "no_proxy": "", "NO_PROXY": ""})
         # Both suites and the roundtrip always run; missing PostgreSQL is a failure.
         if len(sys.argv) == 3 and sys.argv[1] == "--binaries":
             for suite in ("postgres-adapter-test", "http-adapter-test", "adapter-roundtrip-test"):
                 run_tests([str((root / sys.argv[2] / suite / suite).resolve())], env)
         else:
             run_tests(["cabal", "test", "postgres-adapter-test", "http-adapter-test", "adapter-roundtrip-test", "--test-show-details=direct"], env)
-        with urllib.request.urlopen(env["SHOKO_TEST_HTTP"] + "/metrics", timeout=2) as response:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(env["SHOKO_TEST_HTTP"] + "/metrics", timeout=2) as response:
             metrics = json.load(response)
         if metrics.get("/slow") != 1 or metrics.get("/redirect") != 1:
             raise RuntimeError("mutation timeout/redirect was retried or not exercised")

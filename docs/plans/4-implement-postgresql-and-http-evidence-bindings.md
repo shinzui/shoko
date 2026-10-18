@@ -50,6 +50,8 @@ A consumer can execute an HTTP action and verify its domain consequences in Post
 ## Surprises & Discoveries
 
 
+Follow-up on 2026-10-18: http-client's default manager can override `Request.proxy = Nothing` from ambient proxy variables. Explicit `managerSetInsecureProxy noProxy` and `managerSetSecureProxy noProxy` now disable both routes. All 15 real IO tests pass while their process environment contains deliberately unusable HTTP/HTTPS proxies and no bypass list. The final workspace check includes the native Nix regression run.
+
 Hasql 1.9.3.1 matches the managed package set, while the latest release is 2.0.1.0. The exact released 1.9 source was inspected. Its integer decoder accepts arbitrary-length bytes: a text column initially decoded to an integer without failure. Column queries now project a `pg_typeof`/`regtype` compatibility check and reject mismatches before decoding. The real mismatch test proves unavailable evidence.
 
 The Unknown control originally included a healthy REST assertion conclusively showing the expected row absent, correctly making aggregate Fail dominate SQL Unknown. The independent source-outage control now tests only the unavailable consequence. This is test separation, not a semantics change.

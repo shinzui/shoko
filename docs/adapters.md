@@ -41,7 +41,8 @@ names alone do not approve destinations.
 
 `newHttp` uses verified TLS settings, disables automatic connection retries, and
 keeps zero idle connections; response scopes close sockets. Requests reject
-header line breaks, disable redirects and ambient proxy routing, enforce the
+header line breaks, disable redirects and ambient proxy routing at both manager
+and request levels, enforce the
 remaining deadline, and stop after the response limit. Authorization and body
 bytes live only in the non-renderable `HttpPayload`. Evidence contains the
 endpoint name, method, and status. URLs, request/response bodies, authorization,
