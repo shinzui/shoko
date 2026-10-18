@@ -2,6 +2,8 @@
 
 > Bootstrap planning note (2026-10-01, revised after user clarification): examples in this document are illustrative, particularly the registration event chain and welcome email. The current first acceptance target is the complete system already running in a Kubernetes staging test namespace, with positive and negative scenarios. The user explicitly chose this before legacy/Keiro comparison; the local-pair milestones later in this document are future migration direction, not the bootstrap gate. CI is optional invocation automation. The [MasterPlan](masterplans/1-bootstrap-shoko-for-evidence-based-workflow-parity.md) and [bootstrap ADRs](adr/) govern current scope, DSL, capabilities, expected domain rejections, temporal evidence, correlation, and configuration. The [requirement validation](research/initial-specification-requirement-validation.md) remains the historical service/research evidence, subject to this scope correction.
 
+> MVP update (2026-10-18): registration completion is the selected first workflow. First use requires its positive/negative staging acceptance and only the event readers needed by its evidence contract; both readers remain full-bootstrap work. Reports map requirements to evidence and deployed rewrite revisions. See the MasterPlan for the current execution sequence.
+
 > **証拠（しょうこ） — evidence, proof**
 
 Shōko is a Haskell DSL for specifying and verifying observable behavior across distributed systems.

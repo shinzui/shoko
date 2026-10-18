@@ -17,6 +17,17 @@ provenance:
       at: 2026-10-02T04:18:41Z
       mode: "update"
       note: "Associate the bootstrap plan with the shared Mina intention requested by the user."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      mode: "update"
+      note: "Accept selected event readers independently before first MVP use."
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      verdict: "approved"
+      note: "Planning review after MVP update: dependencies, ownership, references, and observable acceptance checked; build and live staging proof remain implementation gates."
 ---
 
 # Implement Kiroku and Message DB evidence bindings
@@ -28,6 +39,8 @@ This ExecPlan is a living document. Keep evidence-source semantics and accepted 
 
 
 A consumer can verify durable events from Kiroku and from legacy Message DB using one store-neutral expectation model. Repeated polling never counts one event twice, unrelated executions never satisfy the check, and observer reads do not change application acknowledgements or checkpoints.
+
+Both readers remain full-bootstrap deliverables. First registration MVP acceptance depends only on a reader selected by `integration/workflow.json` and its actual contract tests. M1 and M2 are independent after the common prerequisites; M2 does not require M1. Complete the selected reader and its M3 checks before staging, then finish the unused reader after MVP acceptance. An HTTP/PostgreSQL-only workflow has no hard dependency on this plan, provided its declared assertions do not require event history.
 
 ## Progress
 
@@ -82,6 +95,8 @@ Use `MessageDb.Db.Statements` from the selected compatible release where possibl
 
 Add `event-store-adapter-test` and shared contract tests under `shoko-adapters/test/EventStore/`, plus `scripts/test-event-stores` and `just test-event-stores`. The script initializes disposable local Kiroku and Message DB databases using verified migrations from their pinned sources, records versions, starts the fixture writers, runs the suite, and stops only run-owned resources. It must fail with prerequisites if either real store was not exercised.
 
+Expose `just test-event-store kiroku` and `just test-event-store message-db` as explicit single-store selectors over the same shared suite. Each fails if its selected store was not exercised and prints that store's identity and covered checks. EP-7 may depend on an accepted M1 plus all Kiroku M3 checks, or M2 plus all Message DB M3 checks. Keep M3 and this child unfinished until the default two-store suite succeeds; a single-store pass must never be labelled two-store acceptance. Do not add an unused store dependency to the MVP build manifest ahead of its implementation merely to create an empty module.
+
 Test empty complete scans, two different business keys, repeated batches, pagination, events appearing during polling, pre-action baselines, concurrent transaction visibility, and unavailable/undecodable sources. Prove a duplicate ID is counted once and two event IDs are counted twice. Snapshot checkpoint rows/counts before and after observation to demonstrate no application consumer state changed. Keep fixture data synthetic.
 
 ## Concrete Steps
@@ -102,12 +117,24 @@ nix develop --command just check
 
 The new `test-event-stores` recipe must print the actual two store versions and successful contract groups, including read-only/non-interference checks. Record only concise acceptance evidence in this plan.
 
+When implementing only the reader required by the MVP, run the applicable explicit selector first:
+
+```bash
+nix develop --command just test-event-store message-db
+# Or, when Kiroku is selected by the accepted manifest:
+nix develop --command just test-event-store kiroku
+```
+
+These are alternative commands chosen from the manifest, not permission to omit a required reader. Both readers remain necessary to finish this child.
+
 ## Validation and Acceptance
 
 
 Both adapters must drive the real public core runner. One matching event in a closed complete window passes exactlyOnce; the same ID returned twice still passes; two distinct matching IDs fail; a missing event with complete coverage fails eventually; an unavailable database produces Unknown. Unrelated business keys and metadata absent from the declared strategy never satisfy a query. An event written during the action before the first observation is still found. A delayed commit cannot be silently skipped while the adapter claims a complete window. A second independent reader sees the same evidence and application checkpoints remain unchanged.
 
 This acceptance does not prove remote Keiro execution-id propagation. Record that separately only after a real Keiro command/process-manager chain produces and retrieves durable correlation evidence. No PGMQ acknowledgement, Kafka subscription management, or service process-manager handler belongs here.
+
+Revision 2026-10-18: make the two reader milestones independently acceptable with explicit per-store shared checks; preserve both-store completion while removing unused adapters from the first registration MVP gate.
 
 ## Idempotence and Recovery
 

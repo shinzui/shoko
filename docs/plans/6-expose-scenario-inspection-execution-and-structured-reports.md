@@ -17,6 +17,17 @@ provenance:
       at: 2026-10-02T04:14:56Z
       mode: "discuss"
       note: "Select Settei for typed YAML, environment, and CLI configuration with provenance and secret-safe diagnostics."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      mode: "update"
+      note: "Align cleanup settings, JSON checks, and persistence error exits."
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      verdict: "approved"
+      note: "Planning review after MVP update: dependencies, ownership, references, and observable acceptance checked; build and live staging proof remain implementation gates."
 ---
 
 # Expose scenario inspection execution and structured reports
@@ -70,7 +81,7 @@ Create `shoko-cli/shoko-cli.cabal`, with a library exposing `Shoko.Cli` and `Sho
 
 Implement `list`, `explain SCENARIO`, `check SCENARIO`, and `run SCENARIO`. `explain` renders the static description, binding-selected source/correlation/capability requirements, effective budgets, and unsupported requirements without acquiring resources. `check` validates the resolved policy and configured binding compatibility, with no action, fixture, or cleanup execution and no live service-readiness claim. The separate staging integration checker owns live target identity, connectivity, and service readiness.
 
-Declare a typed `Settei.Config ShokoConfig` in `Shoko.Cli.Config`, using `settei`, `settei-yaml`, `settei-env`, and `settei-optparse-applicative`. Keep `schemas/config-v1.schema.json` as a checked documentation/validation artifact matching the declaration, with examples in `config/demo.yaml`; do not assume Settei's own description format is JSON Schema. The declaration names environments, implementation binding names, expected target identity/access references, endpoint/connection environment-variable references, policy sets, total/eventually/poll durations, and redaction configuration. Resolve declared defaults, one explicit `--config` YAML source, explicitly mapped environment variables, and supported named CLI option sources in that low-to-high order. Do not search for ambient config files, interpolate arbitrary environment strings in YAML, or add unrelated formats. Use nested YAML mappings, `readYamlSource`, and strict `RejectUnknownKeys`; invalid winning values fail instead of falling back. Update `docs/dependencies.md` with the selected released package family and registry/tag evidence when adding bounds.
+Declare a typed `Settei.Config ShokoConfig` in `Shoko.Cli.Config`, using `settei`, `settei-yaml`, `settei-env`, and `settei-optparse-applicative`. Keep `schemas/config-v1.schema.json` as a checked documentation/validation artifact matching the declaration, with examples in `config/demo.yaml`; do not assume Settei's own description format is JSON Schema. The declaration names environments, implementation binding names, expected target identity/access references, endpoint/connection environment-variable references, policy sets, execution/eventually/poll durations and the separate cleanup grace budget, and redaction configuration. Resolve declared defaults, one explicit `--config` YAML source, explicitly mapped environment variables, and supported named CLI option sources in that low-to-high order. Do not search for ambient config files, interpolate arbitrary environment strings in YAML, or add unrelated formats. Use nested YAML mappings, `readYamlSource`, and strict `RejectUnknownKeys`; invalid winning values fail instead of falling back. Update `docs/dependencies.md` with the selected released package family and registry/tag evidence when adding bounds.
 
 Keep optparse-applicative for subcommands and adapt supported named configuration options through Settei. `--environment`, `--implementation`, and `--format text|json` may override their corresponding operational settings. Only explicitly bound operational environment variables participate. Capability grants cannot be overridden by either source, and no unrestricted generic `--set` surface is required. Keep `--allow-synthetic` as a separate explicit per-run consent flag which still requires policy permission; neither YAML nor an environment variable can supply that consent. Checked demo defaults are local-only.
 
@@ -113,14 +124,14 @@ The demo run emits a versioned JSON result with Pass. Tests invoke the built bin
 ## Validation and Acceptance
 
 
-Inspect/check with all handler counters installed: no fixture, HTTP, SQL, or cleanup call occurs. Reject a policy mismatch before effects. Parse stdout as exactly one JSON document for all report modes; diagnostics never contaminate it. Test actual exit codes for all five classes, invalid config/unknown keys, unavailable sources, credential redaction, interrupted output, and per-run synthetic opt-in without policy escalation. A second compiled host lists and runs its own scenario using `runShokoCli`; this is the early producer/consumer check for the final application integration. `--help` explains environment/implementation/mode distinctions and `--version` identifies the actual build. A demo pass must not use a real workflow ID or claim staging acceptance or TAN parity. A consumer registry must list/select independent positive and negative scenarios: expected typed rejection produces Pass, an unexpected response produces Fail, and unavailable evidence produces Unknown without a catch-all failure inversion.
+Inspect/check with all handler counters installed: no fixture, HTTP, SQL, or cleanup call occurs. Reject a policy mismatch before effects. For JSON result mode, parse stdout as exactly one JSON document; diagnostics never contaminate it. Text mode remains human-readable and is checked separately. Test actual exit codes for all five classes, invalid config/unknown keys, unavailable sources, credential redaction, interrupted output, and per-run synthetic opt-in without policy escalation. A second compiled host lists and runs its own scenario using `runShokoCli`; this is the early producer/consumer check for the final application integration. `--help` explains environment/implementation/mode distinctions and `--version` identifies the actual build. A demo pass must not use a real workflow ID or claim staging acceptance or TAN parity. A consumer registry must list/select independent positive and negative scenarios: expected typed rejection produces Pass, an unexpected response produces Fail, and unavailable evidence produces Unknown without a catch-all failure inversion.
 
 Exercise the actual Settei producer/consumer path with a YAML fixture, injected environment snapshot, and parsed named CLI overrides: verify the documented precedence, retained safe provenance, and failure on an invalid highest-precedence value. Reject unknown and duplicate YAML keys and keep absent versus empty environment values distinct. A secret sentinel must be absent from stdout, stderr, errors, warnings, and all explanation/report artifacts, including failed resolution. Prove inspection succeeds with unresolved credential references while the corresponding live run fails preflight with exit 2. YAML or environment input cannot supply per-run synthetic consent; unsupported YAML keys/CLI options are rejected and unmapped environment variables have no effect. The file may define capability grants, but environment/CLI sources cannot override them. Check the schema artifact and examples against the typed declaration to catch drift.
 
 ## Idempotence and Recovery
 
 
-CLI tests use temporary output directories and in-memory handlers by default. Never overwrite another run's result; use unique IDs and atomic file replacement only for the current run's temporary file. Re-run failed invocations without implicitly retrying mutations. Preserve primary results when report persistence fails and return a clear nonzero command error. Configuration errors require a corrected input, not a broadened policy.
+CLI tests use temporary output directories and in-memory handlers by default. Never overwrite another run's result; use unique IDs and atomic file replacement only for the current run's temporary file. Re-run failed invocations without implicitly retrying mutations. Preserve primary results when report persistence fails and return exit 4 with a clear persistence error; never return Pass when the requested evidence file could not be written. Configuration errors require a corrected input, not a broadened policy.
 
 ## Interfaces and Dependencies
 
@@ -132,3 +143,5 @@ Settei's four selected packages are dependencies of `shoko-cli`, not of `shoko-c
 Revision 2026-10-01: make Settei the explicit configuration dependency and add precedence, secret handling, and consumer acceptance checks following the configuration discussion. CLI scope and child dependencies are unchanged.
 
 Revision 2026-10-01: support the existing staging target and independently named positive/negative scenarios; CI invokes the same host rather than defining another target environment.
+
+Revision 2026-10-18: align cleanup settings with the bounded runner, clarify JSON-mode acceptance, and make report-persistence failure exit 4.

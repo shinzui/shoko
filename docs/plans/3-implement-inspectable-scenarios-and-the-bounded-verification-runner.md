@@ -17,6 +17,17 @@ provenance:
       at: 2026-10-02T04:18:40Z
       mode: "update"
       note: "Associate the bootstrap plan with the shared Mina intention requested by the user."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      mode: "update"
+      note: "Clarify terminal actions, bounded cleanup, and sanitized input evidence."
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      verdict: "approved"
+      note: "Planning review after MVP update: dependencies, ownership, references, and observable acceptance checked; build and live staging proof remain implementation gates."
 ---
 
 # Implement inspectable scenarios and the bounded verification runner
@@ -80,7 +91,7 @@ Environment configuration is independent of the process invoking the runner. The
 ### M2 — Interpret the description with bounded evidence
 
 
-Implement `Shoko.Runner`, `Shoko.Clock`, `Shoko.Evidence`, and `Shoko.Result` in the core source tree. Provide an injected monotonic clock/sleep effect for tests and a real-clock handler for consumers. Clock injection controls deadlines, not the timestamps of external events. Add an effectful operation interpreter whose resource lifetime encloses a run; always finalize resources after success, rejection after acquisition, timeout, or cancellation. Preserve asynchronous cancellation rather than catching it as an ordinary observation error. Bound each external handler by the remaining budget and do not replay a mutating action automatically after timeout.
+Implement `Shoko.Runner`, `Shoko.Clock`, `Shoko.Evidence`, and `Shoko.Result` in the core source tree. Provide an injected monotonic clock/sleep effect for tests and a real-clock handler for consumers. Clock injection controls deadlines, not the timestamps of external events. Add an effectful operation interpreter whose resource lifetime encloses a run; attempt resource finalization within the cleanup grace budget after success, rejection after acquisition, timeout, or cancellation. Preserve asynchronous cancellation rather than catching it as an ordinary observation error. Bound each external handler by the remaining budget and do not replay a mutating action automatically after timeout.
 
 Define positive validated durations, environment defaults of 30 seconds total, 10 seconds for eventually, and 100 milliseconds between polls. The total deadline begins before fixtures/actions. An expectation group's activation follows its prerequisite actions; siblings share that activation and remaining budget, so one slow expectation cannot postpone the start of another. Nested `within` uses the minimum enclosing deadline. The implementation may interleave polls deterministically or run bounded concurrent workers; test fairness, one shared deadline, cancellation, and resource cleanup whichever strategy is chosen.
 
@@ -90,10 +101,16 @@ Observation results carry typed values plus evidence and coverage, or typed unav
 
 Resolve `ByBusinessKey` or `ByExecutionId` before execution, recording binding support and selected key. A missing required key yields `CorrelationLost` and no uncorrelated query. Retain action failures separately: an unexpected definitive domain rejection can be Fail, while a transport timeout with unknown outcome is Unknown. Report and bound cleanup independently; cleanup failure must not erase primary evidence or be silently labelled success.
 
+Define terminal action behavior explicitly: after an unexpected definitive outcome or uncertain transport outcome, do not run subsequent mutating actions or resolve dependent references with fabricated values. Retain the terminal Fail/Unknown and mark unexecuted dependent expectations as Unknown with a prerequisite reason; Fail still dominates aggregation. A declared expected rejection remains an ordinary typed result and can be judged by its negative expectations. Test that no later mutation runs after a terminal outcome.
+
+Separate the execution budget (resource acquisition, baselines, fixtures, actions, expectations) from a finite cleanup grace budget, defaulting to five seconds. A cancelled or expired execution gets at most that grace period for owned-resource finalization; no cleanup retry extends it. Record cleanup status separately, preserving any primary Fail. Required cleanup failure makes an otherwise passing invocation Unknown; an explicitly contracted retention policy counts as successful disposition without deletion. Tests bound execution plus grace and prove a blocked cleanup cannot hang the command. Artifact persistence errors remain command errors owned by the CLI.
+
 ### M3 — Stabilize consumer usage and results
 
 
-Use `Shoko.Result.Json` to own the versioned JSON representation with explicit codecs and `schemaVersion`, scenario/run/binding identities, correlation strategy, timestamps/windows, individual expectations, evidence/search coverage, and typed reasons. Include scenario revision and canonical description digest, binary build identity, normalized logical input, and optional host-supplied `implementationIdentity` and `targetIdentity` containing actual implementation/deployment and target identity. The generic runner permits an absent implementation identity for toy/unit runs; the real staging consumer requires observed target/deployment identity and records source revisions when available. This keeps later report producers from inventing incompatible metadata fields. Aggregate Fail before Unknown before Pass while retaining child verdicts. Supply structured preflight and runner errors alongside scenario results. Add `schemas/run-result-v1.schema.json` and representative sanitized examples under `shoko-core/test/golden/`. Do not import Kenshou's harness; [its protocol ADR](mori://shinzui/keiro-runtime-kenshou/okf/adrs/concepts/ADR-3) is a vocabulary reference, not an ABI contract.
+Use `Shoko.Result.Json` to own the versioned JSON representation with explicit codecs and `schemaVersion`, scenario/run/binding identities, correlation strategy, timestamps/windows, individual expectations, evidence/search coverage, and typed reasons. Include scenario revision and canonical description digest, binary build identity, a sanitized logical-input summary, and optional host-supplied `implementationIdentity` and `targetIdentity` containing actual implementation/deployment and target identity. The generic runner permits an absent implementation identity for toy/unit runs; the real staging consumer requires observed target/deployment identity and records source revisions when available. This keeps later report producers from inventing incompatible metadata fields. Aggregate Fail before Unknown before Pass while retaining child verdicts. Supply structured preflight and runner errors alongside scenario results. Add `schemas/run-result-v1.schema.json` and representative sanitized examples under `shoko-core/test/golden/`. Do not import Kenshou's harness; [its protocol ADR](mori://shinzui/keiro-runtime-kenshou/okf/adrs/concepts/ADR-3) is a vocabulary reference, not an ABI contract.
+
+The logical-input summary contains only explicitly allowlisted non-secret parameters and an input-recipe revision. Keep generated run/business identities separate from equivalent logical parameters so later runs can use fresh fixtures. Never serialize raw fixture values, OTPs, credentials, or personal payloads, or hash a low-entropy secret as a substitute for redaction. Use stable expectation IDs for EP-7’s requirement mapping. Add a secret-bearing fixture/outcome test proving sentinel values are absent from results, description/input summaries, and error rendering.
 
 Create two consuming test scenarios in `shoko-core/test/Consumer/`: an account-provisioning toy with domain state observations and an append-only delivery ledger with duplicate/negative event checks. They justify shared abstractions without embedding TAN types. The same toy scenario must run against two in-memory binding implementations with different internal storage/vocabulary. Add one typed rejection consumer and tests proving an expected rejection Pass, unexpected success/rejection Fail, and transport uncertainty Unknown; the expected rejection must remain inspectable and retain its actual evidence. Add tests in `ScenarioSpec.hs`, `TemporalSpec.hs`, `PolicySpec.hs`, and `ResultSpec.hs` (under the test directory) for constructor validation, temporal boundary cases, property laws on evidence deduplication/verdict aggregation, and wire-codec round trips. Include a short real-clock smoke test with generous bounds only to verify actual cancellation/resource behavior; semantic tests use fake time.
 
@@ -133,3 +150,5 @@ Hard dependency: all of `docs/plans/1-bootstrap-the-haskell-workspace-with-seiho
 Keep result types store-neutral. Evidence includes source and stable record identity but no mandatory PostgreSQL or Kiroku-specific field. The `exactlyOnce` interface must accept occurrence evidence, not arbitrary repeated Boolean snapshots. Downstream bindings advertise coverage strength and capabilities explicitly. Public typed entry points are `inspectScenario`, `resolveScenario`, and `runScenario`; finalize their polymorphic signatures with the two compiling consumers in M1/M3 and keep all three re-exported from `Shoko`.
 
 Revision 2026-10-01: add explicit typed domain rejection outcomes for negative scenarios and host-supplied target metadata for staging acceptance.
+
+Revision 2026-10-18: define terminal-action suppression, finite cleanup/disposition, and sanitized input evidence for a repeatable registration rewrite gate.

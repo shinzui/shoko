@@ -17,6 +17,17 @@ provenance:
       at: 2026-10-02T04:18:40Z
       mode: "update"
       note: "Associate the bootstrap plan with the shared Mina intention requested by the user."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      mode: "update"
+      note: "Select registration MVP and specify requirement, adapter, host, OTP, and readiness contracts."
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      verdict: "approved"
+      note: "Planning review after MVP update: dependencies, ownership, references, and observable acceptance checked; build and live staging proof remain implementation gates."
 ---
 
 # Establish the first workflow contract and Kubernetes staging target
@@ -55,7 +66,7 @@ The build foundation comes from `docs/plans/1-bootstrap-the-haskell-workspace-wi
 
 A namespace identifies a set of Kubernetes resources; the workflow can also use databases, brokers, and external providers outside it. Inventory those dependencies and their actual targets. Do not assume that selecting a namespace isolates all downstream effects. No cluster access or deployment changes have occurred during planning.
 
-Registration completion from an already-qualified agent is the researched reference. Its durable business key is `registrationId`; real account/user outcomes must be checked. The actual deployed system determines the first available workflow, without requiring a matching second implementation. Use Mori to inspect [registration-service-v2](mori://tan/registration-service-v2), [account-service-v2](mori://tan/account-service-v2), [mls-service-v2](mori://tan/mls-service-v2), and [modernization coverage](mori://tan/tan-platform/docs/platform-modernization-coverage). The manual reference is `mori://tan/registration-service-v2` plus project-relative `docs/plans/2026-07-17-flow-2-staging-validation-plan.md` (artifact-level URI pending). Recheck current deployed contracts rather than treating the historical document as live configuration.
+Registration completion from an already-qualified agent is the user-selected MVP workflow. Its durable business key is `registrationId`; real account/user outcomes must be checked. The deployed system must support that workflow; a matching second implementation is not required. Use Mori to inspect [registration-service-v2](mori://tan/registration-service-v2), [account-service-v2](mori://tan/account-service-v2), [mls-service-v2](mori://tan/mls-service-v2), and [modernization coverage](mori://tan/tan-platform/docs/platform-modernization-coverage). The manual reference is `mori://tan/registration-service-v2` plus project-relative `docs/plans/2026-07-17-flow-2-staging-validation-plan.md` (artifact-level URI pending). Recheck current deployed contracts rather than treating the historical document as live configuration.
 
 ## Plan of Work
 
@@ -63,7 +74,11 @@ Registration completion from an already-qualified agent is the researched refere
 ### M1 — Freeze the workflow and deployed target contract
 
 
-Create `docs/workflows/first-staging-workflow.md` and `integration/workflow.json`. Record the real domain operation, expected consequences, action/read endpoints, evidence strength, business-key extraction, supported test identities, capability requirements, external-effect handling, and cleanup mechanism. The context owns the vocabulary and scenario package. Registration is the reference; another deployed workflow is acceptable with an explicit domain contract and retained reason for selection.
+Create `docs/workflows/first-staging-workflow.md`, `integration/workflow.json`, and `schemas/workflow-v1.schema.json`. Record the real domain operation, expected consequences, action/read endpoints, evidence strength, business-key extraction, supported test identities, capability requirements, external-effect handling, and cleanup mechanism. The user selected registration completion on 2026-10-18; a different workflow requires an explicit scope revision. M1 can start before the build foundation because it establishes the contract rather than compiling the verifier.
+
+Add `requirements`, `excludedRequirements`, and `requiredAdapters` to the manifest. Every requirement has a stable ID, plain-language business invariant, scenario and expectation IDs, evidence source, and required coverage (sampled state or complete durable history). Cover completed registration, actual account/user creation and association, and the chosen negative contract. Declare duplicate prevention precisely: one observed account row is a sampled cardinality fact, not proof of exactly-once delivery. If the selected requirement needs event history, name `kiroku` or `message-db` in `requiredAdapters` and explain why HTTP/PostgreSQL observations cannot discharge it. Freeze this selection before acceptance; unavailable history remains a blocker or Unknown, never an implicit reduction in scope. List qualification and untested registration flows as excluded. This mapping makes a result useful to rewrite reviewers without certifying an entire service.
+
+Record a `host` contract with canonical owning project/package references, project-relative package directory and public module, executable target, build/invocation recipe, and immutable source revision once implemented. The registration context owns a small Haskell verification package beside its domain code; it can use typed HTTP/SQL bindings without linking the service executable or its full runtime dependency graph. No such host is assumed to exist today. EP-7 creates it and records the consumed revision. M1 must identify its intended location and build integration, so context ownership cannot hide an unassigned packaging prerequisite.
 
 Use a manifest with `schemaVersion`, `workflowId`, `scenarioId`, `scenarioRevision`, `vocabularyOwner`, `vocabularyModule`, `logicalInput`, and `target`. The target records environment and implementation binding names, expected cluster/context and namespace identity, deployed workload identities, immutable image digests and source revisions where available, endpoint/evidence-source references, credential environment-variable names, access route, correlation strategy/key, and readiness with concrete reasons. Record observed deployed identities separately from expected labels. Pin the namespace UID when available so recreating a namespace cannot silently reuse a previous approval. The implementation name is independent of environment and is not restricted to a presumed legacy/Keiro pair. Store references rather than credentials or personal payloads.
 
@@ -72,6 +87,8 @@ Choose and document an access route supported by the actual staging setup: reach
 For the registration reference (`registration-completion-staging`), arrange a valid qualified-agent fixture using the service's supported facility, start through `POST /v1/registrations/from-qualified-agent`, read OTP channels from `GET /v1/registrations/{id}`, request OTP, read `verificationSid` from that GET, and verify with code and SID. Acknowledgements do not provide the channel/SID fields. Record the staging delivery mode and controlled recipients: use an existing supported test delivery path where configured; real provider delivery needs a documented test recipient and its permitted effects. Do not assume a local stub exists in staging or change deployment flags implicitly. Qualification/approval is a precondition of this slice, not behavior claimed by it.
 
 Map registration completion, account existence, user existence, and duplicate prevention to actual read sources. A completion stub that skips account/auth writes cannot support an assertion that those consequences happened. Use machine-callable REST or scoped read-only database access rather than presuming browser-session GraphQL works. Prefer business-key correlation unless execution-ID propagation is demonstrated. Keiro's [IR-52](mori://shinzui/keiro/okf/improvement-requests/concepts/IR-52) remains the owner of that stronger contract. An unavailable credential, test identity, external-effect route, or evidence source is an explicit unmet staging prerequisite, not permission to substitute a local mock.
+
+Record deployed completion/OTP mode explicitly. The local source inspected on 2026-10-18 defaults `RS2_COMPLETION_ACL_STUB` to false, unlike the historical staging warning; this is not evidence that the deployed worker uses real clients. Confirm real account/auth consequences in M2. Specify how the bounded host obtains a fresh OTP: an already-approved service test path or an automated controlled-recipient retrieval binding with declared capabilities. Do not require an operator to type a code into the middle of the finite runner or record OTP values in artifacts. If no repeatable retrieval facility exists, record its owner as an unmet prerequisite; do not change deployment flags or build a new provider platform as incidental verifier work.
 
 Also freeze at least one documented negative scenario in `negativeScenarios` alongside the primary `scenarioId`: an expected input/authentication/domain rejection or duplicate-prevention path supported by the deployed API. Each entry states allowed typed response outcomes, the precise expected rejection or invariant, relevant downstream state/history evidence, and an isolated test identity. Candidate cases such as invalid OTP must be confirmed against the actual service contract. Do not presume any 4xx response is sufficient, use real customer identities, or equate network failure with expected rejection. A successful negative scenario has verdict Pass; the final plan separately demonstrates deliberate Fail/Unknown controls.
 
@@ -87,7 +104,7 @@ These scripts do not deploy, scale, restart, migrate, or delete application work
 ## Concrete Steps
 
 
-At the repository root after the foundation is Complete, resolve the domain/deployment sources through Mori and obtain the actual staging context, namespace, access route, and credential references from the environment owner. Do not invent these values or automatically select them from a developer's current shell.
+At the repository root, begin M1 by resolving domain/deployment sources through Mori and obtaining the actual staging context, namespace, access route, and credential references from the environment owner. Do not invent these values or automatically select them from a developer's current shell. M2's commands require the foundation Complete.
 
 The following are interfaces this plan creates:
 
@@ -103,6 +120,8 @@ The wrappers load `integration/workflow.json` explicitly and reject missing or m
 
 M1 passes with a concrete staging target and executable positive/negative workflow contracts; M2 passes after two independently checked real workflow runs with fresh identities and run-owned cleanup or documented retention. For registration, verify the qualified-agent precondition, OTP sequence, and actual account/user writes. Wrong cluster/namespace, unrelated endpoints, unknown deployment identity, missing credentials, or missing required evidence fail readiness before scenario mutations. A deployment change during smoke invalidates the acceptance evidence. Verify that normal startup and teardown leave existing workloads, shared data, and unrelated test records intact.
 
+Validate the manifest against its schema and reject a requirement without an expectation/source/coverage mapping, an undeclared required adapter, or an unresolved host location. Independently smoke-check the selected negative case as well as the positive case before completing M2. Retain the exact domain rejection/invariant observed; a generic HTTP error is insufficient. Repeated positive runs must acquire OTPs through the documented repeatable route. Readiness records missing prerequisites with owner, reason, and the check that will clear them.
+
 The availability of a second implementation is not required. Local library fixtures and mocked services cannot satisfy this staging milestone.
 
 ## Idempotence and Recovery
@@ -113,6 +132,8 @@ Allocate fresh run IDs and supported test identities. Preserve sanitized failure
 ## Interfaces and Dependencies
 
 
-Hard dependency: all of `docs/plans/1-bootstrap-the-haskell-workspace-with-seihou-and-jitsurei-standards.md`, for reproducible command tooling. No dependency on core/CLI: independent checks establish access and domain behavior first. This plan owns `integration/workflow.json`, `docs/workflows/first-staging-workflow.md`, the access/readiness script, and the staging target identity contract. The context owns business vocabulary. `docs/plans/7-verify-one-real-workflow-across-legacy-and-keiro-implementations.md` consumes this accepted staging contract; its historical path remains stable. Changes to the selected workflow or target must update both plans and ADR 0004.
+M1 has no hard prerequisite. M2 requires all of `docs/plans/1-bootstrap-the-haskell-workspace-with-seihou-and-jitsurei-standards.md` for reproducible command tooling. No dependency on core/CLI: independent checks establish access and domain behavior first. This plan owns `integration/workflow.json`, `schemas/workflow-v1.schema.json`, `docs/workflows/first-staging-workflow.md`, the access/readiness script, and the staging target identity contract. The context owns business vocabulary. `docs/plans/7-verify-one-real-workflow-across-legacy-and-keiro-implementations.md` consumes this accepted staging contract; its historical path remains stable. Changes to the selected workflow or target must update both plans and ADR 0004.
 
 Revision 2026-10-01: replace composed local pairs and lifecycle scripts with access/readiness for the existing Kubernetes staging system, following the user's confirmed first milestone.
+
+Revision 2026-10-18: select registration completion, allow early M1 discovery, require a schema-backed rewrite coverage/adapter/host contract, and make repeatable OTP acquisition and real completion writes explicit readiness gates.

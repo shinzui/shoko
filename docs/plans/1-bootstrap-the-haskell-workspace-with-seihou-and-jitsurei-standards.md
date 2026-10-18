@@ -17,6 +17,17 @@ provenance:
       at: 2026-10-02T04:18:40Z
       mode: "update"
       note: "Associate the bootstrap plan with the shared Mina intention requested by the user."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      mode: "update"
+      note: "Validate scaffold preview and clarify build versus fixture test gates."
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-18T17:14:48Z
+      verdict: "approved"
+      note: "Planning review after MVP update: dependencies, ownership, references, and observable acceptance checked; build and live staging proof remain implementation gates."
 ---
 
 # Bootstrap the Haskell workspace with Seihou and Jitsurei standards
@@ -38,6 +49,8 @@ A contributor can enter a reproducible Haskell shell, build the first Shōko lib
 ## Surprises & Discoveries
 
 
+On 2026-10-18, the documented Seihou dry run succeeded with 11 files to write and zero conflicts. It warned about unrelated saved configuration keys; preserve those keys. No flake was generated and no solver/build was executed. The inspected local template README now reports 0.30.0; that observation is not a released-version selection.
+
 ## Decision Log
 
 
@@ -49,7 +62,7 @@ On 2026-10-01, choose one initial `shoko-core` package, expanding to adapters an
 ## Context and Orientation
 
 
-At planning time the repository has `docs/intial-spec.md`, `docs/research/initial-specification-requirement-validation.md`, `mori.dhall`, `.seihou/config.dhall`, `.seihou/manifest.json`, and planning skills. It has no Cabal package, Nix flake, application source, tests, README, or CI. Existing Seihou applications are Git initialization and the planning skills; preserve them. Commands below run at the Shōko repository root. Paths described as new are deliverables, not existing code.
+At the 2026-10-18 validation the repository has `README.md`, `docs/intial-spec.md`, `docs/research/initial-specification-requirement-validation.md`, `mori.dhall`, `.seihou/config.dhall`, `.seihou/manifest.json`, and planning skills. It has no Cabal package, Nix flake, application source, tests, or CI. Existing Seihou applications are Git initialization and the planning skills; preserve them. Commands below run at the Shōko repository root. Paths described as new are deliverables, not existing code.
 
 [ADR 0001](../adr/0001-use-jitsurei-standards-and-the-seihou-haskell-flake.md) requires the [Seihou template](mori://shinzui/seihou-modules/templates/nix-haskell-flake) and the [Jitsurei core standard](mori://shinzui/haskell-jitsurei/docs/core-standards), [records](mori://shinzui/haskell-jitsurei/docs/core-record-patterns), and [prelude](mori://shinzui/haskell-jitsurei/docs/core-custom-prelude). The concrete rules are GHC >= 9.12, GHC2024, a shared common stanza with `DeriveAnyClass`, `DuplicateRecordFields`, `OverloadedLabels`, and `OverloadedStrings`, strict unprefixed record fields, explicit deriving, postpositive qualified imports, and lens-based access/update. `PackageImports` is local to `Shoko.Prelude`; generic-lens's orphan label instance stays out of that prelude and public type modules.
 
@@ -72,7 +85,9 @@ Create `cabal.project`, `shoko-core/shoko-core.cabal`, `shoko-core/src/Shoko/Pre
 
 Use Tasty/Hedgehog for later deterministic and property checks, obtaining APIs and source locations with Mori before adding dependencies. Verify current Hackage versions and upstream tags before selecting compatible bounds; establish an exact reachable Cabal `index-state` and a reproducible solver selection. Add `docs/dependencies.md` with registry URLs, canonical Mori owners, inspected upstream revisions, and the rationale for any deviation from released versions. Recheck dependencies again when later plans introduce them. Do not bake the research's surveyed versions into the build or silently relax bounds when legacy Message DB and Kiroku constrain different Hasql versions.
 
-Define the multi-package Nix build in `flake.module.nix`, initially containing only core, plus a check that runs its tests. Add a `justfile` with `build`, `test`, `check`, and `fmt` recipes. Here `check` runs the build, tests, and `nix flake check`; `fmt` runs `nix fmt`. Add `.github/workflows/ci.yml` for a supported Linux runner using these same checks, and document the local macOS path. Do not depend on a developer's checkout paths. Register the package and relevant canonical dependency references in `mori.dhall`, preserving the research bundle. Add `README.md` with the exact contributor commands and the bootstrap scope.
+Define the multi-package Nix build in `flake.module.nix`, initially containing only core, plus a check that runs its tests. Add a `justfile` with `build`, `test`, `check`, and `fmt` recipes. Here `check` runs the build, tests, and `nix flake check`; `fmt` runs `nix fmt`. Add `.github/workflows/ci.yml` for a supported Linux runner using these same checks, and document the local macOS path. Do not depend on a developer's checkout paths. Register the package and relevant canonical dependency references in `mori.dhall`, preserving the research bundle. Update the existing `README.md` with the exact contributor commands and the bootstrap scope.
+
+As later packages add integration suites, `just test`/`just check` must explicitly select self-contained unit/consumer suites; do not accidentally execute database-dependent tests through an unqualified `cabal test all` without their fixtures. EP-4 owns `just test-adapters`, EP-5 owns `just test-event-stores`, and EP-6 owns `just test-cli`; each recipe must set up its prerequisites and report real execution. CI runs the applicable local fixture recipes as they land. Staging acceptance is a separate explicit command and is never silently skipped or represented by a local check. Each package addition must prove a coherent Cabal solver selection and matching Nix package versions before acceptance; a successful core-only bootstrap does not certify later adapters or the host.
 
 ## Concrete Steps
 
@@ -121,3 +136,5 @@ Use `seihou run ... --dry-run` and `seihou diff` before reapplication. Preserve 
 
 
 There are no child-plan prerequisites. This plan owns `cabal.project`, `flake.module.nix`, `justfile`, CI, `mori.dhall`, `docs/development.md`, `docs/dependencies.md`, and the shared style/common-stanza convention. Later plans add their own package modules and test targets through these extension points. The intended direction is `shoko-core` <- `shoko-adapters` <- `shoko-cli`, with the CLI also importing core. Production scenario hosts may import the libraries without taking the bundled CLI. Do not add database or HTTP dependencies to core.
+
+Revision 2026-10-18: validate the scaffold preview, correct existing README context, and separate unit checks from fixture-backed suites as packages are introduced.
