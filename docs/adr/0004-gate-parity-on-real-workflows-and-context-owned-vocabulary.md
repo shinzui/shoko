@@ -48,3 +48,10 @@ target identity remains an expectation; a live run requires the callback's obser
 identity to match it before scenario resources are acquired. Integration owns full
 Kubernetes/workload identity, endpoint authorization, and before/after acceptance.
 The reusable host and demo process checks establish no staging readiness claim.
+
+Implementation clarification, 2026-10-18: workflow schema validation checks
+declarations and their relationships only. It cannot establish endpoint ownership,
+deployed identity, available test facilities, or real workflow success. Keep the
+synthetic format example separate from the default staging manifest and reject
+it for staging commands. Live discovery and independent smoke evidence remain
+required even after all declared prerequisites are confirmed.

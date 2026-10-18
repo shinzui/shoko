@@ -14,7 +14,19 @@ test-adapters:
 test-cli:
     python3 scripts/test-cli
 
-check: build test test-adapters test-cli
+test-workflow-contract:
+    python3 scripts/test-workflow-contract
+
+workflow-validate:
+    python3 scripts/workflow-env validate --manifest integration/workflow.json
+
+workflow-check:
+    python3 scripts/workflow-env check --manifest integration/workflow.json
+
+workflow-smoke:
+    python3 scripts/workflow-env smoke --manifest integration/workflow.json
+
+check: build test test-adapters test-cli test-workflow-contract
     python3 scripts/check-result-schema.py
     nix flake check
 

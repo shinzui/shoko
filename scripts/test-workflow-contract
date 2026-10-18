@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Offline contract checks; no fixture represents live staging acceptance."""
+
+import copy
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+from workflow_contract import ContractError, load_json, readiness_blockers, validate_contract
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class WorkflowContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.schema = load_json(ROOT / "schemas/workflow-v1.schema.json")
+        cls.example = load_json(ROOT / "integration/examples/workflow.example.json")
+
+    def test_example_and_pending_prerequisites(self):
+        value = validate_contract(self.example, self.schema)
+        self.assertEqual(len(readiness_blockers(value)), 9)
+        self.assertIsNone(value["host"]["sourceRevision"])
+
+    def test_reject_invalid_contracts(self):
+        def changed(path, replacement):
+            value = copy.deepcopy(self.example)
+            node = value
+            for key in path[:-1]:
+                node = node[key]
+            node[path[-1]] = replacement
+            return value
+
+        cases = [
+            (["schemaVersion"], 999),
+            (["undeclared"], True),
+            (["target", "environment"], "production"),
+            (["target", "namespaceUid"], ""),
+            (["target", "workloads", 0, "imageDigests"], ["image:mutable"]),
+            (["target", "endpoints", 0, "credentialEnv"], ["actual-secret-value"]),
+            (["target", "endpoints", 0, "address"], "https://user:SECRET-sentinel@example.invalid"),
+            (["target", "endpoints", 0, "address"], "https://example.invalid?token=SECRET-sentinel"),
+            (["target", "endpoints", 0, "address"], "https://[invalid"),
+            (["target", "endpoints", 0, "address"], "https://example.invalid:invalid"),
+            (["host", "package"], "mori://tan/other/packages/host"),
+            (["host", "packageDirectory"], "../other"),
+            (["host", "project"], "mori://tan/other"),
+            (["host", "sourceRevision"], "main"),
+            (["requiredAdapters"], ["http"]),
+            (["actions", 0, "endpointId"], "unknown"),
+            (["positiveActionIds"], ["unknown"]),
+            (["negativeScenarios", 0, "id"], "registration-completed"),
+            (["negativeScenarios", 0, "actionIds"], ["unknown"]),
+            (["negativeScenarios", 0, "allowedOutcomes"], ["any-error"]),
+            (["requirements", 0, "scenarioId"], "unknown"),
+            (["requirements", 0, "evidenceSourceId"], "unknown"),
+            (["requirements", 0, "coverage"], "durable-history"),
+            (["requirements", 1, "kind"], "registration-completed"),
+            (["requirements", 1, "expectationId"], "registration-completed"),
+            (["requirements", 5, "kind"], "account-created"),
+            (["requirements", 6, "kind"], "negative-contract"),
+            (["requirements", 1, "id"], "req-registration-completed"),
+            (["evidenceSources", 0, "endpointId"], "unknown"),
+            (["evidenceSources", 0, "adapter"], "postgresql"),
+            (["evidenceSources", 0, "adapter"], "message-db"),
+            (["evidenceSources", 0, "coverage"], "durable-history"),
+            (["excludedRequirements", 0, "id"], "req-registration-completed"),
+            (["excludedRequirements", 0, "scope"], "unspecified"),
+            (["readiness", "prerequisites"], []),
+        ]
+        for path, replacement in cases:
+            with self.subTest(path=path, replacement=replacement):
+                with self.assertRaises(ContractError):
+                    validate_contract(changed(path, replacement), self.schema)
+
+    def test_selected_event_reader_can_discharge_history(self):
+        value = copy.deepcopy(self.example)
+        value["requiredAdapters"].append("message-db")
+        value["evidenceSources"][0].update(adapter="message-db", coverage="durable-history", endpointId="accounts-db")
+        value["requirements"][0]["coverage"] = "durable-history"
+        validate_contract(value, self.schema)
+
+    def invoke(self, value, command="validate"):
+        with tempfile.TemporaryDirectory(prefix="shoko-contract-") as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(value))
+            return subprocess.run([sys.executable, str(ROOT / "scripts/workflow-env"), command,
+                                   "--manifest", str(path)], capture_output=True, text=True)
+
+    def test_synthetic_manifest_cannot_be_used_as_staging(self):
+        result = self.invoke(self.example)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("synthetic example", result.stderr)
+
+    def test_pending_contract_is_not_accepted(self):
+        value = copy.deepcopy(self.example)
+        value["purpose"] = "staging-contract"
+        result = self.invoke(value)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("otp-path", result.stderr)
+
+    def test_local_validation_does_not_claim_live_readiness(self):
+        value = copy.deepcopy(self.example)
+        value["purpose"] = "staging-contract"
+        for prerequisite in value["readiness"]["prerequisites"]:
+            prerequisite["status"] = "confirmed"
+        result = self.invoke(value)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("live readiness has not been checked", result.stdout)
+        for command in ("check", "smoke"):
+            result = self.invoke(value, command)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("no calls made", result.stderr)
+
+    def test_errors_do_not_echo_values(self):
+        value = copy.deepcopy(self.example)
+        value["accidentalSecret"] = "SECRET-sentinel"
+        result = self.invoke(value)
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("SECRET-sentinel", result.stderr + result.stdout)
+
+    def test_duplicate_json_keys_rejected_without_echo(self):
+        with tempfile.TemporaryDirectory(prefix="shoko-contract-") as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text('{"SECRET-sentinel":1,"SECRET-sentinel":2}')
+            with self.assertRaisesRegex(ContractError, "invalid JSON"):
+                load_json(path)
+
+
+if __name__ == "__main__":
+    unittest.main()

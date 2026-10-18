@@ -15,6 +15,10 @@ nix run . -- run demo-account-created --config config/demo.yaml --format json
 
 Use `nix develop --command just fmt` to format Haskell, Cabal, and Nix sources. See [development](docs/development.md) and [dependency evidence](docs/dependencies.md). Foundation checks establish library/build usability; real staging workflow acceptance remains outstanding.
 
+The [first staging workflow guide](docs/workflows/first-staging-workflow.md)
+describes the contract schema, offline validation, and target/access inputs still
+needed before live registration checks can run.
+
 ## Why the name?
 
 **証拠（しょうこ, Shōko）** is Japanese for **evidence** or **proof**. The name expresses the project's central question:

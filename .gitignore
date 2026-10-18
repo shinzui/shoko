@@ -19,3 +19,4 @@ result-*
 !**/test/**/Result/
 !**/test/**/Result/**
 .pre-commit-config.yaml
+__pycache__/

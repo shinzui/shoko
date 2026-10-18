@@ -26,6 +26,11 @@ provenance:
       at: 2026-10-18T17:41:49Z
       mode: "implement"
       note: "Begin foundation implementation; defer staging prerequisites until the owner prepares access."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-18T20:35:16Z
+      mode: "implement"
+      note: "Advance EP-2 with offline contract tooling while preserving the live staging and selected-reader gates."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -73,7 +78,7 @@ Research F2/F3/F5/F7/F10/F12 inform EP-3/EP-6; F4/F8/F9 inform evidence/results;
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Haskell/Seihou foundation | [Plan 1](../plans/1-bootstrap-the-haskell-workspace-with-seihou-and-jitsurei-standards.md) | None | None | Complete |
-| 2 | Registration workflow and Kubernetes staging target | [Plan 2](../plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md) | M1: None; M2: EP-1 | None | Not Started |
+| 2 | Registration workflow and Kubernetes staging target | [Plan 2](../plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md) | M1: None; M2: EP-1 | None | In Progress |
 | 3 | Inspectable DSL and bounded runner | [Plan 3](../plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md) | EP-1 | EP-2 M1 | Complete |
 | 4 | PostgreSQL and HTTP bindings | [Plan 4](../plans/4-implement-postgresql-and-http-evidence-bindings.md) | EP-3 | EP-2 M1 | Complete |
 | 5 | Kiroku and Message DB bindings | [Plan 5](../plans/5-implement-kiroku-and-message-db-evidence-bindings.md) | EP-3; EP-4 M1 | EP-2 M1 | Not Started |
@@ -113,7 +118,23 @@ The early integration sequence is two core consumers including positive/negative
 ## Progress
 
 
-EP-1 is Complete on 2026-10-18: Seihou 0.31.0, GHC 9.12.4, the public core package/consumer, Cabal/Nix checks, formatting, and CI configuration are accepted. `just check` passed in the primary tree and a clean detached checkout of `8cb274a`; the managed lock stayed unchanged. The user is preparing the staging context, namespace, test identity, OTP route, and credential references and requested deferring those details until the foundation is built. EP-2 remains Not Started; no concrete staging contract or accepted readiness evidence exists. EP-3 is also Complete: 37 core tests, seven independently schema-validated result examples, and all four native Nix checks pass. EP-4 is Complete with 15 real SQL/HTTP adapter tests and its isolated native Nix fixture checks. EP-6 is Complete: the independent host, strict Settei configuration, all five exits, secrets/consent checks, and atomic reports pass 43 process invocations and native Nix checks. The full final `just check` passes. The next required gate is EP-2's actual staging contract/access, owned by the user/deployment team; its approved assertions select any required EP-5 reader before EP-7. Unused reader work remains scheduled after MVP acceptance. No cluster calls, application deployment changes, or staging acceptance runs have occurred. Linux CI is configured but has not been executed in this session.
+EP-1, EP-3, EP-4, and EP-6 are Complete with their recorded native build,
+core, real SQL/HTTP, and CLI evidence. EP-2 is In Progress on 2026-10-18:
+the workflow schema, offline semantic validator, synthetic format fixture,
+operator contract guide, and local/Nix validation checks are implemented.
+The full `nix develop --command just check` passes, including eight new offline
+contract test groups and the native `workflow-contract` check.
+Its concrete `integration/workflow.json` is deliberately absent pending approved
+cluster/context, namespace/identity, access routes, scoped evidence credentials,
+controlled qualified-agent/recipient setup, repeatable OTP retrieval, deployed
+completion mode, and confirmed negative behavior. Both EP-2 milestones remain
+unaccepted. The user/environment and domain owners supply those inputs; no
+cluster calls, deployment changes, or staging acceptance runs have occurred.
+The live check/smoke command interfaces currently return unavailable without
+making calls. EP-5 selection still waits for the actual assertions/coverage
+contract; unused reader work remains scheduled after MVP acceptance. EP-7 is
+blocked on EP-2 and its selected reader prerequisites. Linux CI remains configured
+but has not been executed in this session.
 
 Completion requires all registry rows Complete, a passing real positive workflow, a passing documented negative scenario, Fail/Unknown controls, and repeatable scoped cleanup/retention in staging. A working library/demo alone cannot complete the initiative. A second implementation is not required.
 

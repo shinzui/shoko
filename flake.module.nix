@@ -85,5 +85,13 @@
         python ${./scripts/check-result-schema.py} ${./schemas/run-result-v1.schema.json} ${./shoko-core/test/golden}
         touch "$out"
       '';
+      checks.workflow-contract = pkgs.runCommand "shoko-workflow-contract" { nativeBuildInputs = [ schemaPython ]; } ''
+        cp -R ${./scripts} scripts
+        mkdir -p schemas integration/examples
+        cp ${./schemas/workflow-v1.schema.json} schemas/workflow-v1.schema.json
+        cp ${./integration/examples/workflow.example.json} integration/examples/workflow.example.json
+        python scripts/test-workflow-contract
+        touch "$out"
+      '';
     };
 }

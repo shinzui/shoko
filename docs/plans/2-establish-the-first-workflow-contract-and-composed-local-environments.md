@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-18T17:14:48Z
       mode: "update"
       note: "Select registration MVP and specify requirement, adapter, host, OTP, and readiness contracts."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-18T20:35:16Z
+      mode: "implement"
+      note: "Implement offline workflow schema and validation; concrete staging contract and live access remain pending."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -46,10 +51,30 @@ A contributor can identify the deployed staging system, access its real action a
 - [ ] M1: A checked workflow contract identifies the deployed staging target, domain owner, real actions, evidence sources, correlation, controlled inputs, and permitted external effects.
 - [ ] M2: Repeatable access and independent workflow smoke checks succeed against the existing Kubernetes test namespace, retaining actual target/deployment identity and run-owned cleanup evidence.
 
+Implementation handoff, 2026-10-18: `schemas/workflow-v1.schema.json`,
+`scripts/workflow_contract.py`, `scripts/workflow-env validate`, the explicitly
+synthetic `integration/examples/workflow.example.json`, and
+`docs/workflows/first-staging-workflow.md` now define and validate the offline
+contract. No default `integration/workflow.json` exists because approved concrete
+target/access/test inputs remain unavailable. M1 remains unfinished. The
+`workflow-check`/`workflow-smoke` wrappers reserve the planned interfaces and exit
+2 without live calls; actual discovery and smoke implementations remain M2 work.
+Resume with the environment/domain owner inputs listed in the workflow guide;
+then populate the real manifest, freeze its assertions/reader selection, implement
+the approved access route, and retain the required live acceptance.
+
 ## Surprises & Discoveries
 
 
 The user confirmed that staging is a complete running system in a Kubernetes test namespace, and that verifying this system comes before legacy/Keiro comparison. The cluster/context, namespace name, current deployment identities, access route, and test credentials have not yet been inspected. Those concrete values are implementation inputs; the research's missing local pair is no longer a bootstrap prerequisite.
+
+The current API package in `mori://tan/registration-service-v2` at revision
+`6cd07aa8b9f032fc850fed4b2ba1022537da8c91` still exposes the described
+from-qualified-agent, OTP request/verify, and registration-read routes. Its
+project-relative `registration-service-v2-api/src/RegistrationServiceV2/Api/Routes.hs`
+and `registration-service-v2-api/src/RegistrationServiceV2/Api/Types/UserView.hs`
+(artifact-level URIs pending) support the documented sequence, but cannot establish
+the live deployment, real completion mode, negative contract, or OTP facility.
 
 ## Decision Log
 
@@ -58,6 +83,16 @@ On 2026-10-01, the initial plan required composing local legacy/Keiro environmen
 
 ## Outcomes & Retrospective
 
+
+Partial implementation, 2026-10-18: the contract's structure and referential
+checks are runnable without staging access. Synthetic examples cannot be accepted
+as staging contracts, and schema/parse failures do not echo supplied values.
+`nix develop --command just check` passed: eight offline contract test groups,
+the existing 37 core tests, 15 real SQL/HTTP tests, 43 CLI process invocations,
+seven result-schema examples, and all native Nix checks including
+`workflow-contract`. Changed plan/guide links and code fences also validated.
+Neither milestone is accepted: real owner inputs, deployed behavior, repeatable
+access/OTP, and independent positive/negative runs remain prerequisites.
 
 ## Context and Orientation
 
@@ -112,6 +147,19 @@ The following are interfaces this plan creates:
 nix develop --command just workflow-check
 nix develop --command just workflow-smoke
 ```
+
+The currently available offline checks are:
+
+```bash
+nix develop --command just test-workflow-contract
+nix develop --command just workflow-validate
+```
+
+`workflow-validate` requires the real manifest with all prerequisite declarations
+confirmed; its success establishes structural validity only. The contract tests
+exercise synthetic fixtures directly and never call a cluster. Until the approved
+target/access contract is supplied, the live wrappers fail closed rather than
+claiming a health check or mocked run satisfies M2.
 
 The wrappers load `integration/workflow.json` explicitly and reject missing or mismatched target identity before mutating actions. `workflow-check` reports the selected staging namespace, observed deployment identities, access/readiness status, and exact missing prerequisites with a nonzero exit when unusable. `workflow-smoke` records fresh business keys and actual domain consequences. Retain sanitized artifacts in an ignored run directory; describe its location in `docs/workflows/first-staging-workflow.md`.
 

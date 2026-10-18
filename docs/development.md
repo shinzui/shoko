@@ -20,6 +20,9 @@ validates the result schema against checked-in examples, and runs
 `nix flake check`, including formatting, schema validation, and the Nix library/test build.
 The CLI process suite also checks configuration schema/declaration keys, layered
 provenance, all exit classes, safe credentials, and atomic persistence.
+The offline workflow contract suite checks source/coverage mappings, canonical
+host ownership, readiness prerequisites, and rejection of synthetic manifests
+as staging contracts. It runs in both `just check` and `nix flake check`.
 First-party code treats warnings as errors through `cabal.project` and the Nix
 package definition. Dependencies retain their own warning policy. CI invokes the
 same commands on Ubuntu; local acceptance is also checked on Apple Silicon macOS.

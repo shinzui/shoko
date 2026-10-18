@@ -1,0 +1,682 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shoko.invalid/schemas/workflow-v1.schema.json",
+  "title": "Shoko registration staging workflow contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "purpose",
+    "workflowId",
+    "scenarioId",
+    "scenarioRevision",
+    "domainOwner",
+    "vocabularyOwner",
+    "vocabularyModule",
+    "logicalInput",
+    "host",
+    "target",
+    "correlation",
+    "requiredAdapters",
+    "requiredCapabilities",
+    "actions",
+    "positiveActionIds",
+    "negativeScenarios",
+    "evidenceSources",
+    "requirements",
+    "excludedRequirements",
+    "testInputs",
+    "readiness"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "purpose": {
+      "enum": [
+        "staging-contract",
+        "synthetic-example"
+      ]
+    },
+    "workflowId": {
+      "const": "registration-completion-staging"
+    },
+    "scenarioId": {
+      "$ref": "#/$defs/id"
+    },
+    "scenarioRevision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "domainOwner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vocabularyOwner": {
+      "type": "string",
+      "pattern": "^mori://[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$"
+    },
+    "vocabularyModule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "logicalInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recipeId",
+        "revision",
+        "sanitizedSummary"
+      ],
+      "properties": {
+        "recipeId": {
+          "$ref": "#/$defs/id"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sanitizedSummary": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "package",
+        "packageDirectory",
+        "publicModule",
+        "executable",
+        "buildRecipe",
+        "invocationRecipe",
+        "sourceRevision"
+      ],
+      "properties": {
+        "project": {
+          "type": "string",
+          "pattern": "^mori://[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$"
+        },
+        "package": {
+          "type": "string",
+          "pattern": "^mori://[^/]+/[^/]+/packages/[^/]+$"
+        },
+        "packageDirectory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "publicModule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "executable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "buildRecipe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "invocationRecipe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40,64}$"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "implementation",
+        "context",
+        "cluster",
+        "apiServer",
+        "namespace",
+        "namespaceUid",
+        "workloads",
+        "endpoints"
+      ],
+      "properties": {
+        "environment": {
+          "const": "staging"
+        },
+        "implementation": {
+          "$ref": "#/$defs/id"
+        },
+        "context": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cluster": {
+          "type": "string",
+          "minLength": 1
+        },
+        "apiServer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespaceUid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workloads": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/workload"
+          }
+        },
+        "endpoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/endpoint"
+          }
+        }
+      }
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "key",
+        "extraction"
+      ],
+      "properties": {
+        "strategy": {
+          "const": "business-key"
+        },
+        "key": {
+          "const": "registrationId"
+        },
+        "extraction": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "requiredAdapters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "http",
+          "postgresql",
+          "kiroku",
+          "message-db"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "requiredCapabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "read-state",
+          "read-events",
+          "write-state",
+          "send-http",
+          "external-side-effect",
+          "synthetic-resource"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "positiveActionIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "uniqueItems": true
+    },
+    "negativeScenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/negative"
+      }
+    },
+    "evidenceSources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/requirement"
+      }
+    },
+    "excludedRequirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "scope",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "scope": {
+            "$ref": "#/$defs/id"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "testInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qualifiedAgentRecipe",
+        "otpRetrievalRecipe",
+        "controlledRecipientRef",
+        "externalEffectPolicy",
+        "completionMode",
+        "cleanup"
+      ],
+      "properties": {
+        "qualifiedAgentRecipe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "otpRetrievalRecipe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "controlledRecipientRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "externalEffectPolicy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "completionMode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "owner",
+            "mechanism",
+            "retentionHours"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "supported-delete",
+                "bounded-retention"
+              ]
+            },
+            "owner": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mechanism": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retentionHours": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prerequisites"
+      ],
+      "properties": {
+        "prerequisites": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/prerequisite"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "endpointId",
+        "method",
+        "path",
+        "description",
+        "allowedOutcomes"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "endpointId": {
+          "$ref": "#/$defs/id"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/[^?#]*$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowedOutcomes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "address",
+        "targetAssociation",
+        "accessRoute",
+        "credentialEnv"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetAssociation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accessRoute": {
+          "type": "string",
+          "minLength": 1
+        },
+        "credentialEnv": {
+          "type": "array",
+          "minItems": 0,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "endpointId",
+        "adapter",
+        "coverage",
+        "selector"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "endpointId": {
+          "$ref": "#/$defs/id"
+        },
+        "adapter": {
+          "enum": [
+            "http",
+            "postgresql",
+            "kiroku",
+            "message-db"
+          ]
+        },
+        "coverage": {
+          "enum": [
+            "sampled-state",
+            "durable-history"
+          ]
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "uid",
+        "imageDigests",
+        "sourceRevision"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "Deployment",
+            "StatefulSet",
+            "DaemonSet"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "imageDigests": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^.+@sha256:[0-9a-f]{64}$"
+          },
+          "uniqueItems": true
+        },
+        "sourceRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40,64}$"
+        }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "invariant",
+        "scenarioId",
+        "expectationId",
+        "evidenceSourceId",
+        "coverage"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "registration-completed",
+            "account-created",
+            "user-created",
+            "account-user-associated",
+            "duplicate-prevention",
+            "negative-contract"
+          ]
+        },
+        "invariant": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scenarioId": {
+          "$ref": "#/$defs/id"
+        },
+        "expectationId": {
+          "$ref": "#/$defs/id"
+        },
+        "evidenceSourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "coverage": {
+          "enum": [
+            "sampled-state",
+            "durable-history"
+          ]
+        }
+      }
+    },
+    "prerequisite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "reason",
+        "clearedBy"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "confirmed"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clearedBy": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "negative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "allowedOutcomes",
+        "actionIds",
+        "isolatedFixtureRecipe"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowedOutcomes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        },
+        "actionIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        },
+        "isolatedFixtureRecipe": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

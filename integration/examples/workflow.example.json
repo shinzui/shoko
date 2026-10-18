@@ -1,0 +1,292 @@
+{
+  "schemaVersion": 1,
+  "purpose": "synthetic-example",
+  "workflowId": "registration-completion-staging",
+  "scenarioId": "registration-completed",
+  "scenarioRevision": "fixture-v1",
+  "domainOwner": "synthetic-domain-owner",
+  "vocabularyOwner": "mori://tan/registration-service-v2",
+  "vocabularyModule": "Registration.Verification",
+  "logicalInput": {
+    "recipeId": "fresh-qualified-agent",
+    "revision": "fixture-v1",
+    "sanitizedSummary": "A fresh synthetic qualified agent; no personal values are stored."
+  },
+  "host": {
+    "project": "mori://tan/registration-service-v2",
+    "package": "mori://tan/registration-service-v2/packages/registration-verification",
+    "packageDirectory": "registration-verification",
+    "publicModule": "Registration.Verification",
+    "executable": "registration-verification",
+    "buildRecipe": "cabal build registration-verification",
+    "invocationRecipe": "cabal run registration-verification -- list",
+    "sourceRevision": null
+  },
+  "target": {
+    "environment": "staging",
+    "implementation": "synthetic-rewrite",
+    "context": "synthetic-context",
+    "cluster": "synthetic-cluster",
+    "apiServer": "https://cluster.example.invalid",
+    "namespace": "synthetic-test",
+    "namespaceUid": "synthetic-namespace-uid",
+    "workloads": [
+      {
+        "id": "registration-api",
+        "kind": "Deployment",
+        "name": "synthetic-registration",
+        "uid": "synthetic-workload-uid",
+        "imageDigests": [
+          "example.invalid/registration@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "sourceRevision": null
+      }
+    ],
+    "endpoints": [
+      {
+        "id": "registration-api",
+        "address": "https://registration.example.invalid",
+        "targetAssociation": "Synthetic route to the declared namespace and workload. Must be verified by the owner.",
+        "accessRoute": "synthetic-ingress",
+        "credentialEnv": [
+          "SHOKO_REGISTRATION_TOKEN"
+        ]
+      },
+      {
+        "id": "accounts-db",
+        "address": "postgresql://accounts.example.invalid/synthetic",
+        "targetAssociation": "Synthetic external staging database; not authorized by a namespace label.",
+        "accessRoute": "synthetic-tunnel",
+        "credentialEnv": [
+          "SHOKO_ACCOUNT_PG"
+        ]
+      }
+    ]
+  },
+  "correlation": {
+    "strategy": "business-key",
+    "key": "registrationId",
+    "extraction": "Extract the registration ID from the start result; enforce it on every observation."
+  },
+  "requiredAdapters": [
+    "http",
+    "postgresql"
+  ],
+  "requiredCapabilities": [
+    "read-state",
+    "write-state",
+    "send-http",
+    "synthetic-resource"
+  ],
+  "actions": [
+    {
+      "id": "complete",
+      "endpointId": "registration-api",
+      "method": "POST",
+      "path": "/synthetic/complete",
+      "description": "Synthetic composite action standing for start, read channels, request OTP, read SID, retrieve OTP, verify, and poll. Not a deployed route.",
+      "allowedOutcomes": [
+        "completed"
+      ]
+    },
+    {
+      "id": "reject",
+      "endpointId": "registration-api",
+      "method": "POST",
+      "path": "/synthetic/reject",
+      "description": "Synthetic rejection only; no actual invalid-OTP behavior is asserted.",
+      "allowedOutcomes": [
+        "rejected"
+      ]
+    }
+  ],
+  "positiveActionIds": [
+    "complete"
+  ],
+  "negativeScenarios": [
+    {
+      "id": "registration-rejected",
+      "description": "Synthetic rejection with downstream absence. Must be replaced by a verified deployed contract.",
+      "allowedOutcomes": [
+        "rejected"
+      ],
+      "actionIds": [
+        "reject"
+      ],
+      "isolatedFixtureRecipe": "A second fresh synthetic identity."
+    }
+  ],
+  "evidenceSources": [
+    {
+      "id": "registration-state",
+      "endpointId": "registration-api",
+      "adapter": "http",
+      "coverage": "sampled-state",
+      "selector": "GET state scoped by registrationId."
+    },
+    {
+      "id": "account-state",
+      "endpointId": "accounts-db",
+      "adapter": "postgresql",
+      "coverage": "sampled-state",
+      "selector": "Read-only query with an enforced registrationId predicate."
+    }
+  ],
+  "requirements": [
+    {
+      "id": "req-registration-completed",
+      "kind": "registration-completed",
+      "invariant": "Synthetic registration-completed invariant.",
+      "scenarioId": "registration-completed",
+      "expectationId": "registration-completed",
+      "evidenceSourceId": "registration-state",
+      "coverage": "sampled-state"
+    },
+    {
+      "id": "req-account-created",
+      "kind": "account-created",
+      "invariant": "Synthetic account-created invariant.",
+      "scenarioId": "registration-completed",
+      "expectationId": "account-created",
+      "evidenceSourceId": "account-state",
+      "coverage": "sampled-state"
+    },
+    {
+      "id": "req-user-created",
+      "kind": "user-created",
+      "invariant": "Synthetic user-created invariant.",
+      "scenarioId": "registration-completed",
+      "expectationId": "user-created",
+      "evidenceSourceId": "account-state",
+      "coverage": "sampled-state"
+    },
+    {
+      "id": "req-account-user-associated",
+      "kind": "account-user-associated",
+      "invariant": "Synthetic account-user-associated invariant.",
+      "scenarioId": "registration-completed",
+      "expectationId": "account-user-associated",
+      "evidenceSourceId": "account-state",
+      "coverage": "sampled-state"
+    },
+    {
+      "id": "req-duplicate-prevention",
+      "kind": "duplicate-prevention",
+      "invariant": "Exactly one sampled correlated account row; no exactly-once delivery claim.",
+      "scenarioId": "registration-completed",
+      "expectationId": "duplicate-prevention",
+      "evidenceSourceId": "account-state",
+      "coverage": "sampled-state"
+    },
+    {
+      "id": "req-expected-rejection",
+      "kind": "negative-contract",
+      "invariant": "Synthetic expected-rejection invariant.",
+      "scenarioId": "registration-rejected",
+      "expectationId": "expected-rejection",
+      "evidenceSourceId": "registration-state",
+      "coverage": "sampled-state"
+    },
+    {
+      "id": "req-no-account-created",
+      "kind": "account-created",
+      "invariant": "Synthetic no-account-created invariant.",
+      "scenarioId": "registration-rejected",
+      "expectationId": "no-account-created",
+      "evidenceSourceId": "account-state",
+      "coverage": "sampled-state"
+    }
+  ],
+  "excludedRequirements": [
+    {
+      "id": "excluded-qualification",
+      "scope": "qualification",
+      "reason": "Already-qualified agent is a precondition."
+    },
+    {
+      "id": "excluded-other-flows",
+      "scope": "other-registration-flows",
+      "reason": "Only qualified-agent completion is covered."
+    }
+  ],
+  "testInputs": {
+    "qualifiedAgentRecipe": "Synthetic fixture; actual supported test facility pending.",
+    "otpRetrievalRecipe": "Synthetic approved automation; actual bounded retrieval facility pending.",
+    "controlledRecipientRef": "SYNTHETIC_RECIPIENT_REFERENCE",
+    "externalEffectPolicy": "Synthetic example authorizes no delivery or other effects.",
+    "completionMode": "Real downstream writes required; example observes no deployment.",
+    "cleanup": {
+      "mode": "bounded-retention",
+      "owner": "synthetic-domain-owner",
+      "mechanism": "Synthetic run-ID-scoped retention; real owner policy pending.",
+      "retentionHours": 24
+    }
+  },
+  "readiness": {
+    "prerequisites": [
+      {
+        "id": "cluster-access",
+        "owner": "synthetic-environment-owner",
+        "status": "pending",
+        "reason": "No real staging input is supplied by this example.",
+        "clearedBy": "Owner supplies and independently verifies cluster-access."
+      },
+      {
+        "id": "controlled-fixtures",
+        "owner": "synthetic-environment-owner",
+        "status": "pending",
+        "reason": "No real staging input is supplied by this example.",
+        "clearedBy": "Owner supplies and independently verifies controlled-fixtures."
+      },
+      {
+        "id": "otp-path",
+        "owner": "synthetic-environment-owner",
+        "status": "pending",
+        "reason": "No real staging input is supplied by this example.",
+        "clearedBy": "Owner supplies and independently verifies otp-path."
+      },
+      {
+        "id": "real-completion",
+        "owner": "synthetic-environment-owner",
+        "status": "pending",
+        "reason": "No real staging input is supplied by this example.",
+        "clearedBy": "Owner supplies and independently verifies real-completion."
+      },
+      {
+        "id": "evidence-access",
+        "owner": "synthetic-environment-owner",
+        "status": "pending",
+        "reason": "No real staging input is supplied by this example.",
+        "clearedBy": "Owner supplies and independently verifies evidence-access."
+      },
+      {
+        "id": "negative-contract",
+        "owner": "synthetic-environment-owner",
+        "status": "pending",
+        "reason": "No real staging input is supplied by this example.",
+        "clearedBy": "Owner supplies and independently verifies negative-contract."
+      },
+      {
+        "id": "endpoint-authorization",
+        "owner": "synthetic-environment-owner",
+        "status": "pending",
+        "reason": "No real staging input is supplied by this example.",
+        "clearedBy": "Owner supplies and independently verifies endpoint-authorization."
+      },
+      {
+        "id": "cleanup-retention",
+        "owner": "synthetic-environment-owner",
+        "status": "pending",
+        "reason": "No real staging input is supplied by this example.",
+        "clearedBy": "Owner supplies and independently verifies cleanup-retention."
+      },
+      {
+        "id": "stable-window",
+        "owner": "synthetic-environment-owner",
+        "status": "pending",
+        "reason": "No real staging input is supplied by this example.",
+        "clearedBy": "Owner supplies and independently verifies stable-window."
+      }
+    ]
+  }
+}
