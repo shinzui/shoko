@@ -13,4 +13,9 @@ cabal.project.local
 db/
 result
 result-*
+# Preserve Haskell modules on case-insensitive filesystems.
+!**/src/**/Result/
+!**/src/**/Result/**
+!**/test/**/Result/
+!**/test/**/Result/**
 .pre-commit-config.yaml

@@ -9,6 +9,7 @@ module Shoko.Observation
     Baseline (..),
     Occurrence (..),
     ObservationOutcome (..),
+    PublicValue (..),
   )
 where
 
@@ -49,9 +50,14 @@ data Baseline = Baseline
 
 data Occurrence a = Occurrence
   { occurrenceId :: !(Maybe Text),
-    value :: a
+    value :: !a
   }
 
 data ObservationOutcome a
   = Observed ![Occurrence a] !Coverage
+  | ObservedWithDetails ![Occurrence a] !Coverage ![(Text, PublicValue)]
   | ObservationUnavailable !Text
+
+-- | Only explicit public summaries are serializable. Raw typed values never are.
+data PublicValue = PublicChoice !Text | PublicCount !Integer | PublicFlag !Bool
+  deriving stock (Eq, Show, Generic)

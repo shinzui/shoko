@@ -1,8 +1,14 @@
 module Main (main) where
 
+import CoverageSpec qualified
+import FaultSpec qualified
 import Hedgehog (property, withTests, (===))
+import PolicySpec qualified
+import ResultSpec qualified
+import RuntimeSpec qualified
 import ScenarioSpec qualified
 import Shoko qualified
+import TemporalSpec qualified
 import Test.Tasty (defaultMain, testGroup)
 import Test.Tasty.Hedgehog (testPropertyNamed)
 
@@ -15,5 +21,11 @@ main =
           withTests 1 $
             property $
               Shoko.version === "0.1.0.0",
-        ScenarioSpec.tests
+        ScenarioSpec.tests,
+        TemporalSpec.tests,
+        RuntimeSpec.tests,
+        CoverageSpec.tests,
+        PolicySpec.tests,
+        ResultSpec.tests,
+        FaultSpec.tests
       ]

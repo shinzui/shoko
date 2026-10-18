@@ -3,6 +3,10 @@ index-state: 2026-10-18T00:00:00Z
 tests: True
 -- Match the released packages in the managed Nix package set.
 constraints:
+  aeson == 2.2.4.1,
+  async == 2.2.6,
+  cryptohash-sha256 == 0.11.102.1,
+  effectful-core == 2.6.1.0,
   hedgehog == 1.5,
   tasty == 1.5.4,
   tasty-hedgehog == 1.4.0.2

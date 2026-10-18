@@ -27,6 +27,12 @@ in  Schema.Project::{
         , dependencies =
           [ Schema.Dependency.ByName "haskell/text:text"
           , Schema.Dependency.ByName "haskell/containers:containers"
+          , Schema.Dependency.ByName "effectful/effectful:effectful-core"
+          , Schema.Dependency.ByName "haskell/aeson:aeson"
+          , Schema.Dependency.ByName "simonmar/async:async"
+          , Schema.Dependency.ByName "haskell-hvr/cryptohash-sha256:cryptohash-sha256"
+          , Schema.Dependency.ByName "haskell/bytestring:bytestring"
+          , Schema.Dependency.ByName "haskell/time:time"
           , Schema.Dependency.ByName "UnkindPartition/tasty:tasty"
           , Schema.Dependency.ByName "UnkindPartition/tasty:tasty-hedgehog"
           , Schema.Dependency.ByName "hedgehogqa/haskell-hedgehog:hedgehog"
@@ -35,6 +41,42 @@ in  Schema.Project::{
       ]
     , dependencyRefs =
       [ Schema.MoriRef::{
+        , namespace = "effectful"
+        , name = "effectful"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "effectful-core"
+        }
+      , Schema.MoriRef::{
+        , namespace = "haskell"
+        , name = "aeson"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "aeson"
+        }
+      , Schema.MoriRef::{
+        , namespace = "simonmar"
+        , name = "async"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "async"
+        }
+      , Schema.MoriRef::{
+        , namespace = "haskell-hvr"
+        , name = "cryptohash-sha256"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "cryptohash-sha256"
+        }
+      , Schema.MoriRef::{
+        , namespace = "haskell"
+        , name = "bytestring"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "bytestring"
+        }
+      , Schema.MoriRef::{
+        , namespace = "haskell"
+        , name = "time"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "time"
+        }
+      , Schema.MoriRef::{
         , namespace = "haskell"
         , name = "containers"
         , kind = Some Schema.MoriArtifactKind.Package
@@ -67,6 +109,13 @@ in  Schema.Project::{
       ]
     , docs =
       [ Schema.DocRef::{
+        , key = "core"
+        , kind = Schema.DocKind.Guide
+        , audience = Schema.DocAudience.Module
+        , description = Some "Typed descriptions, binding policy, bounded evidence, and result v1"
+        , location = Schema.DocLocation.LocalFile "docs/core.md"
+        }
+      , Schema.DocRef::{
         , key = "development"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.User

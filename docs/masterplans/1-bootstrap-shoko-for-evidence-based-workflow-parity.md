@@ -74,7 +74,7 @@ Research F2/F3/F5/F7/F10/F12 inform EP-3/EP-6; F4/F8/F9 inform evidence/results;
 |---|-------|------|-----------|-----------|--------|
 | 1 | Haskell/Seihou foundation | [Plan 1](../plans/1-bootstrap-the-haskell-workspace-with-seihou-and-jitsurei-standards.md) | None | None | Complete |
 | 2 | Registration workflow and Kubernetes staging target | [Plan 2](../plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md) | M1: None; M2: EP-1 | None | Not Started |
-| 3 | Inspectable DSL and bounded runner | [Plan 3](../plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md) | EP-1 | EP-2 M1 | In Progress |
+| 3 | Inspectable DSL and bounded runner | [Plan 3](../plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md) | EP-1 | EP-2 M1 | Complete |
 | 4 | PostgreSQL and HTTP bindings | [Plan 4](../plans/4-implement-postgresql-and-http-evidence-bindings.md) | EP-3 | EP-2 M1 | Not Started |
 | 5 | Kiroku and Message DB bindings | [Plan 5](../plans/5-implement-kiroku-and-message-db-evidence-bindings.md) | EP-3; EP-4 M1 | EP-2 M1 | Not Started |
 | 6 | CLI inspection, execution, reports | [Plan 6](../plans/6-expose-scenario-inspection-execution-and-structured-reports.md) | EP-3 | EP-4; EP-5 | Not Started |
@@ -113,7 +113,7 @@ The early integration sequence is two core consumers including positive/negative
 ## Progress
 
 
-EP-1 is Complete on 2026-10-18: Seihou 0.31.0, GHC 9.12.4, the public core package/consumer, Cabal/Nix checks, formatting, and CI configuration are accepted. `just check` passed in the primary tree and a clean detached checkout of `8cb274a`; the managed lock stayed unchanged. The user is preparing the staging context, namespace, test identity, OTP route, and credential references and requested deferring those details until the foundation is built. EP-2 remains Not Started; no concrete staging contract or accepted readiness evidence exists. EP-3 is the next eligible generic work while staging prerequisites remain pending. No cluster calls, application deployment changes, or staging acceptance runs have occurred. Linux CI is configured but has not been executed in this session.
+EP-1 is Complete on 2026-10-18: Seihou 0.31.0, GHC 9.12.4, the public core package/consumer, Cabal/Nix checks, formatting, and CI configuration are accepted. `just check` passed in the primary tree and a clean detached checkout of `8cb274a`; the managed lock stayed unchanged. The user is preparing the staging context, namespace, test identity, OTP route, and credential references and requested deferring those details until the foundation is built. EP-2 remains Not Started; no concrete staging contract or accepted readiness evidence exists. EP-3 is also Complete: 37 core tests, seven independently schema-validated result examples, and all four native Nix checks pass. EP-4 is the next eligible generic work while staging prerequisites remain pending. No cluster calls, application deployment changes, or staging acceptance runs have occurred. Linux CI is configured but has not been executed in this session.
 
 Completion requires all registry rows Complete, a passing real positive workflow, a passing documented negative scenario, Fail/Unknown controls, and repeatable scoped cleanup/retention in staging. A working library/demo alone cannot complete the initiative. A second implementation is not required.
 
@@ -121,6 +121,8 @@ The earlier MVP release gate is EP-7 Complete with its selected prerequisites ac
 
 ## Surprises & Discoveries
 
+
+EP-3 acceptance fixes role-aware binding contracts and separates a negative evidence cutoff from the deadline for its final closing read. Adapters must enforce selected correlation, advertise sampled versus durable coverage honestly, and never spend cleanup grace on evidence. The stable v1 result codec/schema and two compiling consumers are the shared contract for EP-4 and EP-6.
 
 The researched manual registration path begins with an already-qualified agent. OTP channels and verification SID require reads between commands; a stubbed completion pipeline can report completion without account writes. EP-2 records the actual staging contract, EP-3 supports a fully declared bounded composite action, and EP-7 verifies real downstream outcomes. The source is `mori://tan/registration-service-v2` plus project-relative `docs/plans/2026-07-17-flow-2-staging-validation-plan.md` (artifact-level URI pending), sections 0 and 3–5.
 

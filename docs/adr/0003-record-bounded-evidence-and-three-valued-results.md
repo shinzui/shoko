@@ -26,6 +26,12 @@ Terminal unexpected or uncertain action outcomes stop subsequent mutations; depe
 
 Results contain an allowlisted logical-input summary and recipe revision, separate from generated business/run identities. Raw fixture values, OTPs, credentials, and personal payloads are excluded; hashing low-entropy secrets is not redaction. Stable expectation IDs let integration reports map evidence to named business requirements.
 
+Implementation clarification, 2026-10-18: keep the evidence cutoff separate from the request deadline. A final durable-history read may finish after a shorter `within` cutoff while the total execution budget remains; it must establish the requested interval without including later occurrences or inventing future coverage. No evidence read uses cleanup grace. A window consuming the entire execution budget can honestly remain Unknown when closure cannot be established in time. Source adapters own the cursor/visibility proof, including any mapping from the host cutoff to store bounds. Host monotonic times are not automatically comparable to a remote event timestamp.
+
+Bindings receive a finalizer registrar during acquisition so partial acquisitions and later fixtures can register owned resources. Completed release and registered finalizers share one finite grace. Source handlers preserve asynchronous cancellation. Terminal outcomes stop later mutations; action evidence, expectation evidence, cleanup status, and partial unexpected-fault reports remain distinct.
+
+The v1 codec uses explicit `verification`, `runner-fault`, and `preflight-error` envelopes. Public primitive summaries (`PublicChoice`, `PublicCount`, and `PublicFlag`) are deliberately attached to action/observation evidence; typed raw results have no automatic rendering path. Logical-input metadata is validated before acquisition. A versioned fixed-order array of public description fields supplies its SHA-256 identity; scenario revision, binary identity, and logical recipe identity remain separate. The schema and consumer goldens are checked independently from codec round trips.
+
 ## Consequences
 
 The first runner implements only `eventually`, `never`, and `exactlyOnce` plus deadline composition. Results honestly distinguish missing observations, source failure, and a proven system defect. Negative guarantees are limited to the reported window and coverage. Capture/replay, performance claims, continuous monitoring, and a shared platform publication protocol are deferred.

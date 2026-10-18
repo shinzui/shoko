@@ -5,6 +5,7 @@ module Shoko.Action
     fromRef,
     inputDependencies,
     Vocabulary (..),
+    OperationRole (..),
     OperationInfo (..),
     Action,
     accept,
@@ -19,6 +20,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Shoko.Environment
 import Shoko.Internal.Reference
+import Shoko.Observation (PublicValue)
 import Shoko.Prelude
 
 fromRef :: (Typeable a) => Ref a -> Input a
@@ -32,6 +34,9 @@ data OperationInfo = OperationInfo
     substeps :: ![(Text, Set Capability)]
   }
   deriving stock (Eq, Show, Generic)
+
+data OperationRole = FixtureOperation | ActionOperation | ObservationOperation
+  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
 class Vocabulary op where
   describeOperation :: op a -> OperationInfo
@@ -49,4 +54,7 @@ actionOperation (Action _ op) = op
 
 -- | A documented rejection is an ordinary typed value with an outcome tag.
 -- Transport/decoding failures must use ActionUnavailable instead.
-data ActionOutcome a = ActionObserved !Text a | ActionUnavailable !Text
+data ActionOutcome a
+  = ActionObserved !Text !a
+  | ActionObservedWithDetails !Text !a ![(Text, PublicValue)]
+  | ActionUnavailable !Text

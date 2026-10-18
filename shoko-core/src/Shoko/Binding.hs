@@ -16,6 +16,7 @@ where
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Shoko.Action
+import Shoko.Clock (Clock)
 import Shoko.Correlation
 import Shoko.Environment
 import Shoko.Expectation
@@ -39,7 +40,9 @@ data CallContext = CallContext
     deadline :: !Integer,
     baseline :: !(Maybe Baseline),
     correlation :: !(Maybe Correlation),
-    substep :: forall a. Text -> IO a -> IO (Either Text a)
+    substep :: forall a. Text -> IO a -> IO (Either Text a),
+    evidenceUntil :: !Integer,
+    clock :: !Clock
   }
 
 data Disposition = Cleaned | Retained | CleanupFailed | CleanupTimedOut
@@ -48,10 +51,10 @@ data Disposition = Cleaned | Retained | CleanupFailed | CleanupTimedOut
 data Binding op resource = Binding
   { name :: !Text,
     lifecycleCapabilities :: !(Set Capability),
-    contract :: forall a. op a -> Maybe BindingContract,
-    acquire :: IO resource,
+    contract :: forall a. OperationRole -> op a -> Maybe BindingContract,
+    acquire :: (IO Disposition -> IO ()) -> IO resource,
     release :: resource -> IO Disposition,
-    captureBaseline :: resource -> Text -> IO (Either Text Baseline),
+    captureBaseline :: resource -> Clock -> Text -> IO (Either Text Baseline),
     performAction :: forall a. resource -> CallContext -> op a -> IO (ActionOutcome a),
     performObservation :: forall a. resource -> CallContext -> op a -> IO (ObservationOutcome a)
   }
@@ -72,6 +75,7 @@ data PreflightError
   | MissingCorrelationReference !Text
   | ProductionUnsupported
   | InvalidBindingIdentifier
+  | InvalidLogicalInput
   deriving stock (Eq, Show, Generic)
 
 data ResolvedScenario op resource
@@ -97,7 +101,7 @@ resolveScenario ::
   Either [PreflightError] (ResolvedScenario op resource)
 resolveScenario
   environment@(Environment envName production allowed _)
-  options@(RunOptions runKey synthetic build _ _)
+  options@(RunOptions runKey synthetic build implementation target)
   correlationPlan
   binding@(Binding bindingName lifecycle lookupContract _ _ _ _ _)
   descriptionSource =
@@ -113,6 +117,7 @@ resolveScenario
               errors
                 ++ [ProductionUnsupported | production]
                 ++ [InvalidBindingIdentifier | any (== "") [envName, bindingName, runKey, build]]
+                ++ [InvalidBindingIdentifier | implementation == Just "" || not (validTarget target)]
                 ++ [CapabilitiesDenied denied | not (Set.null denied)]
                 ++ [SyntheticConsentRequired | Set.member SyntheticResource required && not synthetic]
                 ++ [MissingCorrelationReference key | key <- correlationDependencies correlationPlan, Set.notMember key known]
@@ -132,18 +137,20 @@ resolveScenario
                   )
               else Left allErrors
     where
-      requirements :: forall a. op a -> Bool -> ([PreflightError], Set Capability)
-      requirements op needsSource =
+      requirements :: forall a. OperationRole -> op a -> Bool -> ([PreflightError], Set Capability)
+      requirements role op needsSource =
         let OperationInfo key declared _ substeps = describeOperation op
-         in case lookupContract op of
+         in case lookupContract role op of
               Nothing -> ([MissingHandler key], declared)
               Just (BindingContract extra cleanup strategies source _) ->
                 ( [UnsupportedCorrelation key | Set.notMember (correlationStrategy correlationPlan) strategies]
-                    ++ [MissingSource key | needsSource && source == Nothing],
+                    ++ [MissingSource key | (needsSource && source == Nothing) || source == Just ""],
                   Set.unions (declared : extra : cleanup : map snd substeps)
                 )
-      stepContract (Step _ _ action) = requirements (actionOperation action) False
-      expectationContract (Expectation _ _ _ observation) = requirements (observationOperation observation) True
+      stepContract (Step _ fixture action) = requirements (if fixture then FixtureOperation else ActionOperation) (actionOperation action) False
+      expectationContract (Expectation _ _ _ observation) = requirements ObservationOperation (observationOperation observation) True
+      validTarget Nothing = True
+      validTarget (Just (TargetIdentity targetName namespace revision)) = all (/= "") [targetName, namespace, revision]
 
 -- | Used by the single runner interpreter; consumers should use inspection.
 resolvedParts ::

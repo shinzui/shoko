@@ -32,6 +32,10 @@ Inspection and execution consume the same scenario and resolved binding plan. Th
 
 The first public implementation uses `scenario id title revision`. Context-owned `Vocabulary op` GADTs describe each operation's public identifier, capability set, symbolic dependencies, and composite substep inventory. Applicative `Input` values combine typed references without inspecting runtime fixture values; inspection omits literal payloads. Named fixture/action nodes carry explicit allowed outcome tags. The scenario revision must change when predicate or recipe semantics change, because functions and secret inputs do not belong in the canonical public description. Binding metadata contributes additional capabilities, cleanup requirements, sources, and correlation support before acquisition.
 
+The effectful dynamic interpreter belongs below the description. A binding's typed resource encloses acquisition, pre-action baselines, fixed actions, concurrent sibling expectations, and finalization. Symbolic values are stored with `Typeable` and resolved by checked `Dynamic` lookup; a missing value never creates an uncorrelated fallback. The text-valued result of a named action can supply business-key correlation through `businessKeyFromResult`. See the [public core guide](../core.md) and compiling consumers for the accepted interface.
+
+Binding contracts are role-aware: supporting an operation as an observation does not advertise a fixture/action handler for it. Resolution checks the requested role before acquisition. Native bindings must also enforce that requested input keys agree with the selected correlation, rather than silently broadening the query.
+
 Revision 2026-10-01: select Settei explicitly after the configuration discussion, replacing the unspecified configuration implementation with its typed resolver and existing source adapters. The capability-policy boundary is unchanged.
 
 Revision 2026-10-01: make existing Kubernetes staging the first execution target and define explicit typed outcomes for positive and negative scenarios.

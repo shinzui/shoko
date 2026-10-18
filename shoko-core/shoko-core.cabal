@@ -3,8 +3,8 @@ name: shoko-core
 version: 0.1.0.0
 synopsis: Evidence-based distributed workflow verification
 description:
-  Core library for Shoko. The initial release establishes the build
-  boundary; scenario descriptions and execution follow in the bounded runner.
+  Inspectable typed workflow descriptions, capability preflight, and a bounded
+  three-valued verification runner with explicit evidence and versioned results.
 
 license: BSD-3-Clause
 license-file: LICENSE
@@ -13,6 +13,11 @@ maintainer: shinzui@users.noreply.github.com
 category: Testing
 build-type: Simple
 extra-doc-files: CHANGELOG.md
+extra-source-files:
+  test/UpdateGoldens.hs
+  test/golden/*.json
+  test/golden/README.md
+
 tested-with: ghc ==9.12.4
 
 common common
@@ -42,15 +47,30 @@ library
     Shoko
     Shoko.Action
     Shoko.Binding
+    Shoko.Clock
     Shoko.Correlation
     Shoko.Environment
+    Shoko.Evidence
     Shoko.Expectation
     Shoko.Observation
     Shoko.Prelude
+    Shoko.Result
+    Shoko.Result.Json
+    Shoko.Runner
     Shoko.Scenario
 
-  other-modules: Shoko.Internal.Reference
-  build-depends: containers >=0.7 && <0.8
+  other-modules:
+    Shoko.Internal.Digest
+    Shoko.Internal.Reference
+
+  build-depends:
+    aeson >=2.2.4.1 && <2.4,
+    async >=2.2.6 && <2.3,
+    bytestring >=0.12.2 && <0.13,
+    containers >=0.7 && <0.8,
+    cryptohash-sha256 >=0.11.102.1 && <0.12,
+    effectful-core >=2.6.1 && <2.8,
+    time >=1.14 && <1.15,
 
 test-suite shoko-core-test
   import: common
@@ -59,18 +79,30 @@ test-suite shoko-core-test
   main-is: Main.hs
   other-modules:
     Consumer.Account
+    Consumer.DeliveryLedger
+    CoverageSpec
+    FaultSpec
+    GoldenFixtures
+    PolicySpec
+    ResultSpec
+    RuntimeSpec
     ScenarioSpec
+    TemporalSpec
 
   ghc-options:
     -threaded
     -rtsopts
 
   build-depends:
+    aeson >=2.2.4.1 && <2.4,
+    async >=2.2.6 && <2.3,
+    bytestring >=0.12.2 && <0.13,
     containers >=0.7 && <0.8,
     hedgehog >=1.5 && <1.8,
     shoko-core,
     tasty >=1.5.4 && <1.6,
     tasty-hedgehog >=1.4.0.2 && <1.5,
+    time >=1.14 && <1.15,
 
 source-repository head
   type: git

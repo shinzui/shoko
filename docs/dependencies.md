@@ -13,6 +13,12 @@ freeze file, and Nix lock establish the accepted selection.
 | tasty | 1.5.4 | 1.5.4 | [Tasty](mori://UnkindPartition/tasty/packages/tasty) | `0394c73e647834829e7f500c9dab0be3ff9e4f11` (core-1.5.4) |
 | hedgehog | 1.5 | 1.7 | [Hedgehog](mori://hedgehogqa/haskell-hedgehog/packages/hedgehog) | `4c5424db30eee67423ddd80745d03e487a223ade` (1.5); latest 1.7 is `947e0806579778fb2e28d62afb30d6e61214244c` |
 | tasty-hedgehog | 1.4.0.2 | 1.4.0.2 | [Tasty Hedgehog](mori://UnkindPartition/tasty/packages/tasty-hedgehog) | `3d46b53a00b39722627a7697cff93240f21d4cb1` (1.4.0.2) |
+| effectful-core | 2.6.1.0 | 2.7.1.2 | [Effectful core](mori://effectful/effectful/packages/effectful-core) | `70f2b865e2f35cfd9f2e901fe5d2a9b1014c5e34` (effectful-core-2.6.1.0); latest tag `1c91cf4987ee8249fb54e2f50ad3e69fb56df162` |
+| aeson | 2.2.4.1 | 2.3.2.0 | [Aeson](mori://haskell/aeson/packages/aeson) | Selected Hackage release has no matching upstream tag; upstream v2.3.2.0 is `682162c66d26a770fbfb6271c797e646bc5c4f2e` |
+| async | 2.2.6 | 2.2.6 | [Async](mori://simonmar/async/packages/async) | No matching upstream 2.2.6 tag; Hackage is the selected source. Last listed 2.2.5 tag is `4a70b53c1ba90d8a59d6ec41a89337645c55b4cd` |
+| cryptohash-sha256 | 0.11.102.1 | 0.11.102.1 | [SHA-256](mori://haskell-hvr/cryptohash-sha256/packages/cryptohash-sha256) | `89c1b9030989cc914d057061d90933628481abb2` (v0.11.102.1) |
+| bytestring | 0.12.2.0 (GHC boot package) | 0.12.2.0 | [ByteString](mori://haskell/bytestring/packages/bytestring) | `d984ad00644c0157bad04900434b9d36f23633c5` (0.12.2.0) |
+| time | 1.14 (GHC boot package) | 1.16.0.1 | [Time](mori://haskell/time/packages/time) | `e5c5d1987011efe88a21ab6ded45aaa33a16274f` (1.14) |
 
 Registry release listings: [text](https://hackage.haskell.org/package/text.json),
 [tasty](https://hackage.haskell.org/package/tasty.json),
@@ -46,3 +52,29 @@ was checked before selecting the boot version. Lens and generic-lens will be
 added when code uses them; constructor pattern matching already follows the
 record standard. Database, HTTP, event store, and Settei dependencies belong to
 their later package introductions and need fresh release/compatibility checks.
+
+The runner adds Effectful's dynamic dispatch, Async's concurrent expectation
+workers, Aeson codecs, SHA-256 description identity, and boot ByteString/Time.
+Its selected direct versions match the managed Nix package set. The newer
+Effectful, Aeson, and Time releases above are observed releases, not untested
+upgrades. No bounds waiver or working-tree dependency is used. Additional API
+inspection revisions were `9e54de5a3f57a682427e62ab87c95eda5b97849d` for Effectful,
+`a33d84642424f6feb3151b8108e79a3bcbb3f23d` for Aeson,
+`c319daf29c99b48d01e1251807631876d995b597` for Async, and
+`fa11a8c99e11739d3410c62575da3ec1be2a73db` for SHA-256.
+
+Registry evidence: [effectful-core](https://hackage.haskell.org/package/effectful-core.json),
+[aeson](https://hackage.haskell.org/package/aeson.json),
+[async](https://hackage.haskell.org/package/async.json),
+[cryptohash-sha256](https://hackage.haskell.org/package/cryptohash-sha256.json),
+[bytestring](https://hackage.haskell.org/package/bytestring.json), and
+[time](https://hackage.haskell.org/package/time.json). Missing matching tags for
+Aeson 2.2.4.1 and Async 2.2.6 are recorded rather than replaced with guessed
+revisions; Cabal consumes their released Hackage archives.
+
+The independent schema check uses Python jsonschema 4.26.0 from the managed
+Nixpkgs pin; PyPI also reports 4.26.0. Upstream tag v4.26.0 resolves to
+`a7277432b0f7bcd0551f6e589d30457017125df4`. It is a development tool, not a
+Haskell runtime dependency. Mori has no registered jsonschema project; API
+lookup therefore used the [official validator documentation](https://python-jsonschema.readthedocs.io/en/stable/validate/)
+and the [PyPI registry](https://pypi.org/pypi/jsonschema/json).

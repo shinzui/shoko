@@ -49,11 +49,15 @@ A Haskell consumer can describe actions and evidence expectations once, inspect 
 
 
 - [x] M1 (2026-10-18): Typed context-owned GADT operations, symbolic/applicative inputs, explicit outcome contracts, and temporal descriptions inspect without IO. The public consumer suite passes seven checks, including zero acquisition/action calls under inspection and denied policy, hidden binding capabilities, synthetic consent, production denial, invalid descriptions, and missing handlers/correlation support.
-- [ ] M2: The effectful runner evaluates eventually, never, and exactlyOnce with correct deadlines, correlation, coverage, and cancellation.
-- [ ] M3: Two concrete consumer scenarios exercise the public API and stable versioned results through deterministic and real-clock checks.
+- [x] M2 (2026-10-18): The effectful runner evaluates eventually, never, and exactlyOnce with inclusive deadlines, scoped correlation, coverage repair, shared sibling activation, terminal-action suppression, and bounded cancellation/finalization. Deterministic boundary/gap/cardinality tests and real-clock cancellation/cleanup checks pass.
+- [x] M3 (2026-10-18): Account provisioning (two independent storage bindings and typed rejection) and append-only delivery consumers exercise the public API. All 37 tests pass, including 100 aggregation and 30 deduplication property trials. Seven sanitized v1 envelopes round trip and validate against the independent JSON Schema. `nix develop --command just check` passes Cabal build/tests and all four native Nix checks; `cabal check` reports no warnings. Linux checks remain CI work.
 
 ## Surprises & Discoveries
 
+
+The template's `result` ignore rule also hid the Haskell `Result/` directory on a case-insensitive filesystem: Cabal could see the codec but Nix's Git snapshot could not. Explicit source-directory exceptions now preserve both behavior and reproducible builds. Cabal-gild must finish before Fourmolu reads rewritten package metadata; `just fmt` now has that barrier.
+
+A negative window needs a closing read after its cutoff, within remaining execution time. The request deadline and evidence cutoff are separate; cleanup grace never funds evidence reads. Mutable state cannot repair historical gaps. Role-aware contracts prevent observation support from implying action support.
 
 ## Decision Log
 
@@ -66,6 +70,8 @@ On 2026-10-01, clarify multiple positive/negative scenarios and explicit expecte
 
 ## Outcomes & Retrospective
 
+
+Complete on 2026-10-18. The accepted public contract now spans pure inspection, fail-closed resolution, execution, explicit safe supporting evidence, and versioned reports. Actual cancellation preserves asynchronous exceptions and finalizes scoped resources; expected rejection stays a domain value. Secret-bearing typed values have no automatic serialization path. Durable decisions and build lessons are distilled into ADR 0001–0003 and `docs/core.md`. No service, database, cluster, or staging acceptance is claimed by these core tests. Adapters and the CLI can consume this accepted interface next.
 
 ## Context and Orientation
 

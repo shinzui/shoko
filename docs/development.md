@@ -1,8 +1,9 @@
 # Development
 
-The initial workspace contains `shoko-core`, a public library and its separately
-compiled consumer test. The scenario DSL, adapters, and CLI follow in the child
-plans. No staging credentials or running database are needed for core checks.
+The workspace contains `shoko-core`, its typed descriptions and bounded runner,
+and separately compiled consumers. See the [core guide](core.md) for the public
+API. Adapters and the CLI follow in the child plans. No staging credentials or
+running database are needed for core checks.
 
 From the repository root, with Nix installed:
 
@@ -15,11 +16,16 @@ nix develop --command just fmt
 ```
 
 `check` builds all workspace components, runs the explicitly selected core test,
-and runs `nix flake check`, including formatting and the Nix library/test build.
+validates the result schema against checked-in examples, and runs
+`nix flake check`, including formatting, schema validation, and the Nix library/test build.
 First-party code treats warnings as errors through `cabal.project` and the Nix
 package definition. Dependencies retain their own warning policy. CI invokes the
 same commands on Ubuntu; local acceptance is also checked on Apple Silicon macOS.
 Linux CI execution is reported by GitHub Actions after the change is pushed.
+
+`just fmt` formats Cabal metadata before the full formatter pass. Fourmolu reads
+Cabal defaults, so this order avoids reading a file while Cabal-gild rewrites it.
+The complete pass still formats Haskell, Cabal, and Nix with the managed tools.
 
 The signed Hackage index is bounded by `index-state` in `cabal.project`;
 `cabal.project.freeze` retains the complete solver selection. See

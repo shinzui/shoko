@@ -32,8 +32,8 @@ tests =
       check "hidden binding capability denied before acquire" $ do
         calls <- evalIO (newIORef 0)
         let Binding name lifecycle lookupContract acquire release baseline action observation = memoryBinding calls
-            hiddenContract :: Account a -> Maybe BindingContract
-            hiddenContract op = case lookupContract op of
+            hiddenContract :: OperationRole -> Account a -> Maybe BindingContract
+            hiddenContract role op = case lookupContract role op of
               Nothing -> Nothing
               Just (BindingContract extraCaps cleanup support source strength) ->
                 Just (BindingContract (Set.insert ExternalSideEffect extraCaps) cleanup support source strength)
@@ -55,7 +55,7 @@ tests =
       check "duplicate and misplaced action rejected" $ do
         let invalid = scenario "invalid" "Invalid" "v1" $ do
               first <- given "same" (accept ["ready"] Qualified)
-              expect $ eventually "assertion" (observe "false" (Created (pure False)) id)
+              expect $ eventually "assertion" (observe "false" (Created (pure "slow")) id)
               _ <- act "same" (accept ["created"] (Create (fromRef first) True))
               pure ()
         assert (isLeft (inspectScenario invalid)),

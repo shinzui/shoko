@@ -14,6 +14,7 @@ module Shoko
     act,
     expect,
     inspectScenario,
+    runScenario,
   )
 where
 
@@ -24,6 +25,7 @@ import Shoko.Environment
 import Shoko.Expectation
 import Shoko.Observation
 import Shoko.Prelude
+import Shoko.Runner (runScenario)
 import Shoko.Scenario (Scenario, ScenarioBuilder, act, expect, given, inspectScenario, scenario)
 
 -- | Version of the public core package.

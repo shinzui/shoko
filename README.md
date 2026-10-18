@@ -2,7 +2,7 @@
 
 Shōko is a Haskell DSL for specifying and verifying observable behavior across distributed systems. A scenario describes the evidence that establishes correct behavior; adapters determine how to obtain that evidence from a particular implementation and environment.
 
-**Status:** experimental. The Haskell foundation provides `shoko-core` and a compiled public API consumer test on GHC 9.12.4. The DSL, runner, adapters, and CLI described below remain planned.
+**Status:** experimental. `shoko-core` provides typed scenario descriptions, capability preflight, bounded Pass/Fail/Unknown execution, and versioned evidence reports on GHC 9.12.4. Transport adapters, the CLI, and real staging acceptance remain in the implementation plans. See the [core API guide](docs/core.md) and its compiling consumers.
 
 Build and check the foundation from the repository root:
 
@@ -36,19 +36,23 @@ The first application is the [TAN platform](mori://tan/tan-platform) rewrite ont
 
 ## A scenario in outline
 
-The following illustrates the proposed DSL and domain vocabulary. It is a design sketch, not a compilable example or a settled API.
+The following illustrates the planned TAN domain vocabulary. The core construction API is implemented; these context-owned registration operations remain planned. Compiling examples are linked from the [core guide](docs/core.md).
 
 ```haskell
 registrationCompletion :: Scenario
 registrationCompletion =
-  scenario "registration-completion-staging" "Complete registration" $ do
-    agent <- given qualifiedAgent
-    registration <- act $ completeQualifiedAgentRegistration agent
+  scenario "registration-completion-staging" "Complete registration" "v1" $ do
+    agent <- given "agent" $ accept ["qualified"] qualifiedAgent
+    registration <- act "complete" $ accept ["completed"] $
+      completeQualifiedAgentRegistration (fromRef agent)
 
     expect $ do
-      eventually $ registrationCompleted registration
-      eventually $ accountExists registration
-      eventually $ userExists registration
+      eventually "registration-completed" $
+        observe "completed" (registrationCompleted (fromRef registration)) id
+      eventually "account-exists" $
+        observe "exists" (accountExists (fromRef registration)) id
+      eventually "user-exists" $
+        observe "exists" (userExists (fromRef registration)) id
 ```
 
 This reference slice starts from an already-qualified agent and exercises the one-time-password and completion steps through a declared composite action. Qualification/approval is a precondition of this slice. An executable scenario must use supported test identities and the approved staging delivery path; the outline omits that setup. The [requirement validation](docs/research/initial-specification-requirement-validation.md) explains the actual flow and the gaps in the specification's earlier examples.
@@ -59,7 +63,7 @@ Passing on both implementations establishes parity for the behavior covered by t
 
 ## How verification works
 
-The proposed core separates seven concepts:
+The core separates seven concepts:
 
 | Concept | Responsibility |
 | --- | --- |
