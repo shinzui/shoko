@@ -40,6 +40,10 @@ class WorkflowContractTests(unittest.TestCase):
             (["undeclared"], True),
             (["target", "environment"], "production"),
             (["target", "namespaceUid"], ""),
+            (["target", "namespace"], "--all-namespaces"),
+            (["target", "apiServer"], "http://cluster.invalid"),
+            (["target", "apiServer"], "https://user:SECRET-sentinel@cluster.invalid"),
+            (["target", "workloads", 0, "name"], "--all"),
             (["target", "workloads", 0, "imageDigests"], ["image:mutable"]),
             (["target", "endpoints", 0, "credentialEnv"], ["actual-secret-value"]),
             (["target", "endpoints", 0, "address"], "https://user:SECRET-sentinel@example.invalid"),
@@ -114,10 +118,11 @@ class WorkflowContractTests(unittest.TestCase):
         result = self.invoke(value)
         self.assertEqual(result.returncode, 0)
         self.assertIn("live readiness has not been checked", result.stdout)
-        for command in ("check", "smoke"):
-            result = self.invoke(value, command)
-            self.assertEqual(result.returncode, 2)
-            self.assertIn("no calls made", result.stderr)
+        # Smoke still has no domain implementation. Identity discovery is tested
+        # separately with a fake kubectl; never consult developer kubeconfig here.
+        result = self.invoke(value, "smoke")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no calls made", result.stderr)
 
     def test_errors_do_not_echo_values(self):
         value = copy.deepcopy(self.example)

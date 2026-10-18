@@ -1,6 +1,7 @@
 """Offline workflow-contract validation; never resolves credentials or targets."""
 
 import json
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -11,7 +12,7 @@ class ContractError(ValueError):
     pass
 
 
-def load_json(path):
+def parse_json(data):
     def unique_keys(pairs):
         result = {}
         for key, value in pairs:
@@ -21,10 +22,17 @@ def load_json(path):
         return result
 
     try:
-        return json.loads(Path(path).read_text(), object_pairs_hook=unique_keys)
-    except (OSError, UnicodeError, ValueError):
+        return json.loads(data, object_pairs_hook=unique_keys)
+    except (UnicodeError, ValueError):
         # Neither JSON parse errors nor invalid values are safe to echo: a
         # mistaken manifest can contain credentials or personal test payloads.
+        raise ContractError("manifest missing, unreadable, or invalid JSON") from None
+
+
+def load_json(path):
+    try:
+        return parse_json(Path(path).read_bytes())
+    except OSError:
         raise ContractError("manifest missing, unreadable, or invalid JSON") from None
 
 
@@ -45,6 +53,29 @@ def validate_contract(value, schema):
     requirements = indexed(value["requirements"], "requirement")
     negatives = indexed(value["negativeScenarios"], "negative scenario")
     indexed(value["target"]["workloads"], "workload")
+    target = value["target"]
+    try:
+        server = urlsplit(target["apiServer"])
+        server.port
+    except ValueError:
+        raise ContractError("Kubernetes API server address is invalid") from None
+    if (server.scheme != "https" or not server.hostname or server.username
+            or server.password or server.query or server.fragment
+            or any(c.isspace() or ord(c) < 32 for c in target["apiServer"])):
+        raise ContractError("Kubernetes API server must be a credential-free HTTPS address")
+    dns_label = r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+    if (len(target["namespace"]) > 63
+            or not re.fullmatch(dns_label, target["namespace"])):
+        raise ContractError("Kubernetes namespace must be an explicit DNS label")
+    identities = {(w["kind"], w["name"]) for w in target["workloads"]}
+    if len(identities) != len(target["workloads"]):
+        raise ContractError("duplicate Kubernetes workload identity")
+    if len(target["workloads"]) > 32:
+        raise ContractError("too many Kubernetes workloads for a bounded identity check")
+    for workload in target["workloads"]:
+        if (len(workload["name"]) > 253
+                or not re.fullmatch(dns_label + r"(?:\." + dns_label + r")*", workload["name"])):
+            raise ContractError("Kubernetes workload name must be an explicit DNS name")
     prerequisites = indexed(value["readiness"]["prerequisites"], "prerequisite")
     if not {"cluster-access", "controlled-fixtures", "otp-path", "real-completion",
             "evidence-access", "negative-contract", "endpoint-authorization",

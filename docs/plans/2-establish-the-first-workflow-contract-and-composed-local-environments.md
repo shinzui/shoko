@@ -59,8 +59,13 @@ contract. Durable sources also require an explicit owner-backed
 `historyPolicy: append-only-during-run`; without it the selected reader cannot
 claim complete negative coverage. No default `integration/workflow.json` exists because approved concrete
 target/access/test inputs remain unavailable. M1 remains unfinished. The
-`workflow-check`/`workflow-smoke` wrappers reserve the planned interfaces and exit
-2 without live calls; actual discovery and smoke implementations remain M2 work.
+`workflow-check` now performs guarded read-only identity discovery with private
+before/after artifacts; its explicit `--identity-only` mode can establish matching
+namespace/workload UIDs, controller generations, and template image digests. Full
+readiness remains blocked: runtime images, endpoint/evidence checks, permitted
+test setup, and independent smoke behavior are still M2 work. `workflow-smoke`
+exits 2 without calls. The owners confirmed the inputs are still being prepared;
+no live discovery or staging acceptance has occurred.
 Resume with the environment/domain owner inputs listed in the workflow guide;
 then populate the real manifest, freeze its assertions/reader selection, implement
 the approved access route, and retain the required live acceptance.
@@ -95,6 +100,22 @@ seven result-schema examples, and all native Nix checks including
 `workflow-contract`. Changed plan/guide links and code fences also validated.
 Neither milestone is accepted: real owner inputs, deployed behavior, repeatable
 access/OTP, and independent positive/negative runs remain prerequisites.
+
+Identity-discovery checkpoint, 2026-10-18: `scripts/workflow_identity.py` and
+`check --identity-only` now verify explicit kubeconfig/server selection and two
+namespace/workload identity snapshots using only read-only commands. Reports
+retain exact contract hashes and allowlisted fields under private ignored
+`.shoko/runs/<uuid>/identity.json` paths. A changed generation, recreated resource,
+wrong target, missing identity, timeout, or process failure prevents identity
+success. Controller templates do not prove runtime image IDs or rollout readiness;
+the record always declares full readiness blocked. Eight offline contract groups
+and 16 identity process groups pass in the native Nix `workflow-contract` check,
+including safe artifact failure and unapproved init-container images. The actual
+installed kubectl v1.37.0 also selected the explicitly named context from an
+isolated synthetic kubeconfig with a different current context; this made no API
+requests and is not a client/server compatibility claim. The environment/domain
+owners confirmed they are still preparing the required inputs. Both milestones
+remain unaccepted.
 
 ## Context and Orientation
 
@@ -162,6 +183,13 @@ confirmed; its success establishes structural validity only. The contract tests
 exercise synthetic fixtures directly and never call a cluster. Until the approved
 target/access contract is supplied, the live wrappers fail closed rather than
 claiming a health check or mocked run satisfies M2.
+
+With a real confirmed contract, `python3 scripts/workflow-env check --identity-only`
+performs read-only identity discovery and exits 0 only for matching observations.
+Plain `check` still exits 2 because identity matching alone cannot establish full
+readiness. Reports use private run directories documented in the workflow guide;
+no manifest recipes are executed. `smoke` remains unavailable until implemented
+against the approved domain/access contract.
 
 The wrappers load `integration/workflow.json` explicitly and reject missing or mismatched target identity before mutating actions. `workflow-check` reports the selected staging namespace, observed deployment identities, access/readiness status, and exact missing prerequisites with a nonzero exit when unusable. `workflow-smoke` records fresh business keys and actual domain consequences. Retain sanitized artifacts in an ignored run directory; describe its location in `docs/workflows/first-staging-workflow.md`.
 

@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Offline process tests for read-only discovery, never live staging acceptance."""
+
+import copy
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+import tempfile
+import unittest
+
+from workflow_contract import load_json
+from workflow_identity import IdentityError, Kubectl, write_record
+
+
+ROOT = Path(__file__).resolve().parent.parent
+SECRET = "SECRET-sentinel"
+
+
+class WorkflowIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="shoko-identity-")
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.contract = load_json(ROOT / "integration/examples/workflow.example.json")
+        self.contract["purpose"] = "staging-contract"
+        for prerequisite in self.contract["readiness"]["prerequisites"]:
+            prerequisite["status"] = "confirmed"
+        target = self.contract["target"]
+        config = {"contexts": [{"name": target["context"], "context": {"cluster": target["cluster"]}}],
+                  "clusters": [{"name": target["cluster"], "cluster": {"server": target["apiServer"]}}],
+                  "users": [{"user": {"token": SECRET}}]}
+        namespace = {"kind": "Namespace", "metadata": {
+            "name": target["namespace"], "uid": target["namespaceUid"],
+            "annotations": {"private": SECRET}}}
+        workloads = [{"kind": w["kind"], "metadata": {
+            "name": w["name"], "namespace": target["namespace"], "uid": w["uid"], "generation": 3},
+            "spec": {"template": {"spec": {"containers": [
+                {"name": "app", "image": image, "env": [{"name": "TOKEN", "value": SECRET}]}
+                for image in w["imageDigests"]]}}}} for w in target["workloads"]]
+        self.responses = [config, namespace, *workloads, copy.deepcopy(namespace), *copy.deepcopy(workloads)]
+        # This executable is the only kubectl used. It has no network behavior.
+        executable = self.directory / "kubectl"
+        executable.write_text("#!" + sys.executable + "\n" + '''
+import json, os, sys, time
+from pathlib import Path
+directory = Path(os.environ["SHOKO_IDENTITY_TEST_DIR"])
+log = directory / "calls.jsonl"
+with log.open("a") as handle:
+    handle.write(json.dumps(sys.argv[1:]) + "\\n")
+index = len(log.read_text().splitlines()) - 1
+mode = os.environ.get("SHOKO_IDENTITY_TEST_MODE")
+if mode == "timeout":
+    time.sleep(10)
+if mode == "oversize":
+    sys.stdout.write("x" * (5 * 1024 * 1024))
+    raise SystemExit(0)
+if mode == "failed":
+    print("SECRET-sentinel", file=sys.stderr)
+    raise SystemExit(1)
+if mode == "invalid":
+    print("SECRET-sentinel")
+    raise SystemExit(0)
+responses = json.loads((directory / "responses.json").read_text())
+print(json.dumps(responses[index]))
+''')
+        executable.chmod(0o700)
+        self.environment = {**os.environ, "PATH": str(self.directory),
+                            "SHOKO_IDENTITY_TEST_DIR": str(self.directory)}
+
+    def invoke(self, *, identity_only=True, command="check", mode=None):
+        (self.directory / "responses.json").write_text(json.dumps(self.responses))
+        manifest = self.directory / "manifest.json"
+        manifest.write_text(json.dumps(self.contract))
+        arguments = [sys.executable, str(ROOT / "scripts/workflow-env"), command,
+                     "--manifest", str(manifest), "--artifacts", str(self.directory / "artifacts")]
+        if identity_only:
+            arguments.append("--identity-only")
+        environment = dict(self.environment)
+        if mode:
+            environment["SHOKO_IDENTITY_TEST_MODE"] = mode
+        result = subprocess.run(arguments, env=environment, capture_output=True, text=True, timeout=10)
+        self.assertNotIn(SECRET, result.stdout + result.stderr)
+        records = list((self.directory / "artifacts").glob("*/identity.json"))
+        self.assertLessEqual(len(records), 1)
+        record = load_json(records[0]) if records else None
+        if record:
+            self.assertNotIn(SECRET, records[0].read_text())
+            self.assertEqual(record["contractSha256"], hashlib.sha256(manifest.read_bytes()).hexdigest())
+            self.assertEqual(record["readinessStatus"], "blocked")
+            self.assertEqual(stat.S_IMODE(records[0].stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(records[0].parent.stat().st_mode), 0o700)
+        calls = (self.directory / "calls.jsonl")
+        calls = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+        for call in calls:
+            self.assertIn("--context=" + self.contract["target"]["context"], call)
+            self.assertIn("--namespace=" + self.contract["target"]["namespace"], call)
+            self.assertIn("--request-timeout=10s", call)
+            self.assertNotIn("--raw", call)
+            self.assertTrue("get" in call or call[-4:] == ["config", "view", "--minify", "--output=json"])
+            if "get" in call:
+                self.assertIn("--server=" + self.contract["target"]["apiServer"], call)
+                self.assertIn("--insecure-skip-tls-verify=false", call)
+                index = call.index("get")
+                self.assertIn(call[index + 1], {"namespaces", "deployments.apps", "statefulsets.apps", "daemonsets.apps"})
+        return result, record, calls
+
+    def test_identity_match_is_explicitly_not_readiness(self):
+        result, record, calls = self.invoke()
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(record["identityStatus"], "matched")
+        self.assertIn("remain unverified", result.stdout)
+        self.assertEqual(len(calls), len(self.responses))
+        workload = record["observations"]["before"]["workloads"][0]
+        self.assertEqual(set(workload), {"id", "kind", "name", "uid", "generation", "templateImageDigests"})
+
+    def test_full_check_cannot_pass_on_identity_alone(self):
+        result, record, _ = self.invoke(identity_only=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["identityStatus"], "matched")
+
+    def test_wrong_cluster_stops_before_api(self):
+        self.responses[0]["contexts"][0]["context"]["cluster"] = SECRET
+        result, record, calls = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["blockers"][0], "kubeconfig-identity-mismatch")
+        self.assertEqual(len(calls), 1)
+
+    def test_wrong_api_server_stops_before_api(self):
+        self.responses[0]["clusters"][0]["cluster"]["server"] = "https://other.invalid"
+        result, record, calls = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["blockers"][0], "kubeconfig-identity-mismatch")
+        self.assertEqual(len(calls), 1)
+
+    def test_insecure_tls_stops_before_api(self):
+        self.responses[0]["clusters"][0]["cluster"]["insecure-skip-tls-verify"] = True
+        result, record, calls = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["blockers"][0], "kubeconfig-insecure-tls")
+        self.assertEqual(len(calls), 1)
+
+    def test_recreated_namespace_stops_before_workloads(self):
+        self.responses[1]["metadata"]["uid"] = SECRET
+        result, record, calls = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["blockers"][0], "namespace-identity-mismatch")
+        self.assertEqual(len(calls), 2)
+
+    def test_recreated_workload_rejected(self):
+        self.responses[2]["metadata"]["uid"] = SECRET
+        result, record, _ = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["blockers"][0], "workload-identity-mismatch")
+
+    def test_mutable_image_rejected(self):
+        self.responses[2]["spec"]["template"]["spec"]["containers"][0]["image"] = SECRET
+        result, record, _ = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["blockers"][0], "workload-template-images-mismatch")
+
+    def test_unapproved_init_container_rejected(self):
+        self.responses[2]["spec"]["template"]["spec"]["initContainers"] = [{"image": SECRET}]
+        result, record, _ = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["blockers"][0], "workload-template-images-mismatch")
+
+    def test_generation_change_rejected(self):
+        self.responses[-1]["metadata"]["generation"] = 4
+        result, record, _ = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["blockers"][0], "target-changed-during-discovery")
+        self.assertEqual(set(record["observations"]), {"before", "after"})
+
+    def test_incomplete_objects_rejected(self):
+        self.responses[1] = {"metadata": {"private": SECRET}}
+        result, record, _ = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(record["blockers"][0], "kubernetes-identity-missing")
+
+    def test_process_errors_are_safe(self):
+        for mode, code in (("failed", "kubectl-read-failed"), ("invalid", "kubectl-invalid-json"),
+                           ("oversize", "kubectl-response-too-large")):
+            with self.subTest(mode=mode):
+                # Each invocation gets its own run directory; inspect all safe
+                # artifacts afterwards rather than forcing one-record helper.
+                result, record, _ = self.invoke(mode=mode)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(record["blockers"][0], code)
+                for path in (self.directory / "artifacts").glob("*/identity.json"):
+                    path.unlink()
+                (self.directory / "calls.jsonl").unlink()
+
+    def test_prerequisites_and_synthetic_marker_prevent_all_calls(self):
+        self.contract["readiness"]["prerequisites"][0]["status"] = "pending"
+        result, record, calls = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(record)
+        self.assertEqual(calls, [])
+        self.contract["purpose"] = "synthetic-example"
+        result, record, calls = self.invoke()
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(record)
+        self.assertEqual(calls, [])
+
+    def test_smoke_never_contacts_kubernetes(self):
+        result, record, calls = self.invoke(identity_only=False, command="smoke")
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(record)
+        self.assertEqual(calls, [])
+
+    def test_deadline_kills_slow_command(self):
+        (self.directory / "responses.json").write_text(json.dumps(self.responses))
+        environment = {**self.environment, "SHOKO_IDENTITY_TEST_MODE": "timeout"}
+        from unittest.mock import patch
+        with patch.dict(os.environ, environment, clear=True):
+            with self.assertRaisesRegex(IdentityError, "kubectl-timeout"):
+                Kubectl(self.contract["target"], budget_seconds=0.1).configuration()
+
+    def test_artifact_failure_is_safe(self):
+        parent = self.directory / "not-a-directory"
+        parent.write_text(SECRET)
+        with self.assertRaisesRegex(IdentityError, "^identity-artifact-write-failed$"):
+            write_record({}, parent)
+
+
+if __name__ == "__main__":
+    unittest.main()

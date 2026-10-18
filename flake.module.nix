@@ -119,6 +119,7 @@
         cp ${./schemas/workflow-v1.schema.json} schemas/workflow-v1.schema.json
         cp ${./integration/examples/workflow.example.json} integration/examples/workflow.example.json
         python scripts/test-workflow-contract
+        python scripts/test-workflow-identity
         touch "$out"
       '';
     };

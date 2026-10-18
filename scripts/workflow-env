@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Validate a workflow contract offline. Live check/smoke await the target contract."""
+"""Validate offline or inspect an explicitly contracted Kubernetes target."""
 
 import argparse
 from pathlib import Path
 import sys
 
-from workflow_contract import ContractError, load_json, readiness_blockers, validate_contract
+from workflow_contract import ContractError, load_json, parse_json, readiness_blockers, validate_contract
+from workflow_identity import IdentityError, check_identity, write_record
 
 
 def main():
@@ -13,9 +14,19 @@ def main():
     parser.add_argument("command", choices=["validate", "check", "smoke"])
     root = Path(__file__).resolve().parent.parent
     parser.add_argument("--manifest", type=Path, default=root / "integration/workflow.json")
+    parser.add_argument("--identity-only", action="store_true",
+                        help="check only: exit 0 for matching Kubernetes identities, not readiness")
+    parser.add_argument("--artifacts", type=Path, default=root / ".shoko/runs",
+                        help="parent of a fresh private identity artifact directory")
     args = parser.parse_args()
+    if args.identity_only and args.command != "check":
+        parser.error("--identity-only requires check")
     try:
-        value = validate_contract(load_json(args.manifest), load_json(root / "schemas/workflow-v1.schema.json"))
+        try:
+            manifest_bytes = args.manifest.read_bytes()
+        except OSError:
+            raise ContractError("manifest missing, unreadable, or invalid JSON") from None
+        value = validate_contract(parse_json(manifest_bytes), load_json(root / "schemas/workflow-v1.schema.json"))
         if value["purpose"] != "staging-contract":
             raise ContractError("synthetic example is not an approved staging contract")
         blockers = readiness_blockers(value)
@@ -23,11 +34,20 @@ def main():
             # Only stable IDs go to the terminal, never arbitrary manifest prose.
             print("Unmet staging prerequisites: " + ", ".join(p["id"] for p in blockers), file=sys.stderr)
             return 2
-        if args.command != "validate":
-            raise ContractError("live check/smoke implementation awaits the approved target/access contract; no calls made")
+        if args.command == "smoke":
+            raise ContractError("live smoke implementation awaits the approved target/access contract; no calls made")
+        if args.command == "check":
+            record = check_identity(value, manifest_bytes)
+            path = write_record(record, args.artifacts)
+            print("Identity artifact: " + str(path))
+            if record["identityStatus"] != "matched":
+                print("Kubernetes identity blocked: " + record["blockers"][0], file=sys.stderr)
+                return 2
+            print("Kubernetes identities matched; endpoint/evidence and domain readiness remain unverified.")
+            return 0 if args.identity_only else 2
         print("Workflow contract v1 is structurally valid; live readiness has not been checked.")
         return 0
-    except ContractError as error:
+    except (ContractError, IdentityError) as error:
         print(str(error), file=sys.stderr)
         return 2
 

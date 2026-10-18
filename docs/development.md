@@ -23,6 +23,12 @@ provenance, all exit classes, safe credentials, and atomic persistence.
 The offline workflow contract suite checks source/coverage mappings, canonical
 host ownership, readiness prerequisites, and rejection of synthetic manifests
 as staging contracts. It runs in both `just check` and `nix flake check`.
+The same target includes offline identity-discovery process tests. They provide
+their own fake `kubectl`, verify explicit targeting and sanitized private
+artifacts, and exercise mismatches, deployment changes, response limits, and
+timeouts. They never use the developer's kubeconfig or contact a cluster. See
+the [workflow guide](workflows/first-staging-workflow.md) for the guarded live
+identity command and its remaining readiness limits.
 The event-store suite uses pinned real Kiroku and Message DB schemas, separate
 writer/reader roles, and the public core runner. `just test-event-stores` requires
 both stores; `just test-event-store kiroku` and `just test-event-store message-db`

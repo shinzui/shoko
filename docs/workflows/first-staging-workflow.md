@@ -20,9 +20,56 @@ The other commands explicitly select `integration/workflow.json`. That file is
 intentionally absent until the environment owner supplies the target contract.
 They exit 2 for a missing/invalid manifest or pending prerequisite. `validate`
 can establish structural validity only; it never contacts Kubernetes, resolves
-credentials, or submits a workflow. Live `check` and `smoke` are reserved interfaces
-and currently fail with an unavailable message even for a valid manifest.
-Their actual access and independent workflow implementations remain EP-2 work.
+credentials, or submits a workflow. `check` now implements read-only Kubernetes
+identity discovery for an explicit, confirmed contract. Full readiness and the
+independent `smoke` workflow remain unfinished EP-2 work. The environment/domain
+owners confirmed on 2026-10-18 that the concrete inputs are still being prepared.
+
+## Read-only identity discovery
+
+After the owners supply the real manifest and confirm its prerequisites, run:
+
+```bash
+nix develop --command python3 scripts/workflow-env check --identity-only
+```
+
+This requires an installed `kubectl` compatible with the approved cluster and
+its documented authentication/access route. The tool does not install a client,
+open tunnels, select an ambient current context, or change kubeconfig. It uses
+an explicit context and namespace on every command, checks the minified local
+configuration's cluster name and HTTPS server before any API request, rejects
+disabled TLS verification, and pins the server on each GET. Only the approved
+namespace object and individually named workloads are requested. A mismatch or
+missing identity stops discovery. The implementation follows the official
+[`config view`](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_config/kubectl_config_view/)
+and [`get`](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_get/)
+interfaces; it never requests secrets or logs.
+
+Two observations compare namespace/workload UIDs, controller generations, and
+the exact set of image digests in container and init-container templates. Changes
+between the observations block the identity check. These are controller template
+images, not running pod image IDs, rollout readiness, source revision provenance,
+or proof of continuous deployment stability. Runtime images and the deployment
+owner's stable window still require verification before acceptance.
+
+`--identity-only` exits 0 only for matching identity observations; its message
+and artifact still say full readiness is blocked. Plain `check` always exits 2
+until endpoint authorization/connectivity, evidence access, and permitted domain
+test setup have live checks. `smoke` still exits 2 without calls. Neither command
+can turn a declaration or identity match into workflow acceptance.
+
+Each attempted identity discovery creates
+`.shoko/runs/<fresh-uuid>/identity.json` (ignored by Git), or a fresh directory
+under `--artifacts <parent>`. The directory is private (0700) and the file is
+0600. The record includes the exact manifest's SHA-256, check time, separate
+identity/readiness statuses, stable blocker codes, and allowlisted before/after
+identity fields. Raw kubeconfig, resource responses, process errors, environment
+values, endpoint credentials, payloads, and unexpected mismatching identities
+are not retained. Artifact write failure is a failing command. Missing/invalid
+manifests, synthetic examples, and pending prerequisites prevent all Kubernetes
+calls and create no identity artifact. Discovery has a 60-second overall budget,
+10-second API request timeouts, a 15-second process cap, and a 4 MiB response cap;
+timeout cleanup kills the owned command group, including credential-plugin children.
 
 ## Inputs needed to finish the contract
 
@@ -111,9 +158,9 @@ M1 requires a concrete positive/negative target contract accepted against the
 schema and domain definitions. M2 then implements read-only discovery and
 independent real smoke checks, retains sanitized before/after identities, and
 demonstrates two positive runs with isolated business keys plus the documented
-negative case. Store future run artifacts under an ignored, run-specific
-directory once the access implementation defines it. No such artifacts or
-retention acceptance are claimed by the offline tests.
+negative case. Identity discovery artifacts are separate from future workflow
+acceptance envelopes. No live identity, workflow artifacts, or retention
+acceptance are claimed by the offline tests.
 
 See [EP-2](../plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md)
 and [ADR 0004](../adr/0004-gate-parity-on-real-workflows-and-context-owned-vocabulary.md).

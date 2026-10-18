@@ -130,8 +130,12 @@ controlled qualified-agent/recipient setup, repeatable OTP retrieval, deployed
 completion mode, and confirmed negative behavior. Both EP-2 milestones remain
 unaccepted. The user/environment and domain owners supply those inputs; no
 cluster calls, deployment changes, or staging acceptance runs have occurred.
-The live check/smoke command interfaces currently return unavailable without
-making calls. Under the eligible-adapter fallback, EP-5 is now Complete with
+The guarded `check --identity-only` command now supports read-only Kubernetes
+identity observations and private contract-hashed artifacts. Its 16 new offline
+process groups and eight contract groups pass in the native Nix workflow check.
+Full readiness and smoke remain unfinished; identity matching
+alone cannot satisfy EP-2. The owners confirmed that inputs are still being
+prepared, so no live calls occurred. Under the eligible-adapter fallback, EP-5 is now Complete with
 18 real contract groups per store passing in Cabal and native Nix fixtures.
 The final full workspace check passes: 40 core tests, 15 SQL/HTTP checks,
 36 event-store checks, 43 CLI invocations, eight workflow-contract groups, seven

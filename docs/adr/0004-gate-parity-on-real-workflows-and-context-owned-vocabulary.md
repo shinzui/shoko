@@ -55,3 +55,13 @@ deployed identity, available test facilities, or real workflow success. Keep the
 synthetic format example separate from the default staging manifest and reject
 it for staging commands. Live discovery and independent smoke evidence remain
 required even after all declared prerequisites are confirmed.
+
+Implementation clarification, 2026-10-18: the read-only integration identity
+check distinguishes controller-template observations from full staging readiness.
+It pins an explicitly declared context/server/namespace, compares namespace and
+workload UIDs, generations and template digests before/after discovery, and retains
+only allowlisted identities with the exact contract digest. A successful explicit
+identity-only command still records readiness blocked. Runtime pod image identity,
+rollout readiness, endpoint/evidence access, domain test setup and real workflow
+outcomes remain live acceptance obligations. Discovery performs no manifest recipe
+execution or workload lifecycle operations.

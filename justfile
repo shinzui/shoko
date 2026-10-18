@@ -22,6 +22,7 @@ test-cli:
 
 test-workflow-contract:
     python3 scripts/test-workflow-contract
+    python3 scripts/test-workflow-identity
 
 workflow-validate:
     python3 scripts/workflow-env validate --manifest integration/workflow.json
