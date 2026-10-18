@@ -2,7 +2,16 @@
 
 Shōko is a Haskell DSL for specifying and verifying observable behavior across distributed systems. A scenario describes the evidence that establishes correct behavior; adapters determine how to obtain that evidence from a particular implementation and environment.
 
-**Status:** experimental, at the specification and requirement-validation stage. This repository currently contains design documents and research. The DSL, runner, adapters, and CLI described here are planned; there is no runnable Shōko package yet.
+**Status:** experimental. The Haskell foundation provides `shoko-core` and a compiled public API consumer test on GHC 9.12.4. The DSL, runner, adapters, and CLI described below remain planned.
+
+Build and check the foundation from the repository root:
+
+```bash
+nix develop --command cabal update
+nix develop --command just check
+```
+
+Use `nix develop --command just fmt` to format Haskell, Cabal, and Nix sources. See [development](docs/development.md) and [dependency evidence](docs/dependencies.md). Foundation checks establish library/build usability; real staging workflow acceptance remains outstanding.
 
 ## Why the name?
 

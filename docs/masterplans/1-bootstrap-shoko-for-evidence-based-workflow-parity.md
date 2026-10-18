@@ -21,6 +21,11 @@ provenance:
       at: 2026-10-18T17:14:48Z
       mode: "update"
       note: "Validate registration MVP decomposition and separate first-use acceptance from full adapter completion."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-18T17:41:49Z
+      mode: "implement"
+      note: "Begin foundation implementation; defer staging prerequisites until the owner prepares access."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -67,7 +72,7 @@ Research F2/F3/F5/F7/F10/F12 inform EP-3/EP-6; F4/F8/F9 inform evidence/results;
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Haskell/Seihou foundation | [Plan 1](../plans/1-bootstrap-the-haskell-workspace-with-seihou-and-jitsurei-standards.md) | None | None | Not Started |
+| 1 | Haskell/Seihou foundation | [Plan 1](../plans/1-bootstrap-the-haskell-workspace-with-seihou-and-jitsurei-standards.md) | None | None | In Progress |
 | 2 | Registration workflow and Kubernetes staging target | [Plan 2](../plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md) | M1: None; M2: EP-1 | None | Not Started |
 | 3 | Inspectable DSL and bounded runner | [Plan 3](../plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md) | EP-1 | EP-2 M1 | Not Started |
 | 4 | PostgreSQL and HTTP bindings | [Plan 4](../plans/4-implement-postgresql-and-http-evidence-bindings.md) | EP-3 | EP-2 M1 | Not Started |
@@ -108,7 +113,7 @@ The early integration sequence is two core consumers including positive/negative
 ## Progress
 
 
-The 2026-10-18 validation/update is complete; implementation has not started and all seven children are Not Started. EP-2 M1 and EP-1 are immediately eligible. The source tree contains documentation and tooling metadata, with no Cabal packages, flake, runner, or tests. Seihou's foundation dry run succeeded with 11 files to write and zero conflicts; this proves scaffold applicability, not compilation or dependency compatibility. The user selected registration completion. Actual cluster access, deployed identities, qualified-agent fixtures, OTP retrieval, real completion mode, and downstream evidence remain unverified. No cluster calls, application deployment changes, Haskell tests, or staging acceptance runs occurred in this update.
+Implementation began on 2026-10-18. EP-1 is In Progress: Seihou 0.31.0 generated the environment without conflicts, and the managed shell reports GHC 9.12.4. Core package compilation and checks are underway. The user is preparing the staging context, namespace, test identity, OTP route, and credential references and requested deferring those details until the foundation is built. EP-2 remains Not Started; no concrete staging contract or accepted readiness evidence exists. No cluster calls, application deployment changes, or staging acceptance runs have occurred.
 
 Completion requires all registry rows Complete, a passing real positive workflow, a passing documented negative scenario, Fail/Unknown controls, and repeatable scoped cleanup/retention in staging. A working library/demo alone cannot complete the initiative. A second implementation is not required.
 

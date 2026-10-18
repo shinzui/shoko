@@ -17,6 +17,56 @@ in  Schema.Project::{
       , owners = [ "shinzui" ]
       }
     , repos = [ Schema.Repo::{ name = "shoko", github = Some "shinzui/shoko" } ]
+    , packages =
+      [ Schema.Package::{
+        , name = "shoko-core"
+        , type = Schema.PackageType.Library
+        , language = Schema.Language.Haskell
+        , path = Some "shoko-core"
+        , description = Some "Public core library and bounded verification runner"
+        , dependencies =
+          [ Schema.Dependency.ByName "haskell/text:text"
+          , Schema.Dependency.ByName "UnkindPartition/tasty:tasty"
+          , Schema.Dependency.ByName "UnkindPartition/tasty:tasty-hedgehog"
+          , Schema.Dependency.ByName "hedgehogqa/haskell-hedgehog:hedgehog"
+          ]
+        }
+      ]
+    , dependencyRefs =
+      [ Schema.MoriRef::{
+        , namespace = "haskell"
+        , name = "text"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "text"
+        }
+      , Schema.MoriRef::{
+        , namespace = "UnkindPartition"
+        , name = "tasty"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "tasty"
+        }
+      , Schema.MoriRef::{
+        , namespace = "UnkindPartition"
+        , name = "tasty"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "tasty-hedgehog"
+        }
+      , Schema.MoriRef::{
+        , namespace = "hedgehogqa"
+        , name = "haskell-hedgehog"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "hedgehog"
+        }
+      ]
+    , docs =
+      [ Schema.DocRef::{
+        , key = "development"
+        , kind = Schema.DocKind.Guide
+        , audience = Schema.DocAudience.User
+        , description = Some "Build, test, format, and maintain the Shoko workspace"
+        , location = Schema.DocLocation.LocalFile "docs/development.md"
+        }
+      ]
     , okfBundles =
       [ Schema.OkfBundle::{
         , name = "research"

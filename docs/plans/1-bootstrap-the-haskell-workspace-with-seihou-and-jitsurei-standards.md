@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-18T17:14:48Z
       mode: "update"
       note: "Validate scaffold preview and clarify build versus fixture test gates."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-18T17:41:49Z
+      mode: "implement"
+      note: "Generate released Seihou environment and implement reproducible core package and checks."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -43,13 +48,17 @@ A contributor can enter a reproducible Haskell shell, build the first Shōko lib
 ## Progress
 
 
-- [ ] M1: Seihou-generated development environment loads with the shared toolchain and unchanged managed pins.
+- [x] M1 (2026-10-18): Seihou 0.31.0 generated the environment with zero conflicts; `nix develop --command ghc --numeric-version` reports 9.12.4, evaluation leaves the generated lock unchanged, and `seihou diff` reports no drift.
 - [ ] M2: The initial core package builds, its public API is usable by a test consumer, and CI runs the documented build and formatting checks.
+
+The library and separate Tasty/Hedgehog consumer compile and pass. `nix develop --command just check` passed on aarch64-darwin, including all three flake checks (core package/tests, treefmt, pre-commit). CI is configured to invoke the same checks on Ubuntu. A clean detached checkout remains to be verified before M2 acceptance; no Linux CI run is claimed.
 
 ## Surprises & Discoveries
 
 
 On 2026-10-18, the documented Seihou dry run succeeded with 11 files to write and zero conflicts. It warned about unrelated saved configuration keys; preserve those keys. No flake was generated and no solver/build was executed. The inspected local template README now reports 0.30.0; that observation is not a released-version selection.
+
+Implementation on 2026-10-18 found the installed module at 0.31.0, matching the upstream descriptor at `cc1b70c70eddeec5155c1a5a723b63a4cfaba6d6` of `mori://shinzui/seihou-modules`. Mori's cached 0.26.0 and the local checkout's 0.30.0 README lag that published descriptor. The managed package set uses released Hedgehog 1.5 while Hackage has 1.7; the project deliberately selects 1.5 to keep direct Cabal/Nix test dependencies aligned. Saved Seihou Boolean settings must be textual `"true"`/`"false"` in its homogeneous config record.
 
 ## Decision Log
 
