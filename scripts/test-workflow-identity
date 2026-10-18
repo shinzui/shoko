@@ -115,7 +115,18 @@ print(json.dumps(responses[index]))
         self.assertIn("remain unverified", result.stdout)
         self.assertEqual(len(calls), len(self.responses))
         workload = record["observations"]["before"]["workloads"][0]
-        self.assertEqual(set(workload), {"id", "kind", "name", "uid", "generation", "templateImageDigests"})
+        self.assertEqual(set(workload), {"id", "kind", "name", "uid", "generation", "templateImageRefs"})
+
+    def test_tagged_sidecar_has_separate_runtime_digest_expectation(self):
+        workload = self.contract["target"]["workloads"][0]
+        workload["templateImages"] = [*workload["imageDigests"], "example.invalid/proxy:1"]
+        workload["imageDigests"].append("example.invalid/proxy@sha256:" + "b" * 64)
+        for response in (self.responses[2], self.responses[-1]):
+            response["spec"]["template"]["spec"]["initContainers"] = [{"image": "example.invalid/proxy:1"}]
+        result, record, _ = self.invoke()
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("runtime-image-identities-unverified", record["blockers"])
+        self.assertIn("example.invalid/proxy:1", record["observations"]["before"]["workloads"][0]["templateImageRefs"])
 
     def test_full_check_cannot_pass_on_identity_alone(self):
         result, record, _ = self.invoke(identity_only=False)

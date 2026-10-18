@@ -45,6 +45,8 @@ class WorkflowContractTests(unittest.TestCase):
             (["target", "apiServer"], "https://user:SECRET-sentinel@cluster.invalid"),
             (["target", "workloads", 0, "name"], "--all"),
             (["target", "workloads", 0, "imageDigests"], ["image:mutable"]),
+            (["target", "workloads", 0, "templateImages"], ["example.invalid/other@sha256:" + "c" * 64]),
+            (["target", "workloads", 0, "templateImages"], ["image SECRET-sentinel"]),
             (["target", "endpoints", 0, "credentialEnv"], ["actual-secret-value"]),
             (["target", "endpoints", 0, "address"], "https://user:SECRET-sentinel@example.invalid"),
             (["target", "endpoints", 0, "address"], "https://example.invalid?token=SECRET-sentinel"),

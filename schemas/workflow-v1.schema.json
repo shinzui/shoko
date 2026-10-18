@@ -559,10 +559,21 @@
         },
         "imageDigests": {
           "type": "array",
+          "description": "Expected runtime image digests for all application and init containers. Identity-only discovery does not verify runtime images.",
           "minItems": 1,
           "items": {
             "type": "string",
             "pattern": "^.+@sha256:[0-9a-f]{64}$"
+          },
+          "uniqueItems": true
+        },
+        "templateImages": {
+          "type": "array",
+          "description": "Exact controller template image references, including tags and init containers. When absent, defaults to imageDigests. Tags never replace runtime digest expectations.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*(?:@sha256:[0-9a-f]{64})?$"
           },
           "uniqueItems": true
         },

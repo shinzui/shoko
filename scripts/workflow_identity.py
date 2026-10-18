@@ -121,7 +121,8 @@ class Kubectl:
                 spec = observed["spec"]["template"]["spec"]
                 containers = spec["containers"] + spec.get("initContainers", [])
                 images = [container["image"] for container in containers]
-                if not images or set(images) != set(expected["imageDigests"]):
+                templates = expected.get("templateImages", expected["imageDigests"])
+                if not images or set(images) != set(templates):
                     raise IdentityError("workload-template-images-mismatch")
                 generation = meta["generation"]
                 if type(generation) is not int or generation < 1:
@@ -130,7 +131,7 @@ class Kubectl:
                 # pod readiness, rollout completion, or continuous stability.
                 result["workloads"].append({
                     **{key: expected[key] for key in ("id", "kind", "name", "uid")},
-                    "generation": generation, "templateImageDigests": sorted(set(images)),
+                    "generation": generation, "templateImageRefs": sorted(set(images)),
                 })
             return result
         except (KeyError, TypeError, IndexError):
@@ -146,7 +147,8 @@ def check_identity(contract, manifest_bytes, *, client=None):
         "identityStatus": "blocked",
         "readinessStatus": "blocked",
         "observations": {},
-        "blockers": ["endpoint-evidence-and-domain-readiness-unverified"],
+        "blockers": ["runtime-image-identities-unverified",
+                     "endpoint-evidence-and-domain-readiness-unverified"],
     }
     try:
         client = client or Kubectl(contract["target"])

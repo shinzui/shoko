@@ -3,7 +3,8 @@
 The selected workflow completes registration for an already-qualified agent and
 checks real registration, account, user, and account/user-association outcomes.
 Qualification and other registration flows are excluded. The target is an existing
-Kubernetes staging deployment. Its concrete access contract is still pending;
+Kubernetes staging deployment: the user identified cluster `sennari`, namespace
+`test`, on 2026-10-18. Its complete access/workflow contract is still pending;
 no staging readiness or workflow acceptance has been established.
 
 The local contract tooling is available now:
@@ -24,6 +25,42 @@ credentials, or submits a workflow. `check` now implements read-only Kubernetes
 identity discovery for an explicit, confirmed contract. Full readiness and the
 independent `smoke` workflow remain unfinished EP-2 work. The environment/domain
 owners confirmed on 2026-10-18 that the concrete inputs are still being prepared.
+
+## Target discovery checkpoint
+
+After the user identified `sennari` / `test`, read-only discovery on 2026-10-18
+confirmed that the existing `sennari` context maps to kubeconfig cluster
+`gke_tan-cluster_us-west1-a_sennari` and can access namespace `test`. The
+[application infrastructure](mori://tan/tan-app-infrastructure/packages/registration-service-v2)
+provides the current registration deployment and Service definitions.
+
+Four named Deployments were observed: `registration-service-v2-server`,
+`registration-service-v2-worker`, `registration-service-v2-kafka-consumer`, and
+`registration-service-v2-pgmq-worker`. Each reported one ready replica. Their
+application templates and the selected pods' application image IDs shared digest
+`32328d77b5795fb965b0f541339bba8cd16cab1ba1574164e2ba22a70cf83398`.
+The API Service `registration-service-v2-server` is `ClusterIP`, exposing HTTP
+port 80 to container port 10001; this alone does not establish a route from the
+verification host.
+
+The full inventory also found native init-sidecars: Cloud SQL Proxy is configured
+by a version tag, and the worker/Kafka consumer additionally use a Kafka auth
+sidecar with a `latest` tag. The integration contract now separates optional
+`templateImages` (the exact configured refs, including tags) from `imageDigests`
+(expected runtime digests for all containers). When `templateImages` is absent,
+it defaults to `imageDigests`. This represents the deployment without omitting
+sidecars or changing application resources. Pinned template refs must also have
+runtime digest expectations. The identity-only check compares template refs;
+runtime image verification and pod/controller ownership remain explicit readiness
+obligations, even when the template references match.
+
+An ignored private `.shoko/runs/<uuid>/target-discovery.json` records the API
+server, namespace/workload UIDs, generations, complete template image references,
+Service metadata, and selected pod runtime image IDs. Two namespace/workload
+observations matched during discovery. This artifact is labelled target discovery
+and readiness unverified; pod selection by label is not verified controller
+ownership or a stable-window guarantee. No workflow actions, OTP requests,
+Secret resource reads, or workload mutations occurred.
 
 ## Read-only identity discovery
 
@@ -46,7 +83,7 @@ and [`get`](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_get/)
 interfaces; it never requests secrets or logs.
 
 Two observations compare namespace/workload UIDs, controller generations, and
-the exact set of image digests in container and init-container templates. Changes
+the exact set of image references in container and init-container templates. Changes
 between the observations block the identity check. These are controller template
 images, not running pod image IDs, rollout readiness, source revision provenance,
 or proof of continuous deployment stability. Runtime images and the deployment
@@ -54,8 +91,8 @@ owner's stable window still require verification before acceptance.
 
 `--identity-only` exits 0 only for matching identity observations; its message
 and artifact still say full readiness is blocked. Plain `check` always exits 2
-until endpoint authorization/connectivity, evidence access, and permitted domain
-test setup have live checks. `smoke` still exits 2 without calls. Neither command
+until runtime image identity, endpoint authorization/connectivity, evidence access,
+and permitted domain test setup have live checks. `smoke` still exits 2 without calls. Neither command
 can turn a declaration or identity match into workflow acceptance.
 
 Each attempted identity discovery creates
@@ -73,9 +110,10 @@ timeout cleanup kills the owned command group, including credential-plugin child
 
 ## Inputs needed to finish the contract
 
-The environment owner must supply the approved context, cluster name and API
-server, namespace and namespace UID, actual workloads and their UIDs/immutable
-image digests, access route, and action/evidence endpoints. Each endpoint needs
+The cluster and namespace names are now supplied, and discovery has observed the
+context/API server, namespace UID, and registration workload identities. The
+environment owner must still establish the complete accepted identity/image
+contract, access route, and action/evidence endpoints. Each endpoint needs
 an explicit association with the approved deployment, including external
 databases. Historical values from another task are discovery context, not approval
 to select a cluster or use an endpoint.

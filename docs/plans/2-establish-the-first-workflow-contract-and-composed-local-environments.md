@@ -61,11 +61,12 @@ claim complete negative coverage. No default `integration/workflow.json` exists 
 target/access/test inputs remain unavailable. M1 remains unfinished. The
 `workflow-check` now performs guarded read-only identity discovery with private
 before/after artifacts; its explicit `--identity-only` mode can establish matching
-namespace/workload UIDs, controller generations, and template image digests. Full
+namespace/workload UIDs, controller generations, and template image references. Full
 readiness remains blocked: runtime images, endpoint/evidence checks, permitted
 test setup, and independent smoke behavior are still M2 work. `workflow-smoke`
-exits 2 without calls. The owners confirmed the inputs are still being prepared;
-no live discovery or staging acceptance has occurred.
+exits 2 without calls. The owners confirmed the remaining inputs are still being
+prepared. The user subsequently identified cluster `sennari`, namespace `test`;
+read-only target inventory succeeded, but no workflow acceptance has occurred.
 Resume with the environment/domain owner inputs listed in the workflow guide;
 then populate the real manifest, freeze its assertions/reader selection, implement
 the approved access route, and retain the required live acceptance.
@@ -73,7 +74,15 @@ the approved access route, and retain the required live acceptance.
 ## Surprises & Discoveries
 
 
-The user confirmed that staging is a complete running system in a Kubernetes test namespace, and that verifying this system comes before legacy/Keiro comparison. The cluster/context, namespace name, current deployment identities, access route, and test credentials have not yet been inspected. Those concrete values are implementation inputs; the research's missing local pair is no longer a bootstrap prerequisite.
+The user confirmed that staging is a complete running system in a Kubernetes test namespace, and that verifying this system comes before legacy/Keiro comparison. On 2026-10-18 they named cluster `sennari`, namespace `test`. Read-only discovery verified the matching local context and namespace UID and inventoried four registration Deployments, their image references/runtime IDs, and the internal API Service. Access routes, endpoint authorization, domain test facilities and scoped evidence credentials remain unresolved. The research's missing local pair is no longer a bootstrap prerequisite.
+
+The actual deployment pins the application image by digest but configures native
+init-sidecars using tags (Cloud SQL Proxy by version, Kafka auth by `latest`).
+The integration contract now permits a separate exact `templateImages` set while
+keeping `imageDigests` as runtime expectations. The checker compares configured
+template references; runtime verification and pod ownership remain unverified
+readiness obligations. This avoids omitting sidecars or demanding an incidental
+deployment change. Discovery remains separate from accepted readiness.
 
 The current API package in `mori://tan/registration-service-v2` at revision
 `6cd07aa8b9f032fc850fed4b2ba1022537da8c91` still exposes the described
@@ -116,6 +125,22 @@ isolated synthetic kubeconfig with a different current context; this made no API
 requests and is not a client/server compatibility claim. The environment/domain
 owners confirmed they are still preparing the required inputs. Both milestones
 remain unaccepted.
+
+Target discovery, 2026-10-18: the user supplied `sennari` / `test`; explicit
+read-only queries succeeded. Two namespace/workload observations matched, all
+four registration Deployments reported one ready replica, and the API Service
+was internal ClusterIP. A private ignored target-discovery artifact retains
+allowlisted observations; no secrets, action payloads, or raw resource responses
+were persisted. This is new access evidence, not M1/M2 acceptance. The full
+image/endpoint contract, controlled qualified-agent/recipient facility, repeatable
+OTP, completion mode, precise negative scenario, evidence access, stable window
+and cleanup/retention remain required. No scenario mutation occurred. The contract
+and checker were refined to distinguish template references from runtime digests;
+the new tagged-sidecar process test preserves readiness blocked after a template
+match, and pinned-template/runtime-expectation inconsistencies fail validation.
+All eight contract groups and 17 identity process groups pass locally; the native
+Nix workflow check also passes. Changed Markdown links/fences and artifact
+structure/private permissions were checked separately.
 
 ## Context and Orientation
 

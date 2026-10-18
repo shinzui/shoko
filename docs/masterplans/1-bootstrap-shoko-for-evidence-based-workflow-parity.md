@@ -124,18 +124,24 @@ the workflow schema, offline semantic validator, synthetic format fixture,
 operator contract guide, and local/Nix validation checks are implemented.
 The full `nix develop --command just check` passes, including eight new offline
 contract test groups and the native `workflow-contract` check.
-Its concrete `integration/workflow.json` is deliberately absent pending approved
-cluster/context, namespace/identity, access routes, scoped evidence credentials,
+Its concrete `integration/workflow.json` is deliberately absent pending the full
+accepted target/image contract, access routes, scoped evidence credentials,
 controlled qualified-agent/recipient setup, repeatable OTP retrieval, deployed
 completion mode, and confirmed negative behavior. Both EP-2 milestones remain
-unaccepted. The user/environment and domain owners supply those inputs; no
-cluster calls, deployment changes, or staging acceptance runs have occurred.
+unaccepted. The user/environment and domain owners supply those inputs. The user
+subsequently identified cluster `sennari`, namespace `test`; read-only discovery
+verified access and inventoried four registration Deployments and their internal
+API Service. No deployment changes or staging workflow runs have occurred.
 The guarded `check --identity-only` command now supports read-only Kubernetes
-identity observations and private contract-hashed artifacts. Its 16 new offline
+identity observations and private contract-hashed artifacts. Its 17 offline
 process groups and eight contract groups pass in the native Nix workflow check.
 Full readiness and smoke remain unfinished; identity matching
-alone cannot satisfy EP-2. The owners confirmed that inputs are still being
-prepared, so no live calls occurred. Under the eligible-adapter fallback, EP-5 is now Complete with
+alone cannot satisfy EP-2. Discovery found tagged native init-sidecars alongside
+the digest-pinned application image; the integration image contract/check now
+separates template refs from required runtime digests, with runtime verification
+still unverified and full readiness blocked.
+The remaining domain/access inputs are still being prepared. Under the
+eligible-adapter fallback, EP-5 is now Complete with
 18 real contract groups per store passing in Cabal and native Nix fixtures.
 The final full workspace check passes: 40 core tests, 15 SQL/HTTP checks,
 36 event-store checks, 43 CLI invocations, eight workflow-contract groups, seven

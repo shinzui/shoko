@@ -76,6 +76,9 @@ def validate_contract(value, schema):
         if (len(workload["name"]) > 253
                 or not re.fullmatch(dns_label + r"(?:\." + dns_label + r")*", workload["name"])):
             raise ContractError("Kubernetes workload name must be an explicit DNS name")
+        templates = workload.get("templateImages", workload["imageDigests"])
+        if not {image for image in templates if "@sha256:" in image} <= set(workload["imageDigests"]):
+            raise ContractError("pinned template images must have runtime digest expectations")
     prerequisites = indexed(value["readiness"]["prerequisites"], "prerequisite")
     if not {"cluster-access", "controlled-fixtures", "otp-path", "real-completion",
             "evidence-access", "negative-contract", "endpoint-authorization",

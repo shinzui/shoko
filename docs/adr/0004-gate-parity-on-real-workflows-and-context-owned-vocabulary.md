@@ -63,5 +63,9 @@ workload UIDs, generations and template digests before/after discovery, and reta
 only allowlisted identities with the exact contract digest. A successful explicit
 identity-only command still records readiness blocked. Runtime pod image identity,
 rollout readiness, endpoint/evidence access, domain test setup and real workflow
-outcomes remain live acceptance obligations. Discovery performs no manifest recipe
+outcomes remain live acceptance obligations. Controller templates may use tagged
+sidecars: retain their exact template refs separately from required runtime digest
+expectations, include init containers, and do not change the deployed system merely
+to satisfy the verifier's manifest format. A matching template does not verify its
+running digest or pod/controller ownership. Discovery performs no manifest recipe
 execution or workload lifecycle operations.
