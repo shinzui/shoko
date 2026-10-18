@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Verify the real command protocol of the generic and independent hosts."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+from jsonschema import Draft202012Validator
+
+root = Path.cwd()
+if len(sys.argv) == 3 and sys.argv[1] == "--binaries":
+    binaries = root / sys.argv[2]
+    cli = binaries / "shoko/shoko"
+    host = binaries / "shoko-consumer-host/shoko-consumer-host"
+    subprocess.run([str(binaries / "shoko-cli-test/shoko-cli-test")], check=True)
+else:
+    subprocess.run(["cabal", "build", "shoko", "shoko-consumer-host"], check=True)
+    subprocess.run(["cabal", "test", "shoko-cli-test", "--test-show-details=direct"], check=True)
+    cli = Path(subprocess.check_output(["cabal", "list-bin", "shoko"], text=True).strip())
+    host = Path(subprocess.check_output(["cabal", "list-bin", "shoko-consumer-host"], text=True).strip())
+
+config_schema_path = Path(os.environ.get("SHOKO_CONFIG_SCHEMA", root / "schemas/config-v1.schema.json"))
+result_schema_path = Path(os.environ.get("SHOKO_RESULT_SCHEMA", root / "schemas/run-result-v1.schema.json"))
+demo = str(os.environ.get("SHOKO_DEMO_CONFIG", root / "config/demo.yaml"))
+schema = json.loads(config_schema_path.read_text())
+Draft202012Validator.check_schema(schema)
+validator = Draft202012Validator(schema)
+results = Draft202012Validator(json.loads(result_schema_path.read_text()))
+clean = {key: value for key, value in os.environ.items() if not key.startswith("SHOKO_")}
+secret = "CLI-SECRET-SENTINEL"
+checks = 0
+
+
+def call(binary, args, code=0, extra=None, result=False):
+    global checks
+    completed = subprocess.run([str(binary), *args], env=clean | (extra or {}), capture_output=True, text=True, timeout=15)
+    assert completed.returncode == code, (args, completed.returncode, completed.stdout, completed.stderr)
+    assert secret not in completed.stdout + completed.stderr
+    assert "PRIVATE-DEMO-FAULT-SENTINEL" not in completed.stdout + completed.stderr
+    if result:
+        document = json.loads(completed.stdout)
+        results.validate(document)
+        assert completed.stderr == "" or code == 4
+    checks += 1
+    return completed
+
+
+def leaves(node, prefix=""):
+    if "properties" not in node:
+        return [prefix]
+    return [leaf for key, child in node["properties"].items() for leaf in leaves(child, f"{prefix}.{key}".lstrip("."))]
+
+
+declared = json.loads(call(host, ["--declared-config-keys"]).stdout)
+assert set(declared) == set(leaves(schema)), "typed declaration/schema keys drifted"
+call(cli, ["--help"])
+call(cli, ["run", "demo-account-created", secret], 2)
+version = call(cli, ["--version"]).stdout
+assert "0.1.0.0" in version and any(word in version for word in ("clean", "dirty", "source-unrecorded"))
+assert "demo-account-created" in call(cli, ["list"]).stdout
+assert "consumer-rejected" in call(host, ["list"]).stdout
+
+with tempfile.TemporaryDirectory(prefix="shoko-cli-") as temporary:
+    owned = Path(temporary)
+    counter = owned / "counter"
+    counting = {"SHOKO_TEST_COUNTER": str(counter)}
+    for command in ("explain", "check"):
+        call(host, [command, "consumer-approved", "--config", demo, "--format", "json"], extra=counting)
+    assert not counter.exists(), "inspection acquired resources"
+    for name, code in (("demo-account-created", 0), ("demo-missing-evidence", 1),
+                       ("demo-source-unavailable", 3), ("demo-expected-rejection", 0), ("demo-runner-fault", 4)):
+        call(cli, ["run", name, "--config", demo, "--format", "json"], code, result=True)
+    for name in ("consumer-approved", "consumer-rejected"):
+        call(host, ["run", name, "--config", demo, "--format", "json"], extra=counting, result=True)
+    assert counter.exists()
+    counter.unlink()
+
+    def config(name, value):
+        path = owned / name
+        path.write_text(value)
+        return str(path)
+
+    credentials = config("credential.yaml", "access:\n  tokenEnv: SHOKO_TEST_TOKEN\n")
+    call(host, ["explain", "consumer-approved", "--config", credentials], extra=counting)
+    call(host, ["check", "consumer-approved", "--config", credentials], extra=counting)
+    call(host, ["run", "consumer-approved", "--config", credentials], 2, extra=counting)
+    assert not counter.exists()
+    call(host, ["run", "consumer-approved", "--config", credentials, "--format", "json"], extra={"SHOKO_TEST_TOKEN": secret}, result=True)
+    call(host, ["run", "consumer-approved", "--config", credentials], 2, extra={"SHOKO_TEST_TOKEN": ""})
+
+    call(cli, ["check", "demo-account-created", "--config", demo], 2, extra={"SHOKO_EXECUTION_MS": "0"})
+    call(cli, ["check", "demo-account-created", "--config", demo], 2, extra={"SHOKO_ENVIRONMENT": ""})
+    call(cli, ["check", "demo-account-created", "--config", demo, "--environment", "local"], extra={"SHOKO_ENVIRONMENT": "wrong"})
+    for body in ("allowSynthetic: true\n", "policy:\n  executionMs: 0\n", "runtime:\n  environment: local\n  environment: other\n", "runtime:\n  unexpected: true\n", "target:\n  name: partial\n"):
+        invalid = config("invalid.yaml", body)
+        call(cli, ["check", "demo-account-created", "--config", invalid], 2)
+    call(cli, ["run", "demo-account-created", "--environment", "production"], 2)
+    expected_target = config("target.yaml", "target:\n  name: expected\n  namespaceUid: namespace\n  deploymentRevision: revision\n")
+    call(host, ["check", "consumer-approved", "--config", expected_target])
+    call(host, ["run", "consumer-approved", "--config", expected_target], 2)
+    redacted = config("redacted.yaml", "redaction:\n  extraFields: [demo-detail]\n")
+    redacted_result = call(cli, ["run", "demo-account-created", "--config", redacted, "--format", "json"], result=True)
+    assert "visible-demo-summary" not in redacted_result.stdout
+    call(cli, ["observe"], 2)
+    call(cli, ["replay"], 2)
+    call(cli, ["run", "unknown"], 2)
+    call(cli, ["run", "demo-synthetic", "--config", demo, "--allow-synthetic", "--format", "json"], 2, extra={"SHOKO_CAPABILITIES": "SyntheticResource"}, result=True)
+    synthetic = config("synthetic.yaml", "policy:\n  capabilities: [ReadState, WriteState, SyntheticResource]\n")
+    call(cli, ["run", "demo-synthetic", "--config", synthetic, "--format", "json"], 2, extra={"SHOKO_ALLOW_SYNTHETIC": "true"}, result=True)
+    call(cli, ["run", "demo-synthetic", "--config", synthetic, "--allow-synthetic", "--format", "json"], result=True)
+
+    target = owned / "result.json"
+    first = call(cli, ["run", "demo-account-created", "--config", demo, "--format", "json", "--output", str(target)], result=True)
+    assert target.read_bytes() == first.stdout.strip().encode()
+    original = target.read_bytes()
+    call(cli, ["run", "demo-account-created", "--config", demo, "--format", "json", "--output", str(target)], 4, result=True)
+    assert target.read_bytes() == original
+    call(cli, ["run", "demo-account-created", "--config", demo, "--format", "json", "--output", str(owned / "missing/result.json")], 4, result=True)
+    interrupted = owned / "interrupted.json"
+    slow = config("slow.yaml", "policy:\n  executionMs: 8000\n  eventuallyMs: 5000\n  pollMs: 10000\n")
+    process = subprocess.Popen([str(cli), "run", "demo-missing-evidence", "--config", slow, "--output", str(interrupted)], env=clean, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    time.sleep(0.1)
+    process.terminate()
+    process.communicate(timeout=5)
+    assert not interrupted.exists() and not list(owned.glob(".shoko-result.tmp*"))
+    assert call(cli, ["run", "demo-account-created", "--config", demo]).stdout.startswith("Pass\n")
+    rejection_text = call(cli, ["run", "demo-expected-rejection", "--config", demo]).stdout
+    assert rejection_text.startswith("Pass\n") and "invalid-input" in rejection_text
+
+validator.validate({})
+validator.validate({"policy": {"executionMs": 100, "capabilities": ["ReadState"]}})
+for invalid in ({"policy": {"executionMs": 0}}, {"allowSynthetic": True}, {"output": {"format": "xml"}}):
+    assert not validator.is_valid(invalid)
+print(f"CLI process protocol passed {checks} invocations, all five exits, independent positive/negative host, schema keys, secrets, and atomic persistence.")

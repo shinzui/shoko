@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-18T17:14:48Z
       mode: "update"
       note: "Align cleanup settings, JSON checks, and persistence error exits."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-18T19:23:13Z
+      mode: "implement"
+      note: "Implement the compiled registry host and strict Settei configuration with process-level reporting checks."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -43,15 +48,25 @@ A user can list, inspect, and run compiled scenarios with named environment/impl
 ## Progress
 
 
-- [ ] M1: The CLI lists and explains a compiled scenario registry and validates configuration/policy without running actions.
-- [ ] M2: Run produces stable text/JSON reports and exit codes, with bounded execution, correlation disclosure, and redaction.
-- [ ] M3: A separate application-style host imports the CLI library and runs its own registry through the same command protocol.
+- [x] M1 (2026-10-18): The public compiled registry lists/explains scenarios and checks policy without resource, baseline, handler, cleanup, metadata, or credential-value effects. Settei YAML, injected environment, named options, strict keys, invalid winners, and safe provenance pass unit/process checks.
+- [x] M2 (2026-10-18): Actual processes exercise all five exits, typed expected rejection, valid core JSON, source/correlation text, secret omission, per-run synthetic consent, target expectation mismatch, extra redaction, exclusive evidence files, persistence failure, and interrupted execution. Native Nix final-candidate acceptance remains part of M3.
+- [x] M3 (2026-10-18): The independent consumer host defines its own GADT and positive/negative registry through the public library. The final `just check` passes all 37 core tests, 15 real adapter tests, Settei unit checks, 43 CLI process invocations, seven result examples, schema-key checks, and all native Nix checks. `cabal check` reports no warnings. `nix run . -- --version` and `nix run . -- list` work; the binary reports its actual source revision with dirty status. Linux CI has not run in this session.
 
 ## Surprises & Discoveries
 
 
+A direct sentinel invocation proved optparse echoes an unexpected positional argument into stderr. Invalid invocations now use a fixed safe usage diagnostic; successful help/version output remains detailed. The process regression passes the sentinel as an extra argument and checks both streams.
+
+Settei 0.2.0.0 is published, but absent from the managed Nix package snapshot; its optparse adapter requires released optparse-applicative 0.19.0.0 rather than the snapshot's 0.18.1.0. Fixed-hash Hackage inputs in the unmanaged module select the same releases as Cabal without changing generated pins or waiving bounds.
+
+GHC can prove a spliced `Right` constructor statically and flag a direct fallback pattern redundant under `-Werror`. A separately typed GitInfo binding preserves the documented source-less fallback without disabling warnings. Native Nix builds receive an explicit CPP source identity; local builds record actual Git dirtiness.
+
 ## Decision Log
 
+
+On 2026-10-18, package each typed scenario and its bindings existentially in a compiled registry. Pure factories support inspection without credentials; live credentials use a separate Secret declaration after policy checks. The metadata callback runs only for execution and returns observed identity; configured target fields never become observed evidence.
+
+On 2026-10-18, publish requested result files by exclusive hard link after closing a complete temporary file in the destination directory. This prevents implicit overwrite, including races. Persistence errors preserve the primary stdout result and return exit 4.
 
 On 2026-10-01, use compiled scenario registries and a reusable CLI host function. Runtime loading/compiling arbitrary Haskell is unnecessary for bootstrap and would obscure ownership of domain vocabularies. The bundled executable contains labelled demos only.
 
@@ -61,6 +76,10 @@ On 2026-10-01, make the configured existing staging deployment the first real Ru
 
 ## Outcomes & Retrospective
 
+
+Complete on 2026-10-18. The reusable CLI host owns strict Settei configuration, pure registry inspection, late Secret resolution, actual target metadata preflight, direct core execution/results, safe text/JSON diagnostics, stable process exits, and exclusive atomic evidence files. A separately compiled context proves the public host boundary without TAN types. ADR 0002–0004 and `docs/scenario-hosts.md` distill the durable contracts. The CLI test recipe builds both hosts itself before exercising actual processes, so it also works from a fresh checkout. Generated Seihou Nix files and lock remain unchanged.
+
+This completes eligible generic build/core/SQL/HTTP/CLI work. The next MasterPlan gate is the actual staging workflow/access contract in EP-2, deferred at the user's request and still awaiting their prepared context, namespace, controlled identity/OTP route, and credential references. No live staging identity or readiness is inferred from demo success. Event-reader selection and real acceptance remain governed by that contract and the MasterPlan's MVP order.
 
 ## Context and Orientation
 

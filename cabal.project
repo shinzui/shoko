@@ -1,8 +1,13 @@
-packages: shoko-core shoko-adapters
+packages: shoko-core shoko-adapters shoko-cli
 index-state: 2026-10-18T00:00:00Z
 tests: True
 -- Match the released packages in the managed Nix package set.
 constraints:
+  optparse-applicative == 0.19.0.0,
+  settei == 0.2.0.0,
+  settei-env == 0.2.0.0,
+  settei-yaml == 0.2.0.0,
+  settei-optparse-applicative == 0.2.0.0,
   http-client == 0.7.19,
   http-client-tls == 0.3.6.4,
   http-types == 0.12.4,
@@ -19,4 +24,7 @@ package shoko-core
   ghc-options: -Werror
 
 package shoko-adapters
+  ghc-options: -Werror
+
+package shoko-cli
   ghc-options: -Werror

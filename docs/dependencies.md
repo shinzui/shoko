@@ -84,8 +84,8 @@ lookup therefore used the [official validator documentation](https://python-json
 and the [PyPI registry](https://pypi.org/pypi/jsonschema/json).
 
 SQL/HTTP selections match the managed Nix package set. Hasql deliberately uses
-the released 1.9 family, shared with subsequent event readers; newer major APIs
-are not silently mixed with it. API research used the exact 1.9.3.1 tagged source
+the released 1.9 family; later event readers must verify compatibility with this
+accepted selection. Newer major APIs are not silently mixed with it. API research used the exact 1.9.3.1 tagged source
 from the Mori-located corpus and the curated 1.10 migration guide. Because 1.9's
 integer decoder accepts arbitrary-length bytes, the adapter checks column types
 in the SQL projection before decoding. This is covered by a real schema-mismatch
@@ -103,3 +103,45 @@ confirms automatic reused-connection retries are configurable and `closeManager`
 is a deprecated no-op. Response scopes and zero idle connections bound owned
 socket lifetime. PostgreSQL's [type-information reference](https://www.postgresql.org/docs/current/functions-info.html)
 defines the `pg_typeof`/`regtype` comparison used for checked column decoding.
+
+The CLI selects all four Settei packages at released **0.2.0.0**, also the latest
+Hackage release observed on 2026-10-18: [core](https://hackage.haskell.org/package/settei/preferred.json),
+[YAML](https://hackage.haskell.org/package/settei-yaml/preferred.json),
+[environment](https://hackage.haskell.org/package/settei-env/preferred.json), and
+[optparse](https://hackage.haskell.org/package/settei-optparse-applicative/preferred.json).
+Upstream v0.2.0.0 resolves to `1bf62b0af110b4f42fe2528e9d459e0ccf12d626`;
+the Mori-located source for those four packages has no code differences from
+that release. Public typed declarations, strict resolution, source adapters,
+Secret settings, and safe renderers were inspected directly.
+
+Its released optparse adapter requires **optparse-applicative 0.19.0.0**, also
+the latest registry release; upstream tag 0.19.0 is
+`5377a34d280bf847588b443b25a581803f484259`. The managed Nix set's older 0.18
+is deliberately replaced with this released version. Settei is absent from that
+Nix snapshot. `flake.module.nix` uses `callHackageDirect` with fixed unpacked
+archive hashes for these five released packages. This preserves generated pins
+and applies no bounds waiver or source patch. Cabal consumes the same releases.
+The API source for `callHackageDirect` was checked against the pinned Nixpkgs
+revision after Mori had no matching Nixpkgs project.
+
+Build identity uses **githash 0.1.7.0** (latest), release revision
+`d351f1441dc47e0096ffbf87a87e17b14778bbe7`. Mori has no registered githash
+project, so lookup fell back to the [released archive](https://hackage.haskell.org/package/githash-0.1.7.0)
+and [upstream](https://github.com/snoyberg/githash). Local Cabal builds embed the
+actual revision/dirtiness at compile time. Nix injects its source identity with
+the documented CPP build extension; a source-less archive reports its unknown
+identity honestly.
+
+The CLI also uses GHC's boot **directory 1.3.10.1**, **filepath 1.5.5.0**, and
+**unix 2.8.8.0** for atomic evidence persistence. The latest registry versions
+observed are 1.3.11.0, 1.5.5.0, and 2.8.8.0 respectively. Selected upstream
+revisions are `8c712e834f277544fc03e96dfbbb769126dc0a7c`,
+`baac7d7e76449f76fc6785e77206edb5530b6bfb`, and
+`60f432b76871bd7787df07dd3e2a567caba393f5`. Mori located directory source;
+unix/filepath were absent, so released Hackage archives supplied the inspected
+`createLink` and path APIs. These selections follow the managed GHC boot set.
+Registry evidence: [directory](https://hackage.haskell.org/package/directory/preferred.json),
+[filepath](https://hackage.haskell.org/package/filepath/preferred.json),
+[unix](https://hackage.haskell.org/package/unix/preferred.json),
+[optparse](https://hackage.haskell.org/package/optparse-applicative/preferred.json),
+and [githash](https://hackage.haskell.org/package/githash/preferred.json).

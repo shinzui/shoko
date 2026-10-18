@@ -52,6 +52,25 @@ in  Schema.Project::{
           , Schema.Dependency.ByName "Vlix/http-types:http-types"
           ]
         }
+      , Schema.Package::{
+        , name = "shoko-cli"
+        , type = Schema.PackageType.Library
+        , language = Schema.Language.Haskell
+        , path = Some "shoko-cli"
+        , description = Some "Reusable compiled scenario CLI host and labelled demo executable"
+        , dependencies =
+          [ Schema.Dependency.ByName "shinzui/shoko:shoko-core"
+          , Schema.Dependency.ByName "shinzui/settei:settei"
+          , Schema.Dependency.ByName "shinzui/settei:settei-yaml"
+          , Schema.Dependency.ByName "shinzui/settei:settei-env"
+          , Schema.Dependency.ByName "shinzui/settei:settei-optparse-applicative"
+          , Schema.Dependency.ByName "pcapriotti/optparse-applicative:optparse-applicative"
+          , Schema.Dependency.ByName "snoyberg/githash:githash"
+          , Schema.Dependency.ByName "haskell/directory:directory"
+          , Schema.Dependency.ByName "haskell/filepath:filepath"
+          , Schema.Dependency.ByName "haskell/unix:unix"
+          ]
+        }
       ]
     , dependencyRefs =
       [ Schema.MoriRef::{
@@ -123,6 +142,13 @@ in  Schema.Project::{
       ]
     , docs =
       [ Schema.DocRef::{
+        , key = "scenario-hosts"
+        , kind = Schema.DocKind.Guide
+        , audience = Schema.DocAudience.Module
+        , description = Some "Compiled domain hosts, strict configuration, process exits, and atomic reports"
+        , location = Schema.DocLocation.LocalFile "docs/scenario-hosts.md"
+        }
+      , Schema.DocRef::{
         , key = "adapters"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module

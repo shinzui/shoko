@@ -48,3 +48,16 @@ automatic connection retries, limits response bytes, and uses response scopes
 with zero idle connections. Both adapters report sampled coverage. Secret-bearing
 transport errors and payloads have no result rendering path; exact domain
 status/body classification remains in the context binding.
+
+Implementation clarification, 2026-10-18: the CLI projects the core result directly
+to its stable exits and JSON stdout; persistence errors preserve that primary
+report while returning command exit 4. Requested evidence files use a completed
+temporary inode plus an exclusive hard link in the destination directory. Existing
+files are never replaced, and interruption before publication cannot label a partial
+file complete. Additional host redactions only remove named public summary fields;
+they cannot enable raw payload rendering.
+
+Invocation failures use a fixed usage diagnostic: optparse's detailed failure
+renderer echoes unexpected argument values, which could contain an accidentally
+supplied secret. Successful help/version rendering remains detailed. A real
+process sentinel test protects this error path alongside Secret resolution.

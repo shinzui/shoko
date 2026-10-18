@@ -47,3 +47,17 @@ allowlists fix destinations and methods before acquisition; metadata adds mutati
 and explicit external-effect capabilities. Native transport records without
 `Generic` use their library's public record API at this boundary. No orphan
 `Generic` or rendering instance is introduced for third-party resources.
+
+Implementation clarification, 2026-10-18: compiled registry entries package their
+context-owned GADT, scenario, logical recipe, correlation, implementation factories,
+and a live target-metadata callback. Factories are pure and called without secrets
+for inspection. Resolve only explicitly mapped operational variables during
+inspection; resolve referenced credential values through a separate Settei Secret
+declaration only after live policy preflight. Recheck the resulting binding before
+acquisition. YAML can declare grants, while environment/named CLI sources cannot
+enlarge them. Synthetic consent is a separate CLI-only flag.
+
+Host configuration accepts one explicit YAML file and rejects unknown keys.
+Default/source mechanics remain Settei-owned, including invalid-winner behavior
+and safe provenance. The JSON Schema artifact is checked against declared keys
+and protocol examples, rather than supplying a second application decoder.

@@ -1,0 +1,102 @@
+cabal-version: 3.12
+name: shoko-cli
+version: 0.1.0.0
+synopsis: Compiled scenario host for evidence-based verification
+description: Inspect scenarios, resolve strict configuration, and retain bounded verification evidence.
+license: BSD-3-Clause
+license-file: LICENSE
+author: Shoko contributors
+maintainer: shinzui@users.noreply.github.com
+category: Testing
+build-type: Simple
+tested-with: ghc ==9.12.4
+
+common common
+  default-language: GHC2024
+  default-extensions:
+    DeriveAnyClass
+    DuplicateRecordFields
+    OverloadedLabels
+    OverloadedStrings
+
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+
+  build-depends:
+    base >=4.21 && <4.22,
+    shoko-core >=0.1 && <0.2,
+    text >=2.1.4 && <2.2,
+
+library
+  import: common
+  hs-source-dirs: src
+  exposed-modules:
+    Shoko.Cli
+    Shoko.Cli.Config
+    Shoko.Cli.Registry
+
+  other-modules:
+    Paths_shoko_cli
+    Shoko.Cli.Options
+    Shoko.Cli.Report
+    Shoko.Cli.Version
+
+  autogen-modules: Paths_shoko_cli
+  build-depends:
+    aeson >=2.2.4.1 && <2.4,
+    bytestring >=0.12.2 && <0.13,
+    containers >=0.7 && <0.8,
+    directory >=1.3 && <1.4,
+    filepath >=1.5 && <1.6,
+    githash >=0.1.7 && <0.2,
+    optparse-applicative >=0.19 && <0.20,
+    settei ==0.2.0.0,
+    settei-env ==0.2.0.0,
+    settei-optparse-applicative ==0.2.0.0,
+    settei-yaml ==0.2.0.0,
+    time >=1.14 && <1.15,
+    unix >=2.8 && <2.9,
+
+executable shoko
+  import: common
+  hs-source-dirs: app
+  main-is: Main.hs
+  other-modules: Demo
+  ghc-options:
+    -threaded
+    -rtsopts
+
+  build-depends:
+    containers >=0.7 && <0.8,
+    shoko-cli,
+
+executable shoko-consumer-host
+  import: common
+  hs-source-dirs: test/ConsumerHost
+  main-is: Main.hs
+  ghc-options: -threaded
+  build-depends:
+    aeson >=2.2.4.1 && <2.4,
+    bytestring >=0.12.2 && <0.13,
+    containers >=0.7 && <0.8,
+    shoko-cli,
+
+test-suite shoko-cli-test
+  import: common
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: UnitMain.hs
+  build-depends:
+    optparse-applicative >=0.19 && <0.20,
+    settei ==0.2.0.0,
+    settei-env ==0.2.0.0,
+    settei-optparse-applicative ==0.2.0.0,
+    settei-yaml ==0.2.0.0,
+    shoko-cli,
+
+source-repository head
+  type: git
+  location: https://github.com/shinzui/shoko

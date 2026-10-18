@@ -1,9 +1,9 @@
 # Development
 
 The workspace contains `shoko-core`, its typed descriptions and bounded runner,
-and `shoko-adapters` with separately compiled consumers. See the [core guide](core.md)
-and [adapter guide](adapters.md) for the public API. The CLI follows in its child
-plan. No staging credentials are needed for local checks.
+`shoko-adapters`, and the reusable `shoko-cli` host with separately compiled consumers.
+See the [core](core.md), [adapter](adapters.md), and [host](scenario-hosts.md) guides.
+No staging credentials are needed for local checks.
 
 From the repository root, with Nix installed:
 
@@ -15,9 +15,11 @@ nix develop --command just check
 nix develop --command just fmt
 ```
 
-`check` builds all workspace components, runs the explicitly selected core and real adapter tests,
+`check` builds all workspace components, runs core, real adapter, and CLI process tests,
 validates the result schema against checked-in examples, and runs
 `nix flake check`, including formatting, schema validation, and the Nix library/test build.
+The CLI process suite also checks configuration schema/declaration keys, layered
+provenance, all exit classes, safe credentials, and atomic persistence.
 First-party code treats warnings as errors through `cabal.project` and the Nix
 package definition. Dependencies retain their own warning policy. CI invokes the
 same commands on Ubuntu; local acceptance is also checked on Apple Silicon macOS.

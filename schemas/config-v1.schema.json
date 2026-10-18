@@ -1,0 +1,168 @@
+{
+  "type": "object",
+  "properties": {
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "implementation": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "enum": [
+            "text",
+            "json"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "ReadState",
+              "ReadEvents",
+              "WriteState",
+              "SendHttp",
+              "ExternalSideEffect",
+              "SyntheticResource"
+            ]
+          }
+        },
+        "executionMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775
+            },
+            {
+              "type": "string",
+              "pattern": "^\\+?0*(?:[1-9][0-9]{0,14}|[1-8][0-9]{15}|9[0-1][0-9]{14}|92[0-1][0-9]{13}|922[0-2][0-9]{12}|9223[0-2][0-9]{11}|92233[0-6][0-9]{10}|922337[0-1][0-9]{9}|92233720[0-2][0-9]{7}|922337203[0-5][0-9]{6}|9223372036[0-7][0-9]{5}|92233720368[0-4][0-9]{4}|922337203685[0-3][0-9]{3}|9223372036854[0-6][0-9]{2}|92233720368547[0-6][0-9]{1}|922337203685477[0-4]|9223372036854775)$"
+            }
+          ]
+        },
+        "eventuallyMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775
+            },
+            {
+              "type": "string",
+              "pattern": "^\\+?0*(?:[1-9][0-9]{0,14}|[1-8][0-9]{15}|9[0-1][0-9]{14}|92[0-1][0-9]{13}|922[0-2][0-9]{12}|9223[0-2][0-9]{11}|92233[0-6][0-9]{10}|922337[0-1][0-9]{9}|92233720[0-2][0-9]{7}|922337203[0-5][0-9]{6}|9223372036[0-7][0-9]{5}|92233720368[0-4][0-9]{4}|922337203685[0-3][0-9]{3}|9223372036854[0-6][0-9]{2}|92233720368547[0-6][0-9]{1}|922337203685477[0-4]|9223372036854775)$"
+            }
+          ]
+        },
+        "pollMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775
+            },
+            {
+              "type": "string",
+              "pattern": "^\\+?0*(?:[1-9][0-9]{0,14}|[1-8][0-9]{15}|9[0-1][0-9]{14}|92[0-1][0-9]{13}|922[0-2][0-9]{12}|9223[0-2][0-9]{11}|92233[0-6][0-9]{10}|922337[0-1][0-9]{9}|92233720[0-2][0-9]{7}|922337203[0-5][0-9]{6}|9223372036[0-7][0-9]{5}|92233720368[0-4][0-9]{4}|922337203685[0-3][0-9]{3}|9223372036854[0-6][0-9]{2}|92233720368547[0-6][0-9]{1}|922337203685477[0-4]|9223372036854775)$"
+            }
+          ]
+        },
+        "cleanupMs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775
+            },
+            {
+              "type": "string",
+              "pattern": "^\\+?0*(?:[1-9][0-9]{0,14}|[1-8][0-9]{15}|9[0-1][0-9]{14}|92[0-1][0-9]{13}|922[0-2][0-9]{12}|9223[0-2][0-9]{11}|92233[0-6][0-9]{10}|922337[0-1][0-9]{9}|92233720[0-2][0-9]{7}|922337203[0-5][0-9]{6}|9223372036[0-7][0-9]{5}|92233720368[0-4][0-9]{4}|922337203685[0-3][0-9]{3}|9223372036854[0-6][0-9]{2}|92233720368547[0-6][0-9]{1}|922337203685477[0-4]|9223372036854775)$"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespaceUid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deploymentRevision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "dependentRequired": {
+        "name": [
+          "namespaceUid",
+          "deploymentRevision"
+        ],
+        "namespaceUid": [
+          "name",
+          "deploymentRevision"
+        ],
+        "deploymentRevision": [
+          "name",
+          "namespaceUid"
+        ]
+      }
+    },
+    "access": {
+      "type": "object",
+      "properties": {
+        "endpointEnv": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "connectionEnv": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "tokenEnv": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "redaction": {
+      "type": "object",
+      "properties": {
+        "extraFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shoko explicit host configuration v1",
+  "description": "Checked against the authoritative Settei declaration and host validation. Capability grants are YAML-only; synthetic consent is per-run CLI-only."
+}

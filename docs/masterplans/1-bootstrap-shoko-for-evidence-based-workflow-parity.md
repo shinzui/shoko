@@ -77,7 +77,7 @@ Research F2/F3/F5/F7/F10/F12 inform EP-3/EP-6; F4/F8/F9 inform evidence/results;
 | 3 | Inspectable DSL and bounded runner | [Plan 3](../plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md) | EP-1 | EP-2 M1 | Complete |
 | 4 | PostgreSQL and HTTP bindings | [Plan 4](../plans/4-implement-postgresql-and-http-evidence-bindings.md) | EP-3 | EP-2 M1 | Complete |
 | 5 | Kiroku and Message DB bindings | [Plan 5](../plans/5-implement-kiroku-and-message-db-evidence-bindings.md) | EP-3; EP-4 M1 | EP-2 M1 | Not Started |
-| 6 | CLI inspection, execution, reports | [Plan 6](../plans/6-expose-scenario-inspection-execution-and-structured-reports.md) | EP-3 | EP-4; EP-5 | Not Started |
+| 6 | CLI inspection, execution, reports | [Plan 6](../plans/6-expose-scenario-inspection-execution-and-structured-reports.md) | EP-3 | EP-4; EP-5 | Complete |
 | 7 | Registration MVP staging acceptance | [Plan 7](../plans/7-verify-one-real-workflow-across-legacy-and-keiro-implementations.md) | EP-2; EP-4; EP-6; selected EP-5 milestones below | None | Not Started |
 
 Status values are Not Started, In Progress, Complete, and Cancelled. Whole-child hard dependencies require Complete. EP-4 M1 means an accepted adapter package and real PostgreSQL observations, not the later HTTP milestone. Historical paths remain valid even where titles changed.
@@ -113,7 +113,7 @@ The early integration sequence is two core consumers including positive/negative
 ## Progress
 
 
-EP-1 is Complete on 2026-10-18: Seihou 0.31.0, GHC 9.12.4, the public core package/consumer, Cabal/Nix checks, formatting, and CI configuration are accepted. `just check` passed in the primary tree and a clean detached checkout of `8cb274a`; the managed lock stayed unchanged. The user is preparing the staging context, namespace, test identity, OTP route, and credential references and requested deferring those details until the foundation is built. EP-2 remains Not Started; no concrete staging contract or accepted readiness evidence exists. EP-3 is also Complete: 37 core tests, seven independently schema-validated result examples, and all four native Nix checks pass. EP-4 is Complete with 15 real SQL/HTTP adapter tests and its isolated native Nix fixture checks. EP-6 is the next eligible generic work while staging prerequisites remain pending. No cluster calls, application deployment changes, or staging acceptance runs have occurred. Linux CI is configured but has not been executed in this session.
+EP-1 is Complete on 2026-10-18: Seihou 0.31.0, GHC 9.12.4, the public core package/consumer, Cabal/Nix checks, formatting, and CI configuration are accepted. `just check` passed in the primary tree and a clean detached checkout of `8cb274a`; the managed lock stayed unchanged. The user is preparing the staging context, namespace, test identity, OTP route, and credential references and requested deferring those details until the foundation is built. EP-2 remains Not Started; no concrete staging contract or accepted readiness evidence exists. EP-3 is also Complete: 37 core tests, seven independently schema-validated result examples, and all four native Nix checks pass. EP-4 is Complete with 15 real SQL/HTTP adapter tests and its isolated native Nix fixture checks. EP-6 is Complete: the independent host, strict Settei configuration, all five exits, secrets/consent checks, and atomic reports pass 43 process invocations and native Nix checks. The full final `just check` passes. The next required gate is EP-2's actual staging contract/access, owned by the user/deployment team; its approved assertions select any required EP-5 reader before EP-7. Unused reader work remains scheduled after MVP acceptance. No cluster calls, application deployment changes, or staging acceptance runs have occurred. Linux CI is configured but has not been executed in this session.
 
 Completion requires all registry rows Complete, a passing real positive workflow, a passing documented negative scenario, Fail/Unknown controls, and repeatable scoped cleanup/retention in staging. A working library/demo alone cannot complete the initiative. A second implementation is not required.
 
@@ -121,6 +121,8 @@ The earlier MVP release gate is EP-7 Complete with its selected prerequisites ac
 
 ## Surprises & Discoveries
 
+
+EP-6 consumes published Settei 0.2.0.0 and optparse 0.19.0.0 through fixed-hash Hackage inputs in the unmanaged extension. The final native package set is built and tested without generated-pin changes or bounds waivers. Its pure registry factories, separate Secret declaration, live-only metadata callback, and exclusive artifact publication are ready for the context-owned staging host. Configured target identity is an expectation and never becomes observed deployment evidence.
 
 EP-3 acceptance fixes role-aware binding contracts and separates a negative evidence cutoff from the deadline for its final closing read. Adapters must enforce selected correlation, advertise sampled versus durable coverage honestly, and never spend cleanup grace on evidence. The stable v1 result codec/schema and two compiling consumers are the shared contract for EP-4 and EP-6.
 

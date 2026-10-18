@@ -11,7 +11,10 @@ test:
 test-adapters:
     python3 scripts/test-adapters
 
-check: build test test-adapters
+test-cli:
+    python3 scripts/test-cli
+
+check: build test test-adapters test-cli
     python3 scripts/check-result-schema.py
     nix flake check
 

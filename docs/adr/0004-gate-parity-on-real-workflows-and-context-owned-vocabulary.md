@@ -41,3 +41,10 @@ The same scenario/binding architecture supports later legacy/Keiro comparison. S
 Revision 2026-10-01: supersede the initial local-pair gate with the user's existing Kubernetes staging target and add explicit negative-scenario acceptance.
 
 Revision 2026-10-18: fix registration as the MVP target, separate first use from full adapter completion, and define host packaging, rewrite requirement coverage, OTP readiness, and isolated acceptance artifacts.
+
+Implementation clarification, 2026-10-18: generic `check` validates configuration
+and binding policy without invoking the host's live metadata callback. Configured
+target identity remains an expectation; a live run requires the callback's observed
+identity to match it before scenario resources are acquired. Integration owns full
+Kubernetes/workload identity, endpoint authorization, and before/after acceptance.
+The reusable host and demo process checks establish no staging readiness claim.

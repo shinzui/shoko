@@ -1,0 +1,13 @@
+runtime:
+  environment: local
+  implementation: demo
+output:
+  format: text
+policy:
+  capabilities: [ReadState, WriteState]
+  executionMs: 2000
+  eventuallyMs: 100
+  pollMs: 200
+  cleanupMs: 200
+redaction:
+  extraFields: []
