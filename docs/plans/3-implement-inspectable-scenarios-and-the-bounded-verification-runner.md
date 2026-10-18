@@ -27,6 +27,11 @@ provenance:
       at: 2026-10-18T17:48:58Z
       mode: "implement"
       note: "Implement typed descriptions and policy resolution before bounded execution and result codecs."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-18T21:03:55Z
+      mode: "implement"
+      note: "Require a closing durable history read before an eventual miss; preserve sampled-state behavior and stable result goldens."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -59,6 +64,14 @@ The template's `result` ignore rule also hid the Haskell `Result/` directory on 
 
 A negative window needs a closing read after its cutoff, within remaining execution time. The request deadline and evidence cutoff are separate; cleanup grace never funds evidence reads. Mutable state cannot repair historical gaps. Role-aware contracts prevent observation support from implying action support.
 
+EP-5's actual store consumer exposed the same requirement for durable
+`eventually` misses: the earlier loop closed at the cutoff without reading its
+final history. It now allows a bounded closing read and requires complete
+coverage before Fail. Sampled-state semantics and late-positive rejection are
+preserved. Catch-up repair compares against the finite cutoff, rather than
+demanding coverage beyond it. The new deterministic test proves four reads,
+Fail with an available closing source, and Unknown when that read is unavailable.
+
 ## Decision Log
 
 
@@ -72,6 +85,12 @@ On 2026-10-01, clarify multiple positive/negative scenarios and explicit expecte
 
 
 Complete on 2026-10-18. The accepted public contract now spans pure inspection, fail-closed resolution, execution, explicit safe supporting evidence, and versioned reports. Actual cancellation preserves asynchronous exceptions and finalizes scoped resources; expected rejection stays a domain value. Secret-bearing typed values have no automatic serialization path. Durable decisions and build lessons are distilled into ADR 0001–0003 and `docs/core.md`. No service, database, cluster, or staging acceptance is claimed by these core tests. Adapters and the CLI can consume this accepted interface next.
+
+EP-5 integration follow-up, 2026-10-18: all 38 core tests pass after the durable
+closing-read correction, including the existing seven unchanged result goldens.
+The actual event-store consumer can distinguish a conclusive closed miss from
+an incomplete history window. ADR 0003 and the public core guide retain this
+durable-history contract. No result-schema version or public type change is needed.
 
 ## Context and Orientation
 

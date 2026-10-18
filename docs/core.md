@@ -95,6 +95,10 @@ a second distinct occurrence, and waits for complete interval closure before
 passing with one or failing with zero. Snapshot rows cannot establish continuous
 absence or durable occurrence cardinality. Complete history catch-up can repair
 a previous source gap; a later mutable snapshot cannot repair it.
+For an advertised durable source, `eventually` must also obtain complete closing
+history before declaring a miss Fail. Its closing request may use remaining
+execution time after the evidence cutoff; a positive completed after that cutoff
+cannot Pass. A missing closing proof remains Unknown.
 
 `CallContext.evidenceUntil` is the fixed evidence cutoff; `deadline` is the
 remaining request bound. A negative/history check may need its final read after

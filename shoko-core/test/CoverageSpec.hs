@@ -39,6 +39,12 @@ tests =
         resultVerdict exactlyOne === Just Pass
         missing <- evalIO (gapRun Eventually 0 True)
         resultVerdict missing === Just Fail,
+      testPropertyNamed "durable eventually requires a closing history read" "eventualClosingRead" $ withTests 1 $ property $ do
+        (available, readCount) <- evalIO (closingRun True)
+        resultVerdict available === Just Fail
+        readCount === 4
+        (unavailable, _) <- evalIO (closingRun False)
+        resultVerdict unavailable === Just Unknown,
       testPropertyNamed "nested within keeps the earliest deadline" "nestedWithin" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
         (clock, advance) <- evalIO (newFakeClock epoch)
@@ -92,3 +98,21 @@ resultVerdict :: RunResult -> Maybe Verdict
 resultVerdict (Verification VerificationResult {verdict = v}) = Just v
 resultVerdict (RunnerFault _ _) = Nothing
 resultVerdict (PreflightFailure _) = Nothing
+
+closingRun :: Bool -> IO (RunResult, Int)
+closingRun available = do
+  rows <- newIORef []
+  calls <- newIORef 0
+  attempts <- newIORef (0 :: Int)
+  (clock@(Clock now _ _ _), _) <- newFakeClock epoch
+  let Binding n caps describe acquire release baseline action observation = ledgerBinding rows calls False
+      closing :: () -> CallContext -> Ledger a -> IO (ObservationOutcome a)
+      closing resource context@(CallContext _ _ _ _ _ cutoff _) op = do
+        modifyIORef' attempts (+ 1)
+        tick <- now
+        if tick >= cutoff && not available then pure (ObservationUnavailable "closing-source-unavailable") else observation resource context op
+      binding = Binding n caps describe acquire release baseline action closing
+  resolved <- either (fail . show) pure (resolveScenario ledgerEnvironment testOptions (businessKeyFromResult "deliveryId" "append") binding (ledgerScenario 0 Eventually))
+  result <- runScenario clock (LogicalInput "closing-history-v1" []) resolved
+  count <- readIORef attempts
+  pure (result, count)

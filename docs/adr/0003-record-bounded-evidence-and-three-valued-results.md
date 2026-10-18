@@ -61,3 +61,25 @@ Invocation failures use a fixed usage diagnostic: optparse's detailed failure
 renderer echoes unexpected argument values, which could contain an accidentally
 supplied secret. Successful help/version rendering remains detailed. A real
 process sentinel test protects this error path alongside Secret resolution.
+
+Event-reader integration, 2026-10-18: a durable `eventually` miss requires a
+complete closing history read, using remaining execution time after its cutoff.
+Sampled-state behavior remains unchanged. A positive observation completed after
+the cutoff cannot Pass; closing source failures remain Unknown. Complete catch-up
+can repair gaps only through the finite evidence cutoff, without claiming future
+coverage.
+
+The event adapters re-scan the entire bounded source scope under repeatable-read
+snapshots and exclude pre-action occurrence IDs. This avoids treating a visible
+global high position as a committed prefix. The baseline token refers to run-owned
+memory. Matching events first seen after the host cutoff have uncertain membership
+in the window: exclude them from the count and return incomplete coverage. Do not
+compare host monotonic time with event timestamps to resolve this uncertainty.
+
+Complete-history claims require an explicit source-owner append-only guarantee
+for the selected scope and finite run, excluding truncation, rewriting, and
+retention. Unverified history supplies witnesses but cannot prove a negative or
+accepted exactly-once result. A page cap, missing correlation, decoding error,
+disappearing previously seen ID, or source outage cannot establish complete
+history. Store-read credentials do not grant application writes, subscription
+checkpoints, queue acknowledgements, or migration privileges.

@@ -392,7 +392,10 @@ runExpectation
                 Just (Coverage DurableHistory from through True) -> from <= baselineTick && through >= cutoff && advertised == DurableHistory
                 _ -> False
            in case temporal of
-                Eventually -> final state (if gaps || latest == Nothing then SourceUnavailable else Mismatch) (if gaps || latest == Nothing then Unknown else Fail)
+                Eventually
+                  | gaps || latest == Nothing -> final state SourceUnavailable Unknown
+                  | advertised == DurableHistory && not complete -> final state CoverageIncomplete Unknown
+                  | otherwise -> final state Mismatch Fail
                 Never -> final state (if complete then Satisfied else CoverageIncomplete) (if complete then Pass else Unknown)
                 ExactlyOnce
                   | not complete || missingId -> final state CoverageIncomplete Unknown
@@ -400,11 +403,11 @@ runExpectation
                   | otherwise -> final state Mismatch Fail
         loop state@(SearchState ids previousCount gaps latest missingId previousDetails) = do
           current <- now
-          if current > runEnd || (current >= cutoff && temporal == Eventually)
+          if current > runEnd || (current >= cutoff && temporal == Eventually && advertised /= DurableHistory)
             then close state
             else do
               records <- newIORef []
-              let requestEnd = if temporal == Eventually then cutoff else runEnd
+              let requestEnd = if temporal == Eventually && advertised /= DurableHistory then cutoff else runEnd
                   context = makeContext runClock requestEnd cutoff values info base (Just selected) records
                   query = do
                     observed <- runBinding approved binding resource (send (ExecuteObservation context op))
@@ -431,7 +434,7 @@ runExpectation
                               let found = Set.fromList [identity | Just identity <- matchingIds, identity /= ""]
                                   merged = Set.union ids found
                                   durable = strength == DurableHistory && advertised == DurableHistory
-                                  repaired = durable && complete && from <= baselineTick && through >= current
+                                  repaired = durable && complete && from <= baselineTick && through >= min current cutoff
                                in ( if durable then merged else ids,
                                     if durable then Set.size merged else length matchingIds,
                                     if repaired then False else gaps || not complete,
