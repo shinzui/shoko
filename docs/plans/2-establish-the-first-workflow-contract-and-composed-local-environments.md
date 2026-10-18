@@ -155,6 +155,17 @@ targets still need checking. The workflow guide now records the precise read
 route and these limitations; this supplies part of the fixture/evidence discovery
 but accepts neither milestone.
 
+Fresh-fixture decision and access, 2026-10-18: the user selected creating a new
+QA rather than selecting an existing record. The supported MLS no-member create
+route and payload were inspected; the fixture will allocate a unique synthetic
+MLS member key and retain its minted QA ID for each run/scenario. A temporary
+loopback-only port-forward to `test` Service `mls-service-v2` reached the expected
+400 response for an invalid-ID GET, then was stopped. The registration Deployment
+declares an OTP allowlist; no Secret values were read and effective OTP/completion
+mode remains unverified. No POST was submitted: controlled on-file contact and
+automated OTP retrieval are still missing fixture inputs. API creation, projection
+visibility, repeatable independent runs, and cleanup/retention are not accepted.
+
 ## Context and Orientation
 
 

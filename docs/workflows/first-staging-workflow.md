@@ -156,6 +156,34 @@ their actual API/claim state, and establish automated OTP retrieval before use.
 
 ### Remaining owner inputs
 
+The user selected fresh QA creation for the test fixture on 2026-10-18. Use the
+supported `POST /v1/qualified-agents/no-mls-member` endpoint on the MLS service,
+with a unique synthetic `mlsMemberId` per run/scenario and an ownership note
+containing the run identifier. This creates the qualified precondition; it does
+not add qualification behavior to the registration slice's claimed coverage.
+Supply the configured real staging chapter, automation/admin identity,
+`qualifiedAt`, `overrideReason: {"type":"NoMlsMember"}`, synthetic names/brokerage,
+and the controlled on-file email. Do not reuse arbitrary existing agent rows or
+insert directly into the read model. The endpoint mints the QA ID and reserves
+its member/chapter natural key; a conflict or ambiguous timeout requires
+inspection of that key, not blind POST retries. Its optimistic creation response
+must be followed by bounded read-model/API visibility checks.
+
+The MLS `ClusterIP` Service `mls-service-v2` exposes port 80 to 10001. An explicitly
+targeted, verifier-owned loopback-only port-forward successfully reached
+`GET /v1/qualified-agents/invalid`, which returned the source-documented 400
+`Invalid qualified agent ID format`; the tunnel was then stopped. This proves
+an available MLS access route, not successful creation or registration. No QA
+has been created yet because its controlled on-file recipient and OTP retrieval
+route remain unspecified. No application deployment was changed.
+
+The registration Deployment explicitly declares `RS2_OTP_TARGET_POLICY=allowlist`.
+The inspected template did not explicitly declare `OTP_SERVICE_STUB` or
+`RS2_COMPLETION_ACL_STUB`, and imports a Twilio Secret through `envFrom`. No Secret
+values were read; effective OTP/completion mode and an automated code retrieval
+facility are therefore still unverified. Do not infer stub behavior from the
+test namespace or use a fake on-file email as if it could complete real OTP.
+
 The cluster and namespace names are now supplied, and discovery has observed the
 context/API server, namespace UID, and registration workload identities. The
 environment owner must still establish the complete accepted identity/image
@@ -164,9 +192,10 @@ an explicit association with the approved deployment, including external
 databases. Historical values from another task are discovery context, not approval
 to select a cluster or use an endpoint.
 
-The MLS read route and qualified-agent table are now known. The domain owner must
-still identify test-owned agents or a supported fresh qualified-agent recipe,
-approved controlled-recipient references and external effects, repeatable bounded OTP
+The MLS read route, qualified-agent table and supported fresh-QA creation route
+are now known. The remaining fixture configuration includes a valid staging
+chapter/automation identity, approved controlled-recipient references and external
+effects, repeatable bounded OTP
 retrieval, the deployed completion mode, and scoped reads proving actual account
 and user writes and association. Confirm one precise negative response contract
 and its downstream invariant independently. A generic HTTP error does not prove

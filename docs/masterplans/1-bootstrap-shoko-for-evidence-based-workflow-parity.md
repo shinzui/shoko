@@ -137,6 +137,10 @@ aggregate queries located qualified agents and confirmed available data; approve
 test-owned fixtures, their actual eligibility/claim state and automated OTP
 retrieval remain unresolved. Other consequence/evidence sources are not inferred
 from that MLS connection.
+The user selected fresh per-run QA creation. The supported MLS creation route is
+known, and a temporary owned port-forward verified API access with a read-only
+invalid-ID GET before teardown. The recipient/automated OTP contract is still
+missing; no QA creation or workflow POST has occurred.
 The guarded `check --identity-only` command now supports read-only Kubernetes
 identity observations and private contract-hashed artifacts. Its 17 offline
 process groups and eight contract groups pass in the native Nix workflow check.
