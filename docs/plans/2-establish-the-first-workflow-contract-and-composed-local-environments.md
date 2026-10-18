@@ -142,6 +142,19 @@ All eight contract groups and 17 identity process groups pass locally; the nativ
 Nix workflow check also passes. Changed Markdown links/fences and artifact
 structure/private permissions were checked separately.
 
+Qualified-agent discovery, 2026-10-18: the user supplied an existing Unix-socket
+read route to staging `mls-service-v2` as `claude`. Connection, catalog and
+aggregate queries succeeded with session-enforced read-only mode and bounded
+connect/statement/lock timeouts. The read model is
+`mls_service_read.qualified_agents`: 127 rows, 122 without the checked MLS
+registration markers, and 119 of those with nonblank manual first/last names and
+email. No personal field values or agent IDs were retained, and no writes or
+workflow actions occurred. MLS source and the registration handler confirm that
+API payload eligibility, existing QA claims, test ownership, and controlled OTP
+targets still need checking. The workflow guide now records the precise read
+route and these limitations; this supplies part of the fixture/evidence discovery
+but accepts neither milestone.
+
 ## Context and Orientation
 
 

@@ -132,6 +132,11 @@ unaccepted. The user/environment and domain owners supply those inputs. The user
 subsequently identified cluster `sennari`, namespace `test`; read-only discovery
 verified access and inventoried four registration Deployments and their internal
 API Service. No deployment changes or staging workflow runs have occurred.
+The user also supplied the MLS staging database read route. Read-only catalog and
+aggregate queries located qualified agents and confirmed available data; approved
+test-owned fixtures, their actual eligibility/claim state and automated OTP
+retrieval remain unresolved. Other consequence/evidence sources are not inferred
+from that MLS connection.
 The guarded `check --identity-only` command now supports read-only Kubernetes
 identity observations and private contract-hashed artifacts. Its 17 offline
 process groups and eight contract groups pass in the native Nix workflow check.

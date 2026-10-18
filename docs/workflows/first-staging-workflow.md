@@ -110,6 +110,52 @@ timeout cleanup kills the owned command group, including credential-plugin child
 
 ## Inputs needed to finish the contract
 
+### Qualified-agent database discovery
+
+On 2026-10-18 the user supplied read access to the MLS staging database:
+
+```bash
+PGCONNECT_TIMEOUT=10 \
+PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=10000 -c lock_timeout=2000' \
+psql -X -w -v ON_ERROR_STOP=1 \
+  -U claude \
+  -h /tmp/tan-ng:us-west1:stage-master-database \
+  -d mls-service-v2
+```
+
+The connection succeeded and reported `transaction_read_only=on`. This identifies
+an available MLS read route; it does not establish the connection targets for
+registration, account or user evidence, or authorize database writes. The supplied
+socket was already available; no proxy or infrastructure changes were made.
+
+The qualified-agent read model is `mls_service_read.qualified_agents`. Schema and
+aggregate-only queries observed 127 rows, of which 122 had null `tan_account_id`,
+`tan_user_id`, and `tan_registered_at`. Among those, 119 also had nonblank manual
+first/last names and email, and 14 of those had a nonblank override phone. These
+are point-in-time discovery counts, not certified eligible or approved fixtures.
+No agent IDs, names, emails, phone numbers, notes, or payloads were selected into
+reports, and no records were changed.
+
+The [MLS core package](mori://tan/mls-service-v2/packages/mls-service-v2), inspected
+at revision `42aaa82ee64d93ebf8e33d02dafb8fcf76e4a9d9`, reads this table and
+joins member phone fields from `mls_service_read.members`. Its project-relative
+`mls-service-v2-core/src/MlsService/Repository/Tables/QualifiedAgent.hs`
+(artifact-level URI pending) shows that registration state, manual contacts,
+and linked member contacts are distinct. Nonblank manual fields are only a
+discovery filter; actual API payload validation remains necessary.
+
+The [registration implementation](mori://tan/registration-service-v2) at revision
+`6cd07aa8b9f032fc850fed4b2ba1022537da8c91`, project-relative
+`registration-service-v2/src/RegistrationServiceV2/Api/Handlers/FromQualifiedAgent.hs`
+(artifact-level URI pending), rejects already-registered or incomplete MLS
+payloads and requires an on-file QA email for this specific route. It also claims
+a QA for a registration and can resume the existing holder. Therefore, a row with
+null MLS registration markers does not prove it is fresh or reusable for two
+isolated runs. Identify test-owned agents and approved on-file recipients, check
+their actual API/claim state, and establish automated OTP retrieval before use.
+
+### Remaining owner inputs
+
 The cluster and namespace names are now supplied, and discovery has observed the
 context/API server, namespace UID, and registration workload identities. The
 environment owner must still establish the complete accepted identity/image
@@ -118,8 +164,9 @@ an explicit association with the approved deployment, including external
 databases. Historical values from another task are discovery context, not approval
 to select a cluster or use an endpoint.
 
-The domain owner must supply a supported fresh qualified-agent recipe, approved
-controlled-recipient references and external effects, repeatable bounded OTP
+The MLS read route and qualified-agent table are now known. The domain owner must
+still identify test-owned agents or a supported fresh qualified-agent recipe,
+approved controlled-recipient references and external effects, repeatable bounded OTP
 retrieval, the deployed completion mode, and scoped reads proving actual account
 and user writes and association. Confirm one precise negative response contract
 and its downstream invariant independently. A generic HTTP error does not prove
