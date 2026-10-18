@@ -61,3 +61,11 @@ Host configuration accepts one explicit YAML file and rejects unknown keys.
 Default/source mechanics remain Settei-owned, including invalid-winner behavior
 and safe provenance. The JSON Schema artifact is checked against declared keys
 and protocol examples, rather than supplying a second application decoder.
+
+Event-reader integration, 2026-10-18: reader contract helpers consume only the
+public source identity and pure query description. They must not require an
+allocated reader. A compiled CLI factory can therefore resolve policy and
+inspect without credentials or resource allocation, then create a fresh reader
+inside `Binding.acquire`. Message DB's pure contract rejects unsupported
+execution metadata before acquisition. The actual adapter consumer checks denied
+policy leaves reader allocation at zero.

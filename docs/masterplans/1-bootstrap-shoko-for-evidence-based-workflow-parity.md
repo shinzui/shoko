@@ -81,7 +81,7 @@ Research F2/F3/F5/F7/F10/F12 inform EP-3/EP-6; F4/F8/F9 inform evidence/results;
 | 2 | Registration workflow and Kubernetes staging target | [Plan 2](../plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md) | M1: None; M2: EP-1 | None | In Progress |
 | 3 | Inspectable DSL and bounded runner | [Plan 3](../plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md) | EP-1 | EP-2 M1 | Complete |
 | 4 | PostgreSQL and HTTP bindings | [Plan 4](../plans/4-implement-postgresql-and-http-evidence-bindings.md) | EP-3 | EP-2 M1 | Complete |
-| 5 | Kiroku and Message DB bindings | [Plan 5](../plans/5-implement-kiroku-and-message-db-evidence-bindings.md) | EP-3; EP-4 M1 | EP-2 M1 | In Progress |
+| 5 | Kiroku and Message DB bindings | [Plan 5](../plans/5-implement-kiroku-and-message-db-evidence-bindings.md) | EP-3; EP-4 M1 | EP-2 M1 | Complete |
 | 6 | CLI inspection, execution, reports | [Plan 6](../plans/6-expose-scenario-inspection-execution-and-structured-reports.md) | EP-3 | EP-4; EP-5 | Complete |
 | 7 | Registration MVP staging acceptance | [Plan 7](../plans/7-verify-one-real-workflow-across-legacy-and-keiro-implementations.md) | EP-2; EP-4; EP-6; selected EP-5 milestones below | None | Not Started |
 
@@ -118,8 +118,8 @@ The early integration sequence is two core consumers including positive/negative
 ## Progress
 
 
-EP-1, EP-3, EP-4, and EP-6 are Complete with their recorded native build,
-core, real SQL/HTTP, and CLI evidence. EP-2 is In Progress on 2026-10-18:
+EP-1, EP-3, EP-4, EP-5, and EP-6 are Complete with their recorded native build,
+core, real SQL/HTTP/event-store, and CLI evidence. EP-2 is In Progress on 2026-10-18:
 the workflow schema, offline semantic validator, synthetic format fixture,
 operator contract guide, and local/Nix validation checks are implemented.
 The full `nix develop --command just check` passes, including eight new offline
@@ -131,9 +131,14 @@ completion mode, and confirmed negative behavior. Both EP-2 milestones remain
 unaccepted. The user/environment and domain owners supply those inputs; no
 cluster calls, deployment changes, or staging acceptance runs have occurred.
 The live check/smoke command interfaces currently return unavailable without
-making calls. EP-5 selection still waits for the actual assertions/coverage
-contract; unused reader work remains scheduled after MVP acceptance. EP-7 is
-blocked on EP-2 and its selected reader prerequisites. Linux CI remains configured
+making calls. Under the eligible-adapter fallback, EP-5 is now Complete with
+18 real contract groups per store passing in Cabal and native Nix fixtures.
+The final full workspace check passes: 40 core tests, 15 SQL/HTTP checks,
+36 event-store checks, 43 CLI invocations, eight workflow-contract groups, seven
+result examples, and all seven native Nix checks. Actual staging reader selection
+still waits for its assertions/coverage contract; both generic readers are ready.
+EP-7 is
+blocked on EP-2. Linux CI remains configured
 but has not been executed in this session.
 
 Completion requires all registry rows Complete, a passing real positive workflow, a passing documented negative scenario, Fail/Unknown controls, and repeatable scoped cleanup/retention in staging. A working library/demo alone cannot complete the initiative. A second implementation is not required.
@@ -142,6 +147,19 @@ The earlier MVP release gate is EP-7 Complete with its selected prerequisites ac
 
 ## Surprises & Discoveries
 
+
+The EP-5 fallback is independently useful while staging inputs are unavailable;
+it does not select staging assertions or waive EP-2. Released Kiroku 0.11 needs
+Hasql 1.10, requiring a coherent shared dependency upgrade and renewed SQL/HTTP
+validation. The public Message DB client/migration release conflict is handled
+by the planned thin public-function bridge. Actual store consumers exposed the
+need for a durable eventual closing read and for a conservative snapshot-start
+visibility bound. Core now requests one fresh closing snapshot after a read
+crosses the cutoff. Both readers require owner-backed append-only history for
+complete negative coverage; EP-2's schema records that policy explicitly.
+Pure contract helpers also preserve effect-free CLI inspection before reader
+allocation. These durable constraints are retained in ADR 0001–0003 and the
+adapter guide.
 
 EP-6 consumes published Settei 0.2.0.0 and optparse 0.19.0.0 through fixed-hash Hackage inputs in the unmanaged extension. The final native package set is built and tested without generated-pin changes or bounds waivers. Its pure registry factories, separate Secret declaration, live-only metadata callback, and exclusive artifact publication are ready for the context-owned staging host. Configured target identity is an expectation and never becomes observed deployment evidence.
 
@@ -170,6 +188,15 @@ Revision 2026-10-01: replace local paired acceptance with staging system verific
 
 ## Outcomes & Retrospective
 
+
+Implementation checkpoint, 2026-10-18: five of seven children are Complete.
+EP-5's actual Kiroku/Message DB consumers validate the released dependency set
+and exposed a durable closing-read issue now corrected in core. The full local
+and native Nix checks pass. EP-2 remains unfinished because approved staging
+identity/access, controlled qualified-agent/recipient setup, repeatable OTP,
+real completion mode, evidence credentials, and negative behavior are not yet
+supplied. EP-7 cannot begin before that accepted contract and its live independent
+smoke checks. Neither MVP acceptance nor full MasterPlan completion is claimed.
 
 Planning outcome, 2026-10-18: the MVP has an explicit, acyclic implementation route and a real registration acceptance gate. Build feasibility is supported by the successful scaffold preview and inspected dependency/consumer sources, with actual solver, compilation, and staging proof still required. Validation evidence: all eight plan documents passed structural/local-link/fence checks; all 23 canonical Mori references resolved; the milestone graph was acyclic for all four event-reader selections; the explainer JavaScript parsed; and `git diff --check` passed. No implementation outcome is claimed.
 

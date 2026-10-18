@@ -69,8 +69,11 @@ EP-5's actual store consumer exposed the same requirement for durable
 final history. It now allows a bounded closing read and requires complete
 coverage before Fail. Sampled-state semantics and late-positive rejection are
 preserved. Catch-up repair compares against the finite cutoff, rather than
-demanding coverage beyond it. The new deterministic test proves four reads,
-Fail with an available closing source, and Unknown when that read is unavailable.
+demanding coverage beyond it. The deterministic tests prove four scheduled reads,
+Fail with an available closing source, Unknown when that read is unavailable,
+and a fresh closing snapshot when a request started before the cutoff finishes
+after it. A late sampled-state witness cannot establish a violation in an
+already-ended negative window; it remains Unknown.
 
 ## Decision Log
 
@@ -86,7 +89,7 @@ On 2026-10-01, clarify multiple positive/negative scenarios and explicit expecte
 
 Complete on 2026-10-18. The accepted public contract now spans pure inspection, fail-closed resolution, execution, explicit safe supporting evidence, and versioned reports. Actual cancellation preserves asynchronous exceptions and finalizes scoped resources; expected rejection stays a domain value. Secret-bearing typed values have no automatic serialization path. Durable decisions and build lessons are distilled into ADR 0001–0003 and `docs/core.md`. No service, database, cluster, or staging acceptance is claimed by these core tests. Adapters and the CLI can consume this accepted interface next.
 
-EP-5 integration follow-up, 2026-10-18: all 38 core tests pass after the durable
+EP-5 integration follow-up, 2026-10-18: all 40 core tests pass after the durable
 closing-read correction, including the existing seven unchanged result goldens.
 The actual event-store consumer can distinguish a conclusive closed miss from
 an incomplete history window. ADR 0003 and the public core guide retain this

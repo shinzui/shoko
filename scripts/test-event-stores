@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Exercise pinned real stores in an owned Unix-only PostgreSQL cluster."""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--store", choices=["kiroku", "message-db", "both"], default="both")
+    parser.add_argument("--binaries", type=Path)
+    args = parser.parse_args()
+    root = Path.cwd()
+    package = root / "shoko-adapters" if (root / "shoko-adapters").is_dir() else root
+    fixtures = package / "test/EventStore/Fixture"
+    manifest = json.loads((fixtures / "sources.json").read_text())
+    selected = [s for s in manifest["sources"] if args.store in ("both", s["store"])]
+    if len(selected) != (2 if args.store == "both" else 1):
+        raise RuntimeError("selected real-store fixture source is missing")
+    for source in selected:
+        for name, digest in source["files"].items():
+            if hashlib.sha256((fixtures / source["store"] / name).read_bytes()).hexdigest() != digest:
+                raise RuntimeError("pinned fixture source hash mismatch")
+    with tempfile.TemporaryDirectory(prefix="shoko-events-", dir="/tmp") as temporary:
+        owned = Path(temporary)
+        env = dict(os.environ, PGHOST=str(owned), PGPORT="5432", PGDATA=str(owned / "data"),
+                   PGUSER=os.environ.get("USER", ""), PGDATABASE="postgres")
+        env["TASTY_NUM_THREADS"] = "1"
+        for name in ("PGSERVICE", "PGSERVICEFILE", "PGHOSTADDR", "PGPASSWORD", "PGOPTIONS"):
+            env.pop(name, None)
+
+        def run(command, **kwargs):
+            return subprocess.run(command, env=env, cwd=root, check=True, **kwargs)
+
+        def sql(statement, capture=False):
+            result = run(["psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1"], input=statement,
+                         text=True, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+                         stderr=subprocess.PIPE)
+            return result.stdout.strip() if capture else None
+
+        run(["initdb", "--auth=trust", "--no-locale", "--encoding=UTF8"], stdout=subprocess.DEVNULL)
+        started = False
+        try:
+            run(["pg_ctl", "-w", "-l", str(owned / "postgres.log"), "-o", f"-F -k {owned} -h ''", "start"])
+            started = True
+            sql("CREATE ROLE shoko_event_reader LOGIN; CREATE ROLE shoko_event_writer LOGIN;")
+            for source in selected:
+                store = source["store"]
+                database = "shoko_" + store.replace("-", "_")
+                run(["createdb", database])
+                env["PGDATABASE"] = database
+                base = fixtures / store
+                if store == "kiroku":
+                    names = (base / "migrations/manifest").read_text().splitlines()
+                    for name in names:
+                        sql((base / "migrations" / name).read_text())
+                    schema = "kiroku"
+                    checkpoint = "kiroku.subscriptions"
+                    sql("INSERT INTO kiroku.subscriptions(subscription_name,last_seen) VALUES ('application-worker',42)")
+                else:
+                    schema = "message_store"
+                    names = ["schema/message-store.sql", "tables/messages.sql", "types/message.sql"]
+                    names += ["functions/" + name + ".sql" for name in (
+                        "message-store-version", "hash-64", "acquire-lock", "category", "is-category",
+                        "id", "cardinal-id", "stream-version", "write-message", "get-stream-messages",
+                        "get-category-messages", "get-last-stream-message")]
+                    names += ["indexes/" + name + ".sql" for name in ("messages-category", "messages-stream", "messages-id")]
+                    for name in names:
+                        sql("SET search_path TO message_store, pg_catalog;\n" + (base / "database" / name).read_text())
+                    version = sql("SELECT message_store.message_store_version()", capture=True)
+                    if version != "1.3.0":
+                        raise RuntimeError("unexpected actual Message DB server version")
+                    checkpoint = "message_store.application_checkpoints"
+                    sql("CREATE TABLE message_store.application_checkpoints(name text,position bigint); INSERT INTO message_store.application_checkpoints VALUES ('application-worker',42)")
+                sql(f"GRANT USAGE ON SCHEMA {schema} TO shoko_event_reader, shoko_event_writer; "
+                    f"GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO shoko_event_reader; "
+                    f"GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA {schema} TO shoko_event_writer; "
+                    f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA {schema} TO shoko_event_writer;")
+                before = sql(f"SELECT row_to_json(t)::text FROM {checkpoint} t ORDER BY 1", capture=True)
+                env["SHOKO_EVENT_STORE"] = store
+                env["SHOKO_EVENT_READ"] = f"host={owned} dbname={database} user=shoko_event_reader"
+                env["SHOKO_EVENT_WRITE"] = f"host={owned} dbname={database} user=shoko_event_writer"
+                print(f"Real {store}: {source['project']} at {source['revision']} ({source['release']})", flush=True)
+                if args.binaries:
+                    binary = root / args.binaries / "event-store-adapter-test/event-store-adapter-test"
+                    run([str(binary.resolve())])
+                else:
+                    run(["cabal", "test", "event-store-adapter-test", "--test-show-details=direct"])
+                after = sql(f"SELECT row_to_json(t)::text FROM {checkpoint} t ORDER BY 1", capture=True)
+                if before != after:
+                    raise RuntimeError("observation changed application checkpoints")
+                print(f"{store}: public runner, finite scans, correlation, cardinality, visibility, and checkpoint non-interference passed", flush=True)
+        finally:
+            if started:
+                run(["pg_ctl", "-w", "-m", "immediate", "stop"])
+    print("Accepted real stores: " + ", ".join(s["store"] for s in selected))
+
+
+if __name__ == "__main__":
+    main()

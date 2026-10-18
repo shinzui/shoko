@@ -11,6 +11,12 @@ test:
 test-adapters:
     python3 scripts/test-adapters
 
+test-event-stores:
+    python3 scripts/test-event-stores
+
+test-event-store store:
+    python3 scripts/test-event-stores --store {{store}}
+
 test-cli:
     python3 scripts/test-cli
 
@@ -26,7 +32,7 @@ workflow-check:
 workflow-smoke:
     python3 scripts/workflow-env smoke --manifest integration/workflow.json
 
-check: build test test-adapters test-cli test-workflow-contract
+check: build test test-adapters test-event-stores test-cli test-workflow-contract
     python3 scripts/check-result-schema.py
     nix flake check
 

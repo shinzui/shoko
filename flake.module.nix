@@ -42,6 +42,33 @@
               sha256 = "0cs8fqipakad38lvm75nz98hmvf881mgjhnc7icblxfzh92ay6kn";
             }
             { };
+          # Coherent Hasql 1.10 set required by the released Kiroku API.
+          hasql = pkgs.haskell.lib.dontCheck (hself.callHackageDirect
+            { pkg = "hasql"; ver = "1.10.3.7"; sha256 = "1fd1rkwq7jihkvvbnri4x4aa5rkhf49izljn06jjk4kzqs0x1sbw"; }
+            { });
+          kiroku-store = pkgs.haskell.lib.dontCheck (hself.callHackageDirect
+            { pkg = "kiroku-store"; ver = "0.11.0.0"; sha256 = "0z3w2bi4zlrmhlxyd8ihw2jrqnwjj75xyx8ami9174966995zavl"; }
+            # Upstream's separate IO/test-support packages are not library inputs.
+            # Shoko runs the actual append/read contract against pinned migrations.
+            { kiroku-test-support = null; shibuya-core = null; ephemeral-pg = null; });
+          hasql-pool = pkgs.haskell.lib.dontCheck (hself.callHackageDirect
+            { pkg = "hasql-pool"; ver = "1.4.2.3"; sha256 = "1f0ki9slw7lhrwk5ccmwpcmmlanffnxwc02xglfvw4rcl826l9x6"; }
+            { });
+          hasql-transaction = pkgs.haskell.lib.dontCheck (hself.callHackageDirect
+            { pkg = "hasql-transaction"; ver = "1.2.3.1"; sha256 = "05jn4ci65sbzi9316rqzy0pz93j2yv0fgzqvicbq61q952fq9mqj"; }
+            { pqi = null; pqi-ffi = null; pqi-native = null; testcontainers-postgresql = null; });
+          hasql-notifications = pkgs.haskell.lib.dontCheck (hself.callHackageDirect
+            { pkg = "hasql-notifications"; ver = "0.2.5.0"; sha256 = "11jkrngiy175wc5hqx8pgagj4fdg42ry7afp4g4rr5hw8h43zg48"; }
+            { });
+          postgresql-binary = pkgs.haskell.lib.dontCheck (hself.callHackageDirect
+            { pkg = "postgresql-binary"; ver = "0.15.0.1"; sha256 = "02cj87xbhpq4jn0ys3pdscblan69d5f1vcsgb5y2piw310x7d6xb"; }
+            { });
+          streamly-core = pkgs.haskell.lib.dontCheck (hself.callHackageDirect
+            { pkg = "streamly-core"; ver = "0.3.1"; sha256 = "1bk9m7h0kar6nipq36kxdhxh9g48v5828qcygxpcjdh6pqipxn4k"; }
+            { });
+          mmzk-typeid = pkgs.haskell.lib.dontCheck (hself.callHackageDirect
+            { pkg = "mmzk-typeid"; ver = "0.7.1.2"; sha256 = "0rwawa7zrqqhld83y6h64v3010y8wray6kw94vp2ah4m7al9wicc"; }
+            { });
           shoko-core = pkgs.haskell.lib.appendConfigureFlag
             (hself.callCabal2nix "shoko-core" ./shoko-core { })
             "--ghc-option=-Werror";
@@ -52,6 +79,7 @@
             checkPhase = ''
               runHook preCheck
               python ${./scripts/test-adapters} --binaries dist/build
+              python ${./scripts/test-event-stores} --binaries dist/build
               runHook postCheck
             '';
           });

@@ -16,12 +16,13 @@ import Control.Exception (bracket)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Hasql.Connection qualified as Connection
-import Hasql.Connection.Setting qualified as Setting
-import Hasql.Connection.Setting.Connection qualified as Settings
+import Hasql.Connection.Settings qualified as Settings
 import Hasql.Decoders qualified as D
 import Hasql.Encoders qualified as E
+import Hasql.Errors qualified as Errors
 import Hasql.Session qualified as Session
-import Hasql.Statement (Statement (..))
+import Hasql.Statement (unpreparable)
+import PostgresqlConnectionString qualified as ConnectionString
 import Shoko.Adapter.Postgres.Evidence
 import Shoko.Adapter.Postgres.Query
 import Shoko.Binding
@@ -49,6 +50,8 @@ runQuery :: CallContext -> Postgres -> Query a -> IO (Either PostgresFailure (a,
 runQuery (CallContext _ end _ selected _ _ (Clock now _ _ bound)) (Postgres settings) query =
   case selected >>= either (const Nothing) Just . (`compileQuery` query) of
     Nothing -> pure (Left CorrelationUnavailable)
+    Just _ | Text.null (Text.strip settings) -> pure (Left ConnectionUnavailable)
+    Just _ | Left _ <- ConnectionString.parse settings -> pure (Left ConnectionUnavailable)
     Just statement -> do
       started <- now
       if started >= end
@@ -57,7 +60,7 @@ runQuery (CallContext _ end _ selected _ _ (Clock now _ _ bound)) (Postgres sett
           result <-
             bound end $
               bracket
-                (Connection.acquire [Setting.connection (Settings.string settings)])
+                (Connection.acquire (Settings.connectionString settings))
                 (either (const (pure ())) Connection.release)
                 ( \case
                     Left _ -> pure (Left ConnectionUnavailable)
@@ -68,15 +71,15 @@ runQuery (CallContext _ end _ selected _ _ (Clock now _ _ bound)) (Postgres sett
                       current <- now
                       let remainingMs = max 1 ((end - current) `div` 1000)
                       answer <-
-                        Session.run
+                        Connection.use
+                          connection
                           ( do
-                              Session.sql "BEGIN READ ONLY"
+                              Session.script "BEGIN READ ONLY"
                               _ <- Session.statement (Text.pack (show remainingMs)) timeoutStatement
                               value <- Session.statement () statement
-                              Session.sql "COMMIT"
+                              Session.script "COMMIT"
                               pure value
                           )
-                          connection
                       pure (either (Left . classifyError) Right answer)
                 )
           finished <- now
@@ -85,25 +88,26 @@ runQuery (CallContext _ end _ selected _ _ (Clock now _ _ bound)) (Postgres sett
             Just answer -> (\value -> (value, Sample started finished (queryDescription query))) <$> answer
   where
     timeoutStatement =
-      Statement
+      unpreparable
         """
         SELECT set_config('statement_timeout', $1, true)
         """
         (E.param (E.nonNullable E.text))
         (D.singleRow (D.column (D.nonNullable D.text)))
-        False
 
-classifyError :: Session.SessionError -> PostgresFailure
-classifyError (Session.QueryError _ _ command) = classifyCommand command
-classifyError (Session.PipelineError command) = classifyCommand command
-
-classifyCommand :: Session.CommandError -> PostgresFailure
-classifyCommand (Session.ClientError _) = ConnectionUnavailable
-classifyCommand (Session.ResultError result) = case result of
-  Session.ServerError "42501" _ _ _ _ -> PermissionDenied
-  Session.ServerError "57014" _ _ _ _ -> DeadlineExpired
-  Session.ServerError _ _ _ _ _ -> QueryUnavailable
+classifyError :: Errors.SessionError -> PostgresFailure
+classifyError (Errors.ConnectionSessionError _) = ConnectionUnavailable
+classifyError (Errors.ScriptSessionError _ server) = classifyServer server
+classifyError (Errors.StatementSessionError _ _ _ _ _ err) = case err of
+  Errors.ServerStatementError server -> classifyServer server
   _ -> DecodeUnavailable
+classifyError _ = QueryUnavailable
+
+classifyServer :: Errors.ServerError -> PostgresFailure
+classifyServer (Errors.ServerError code _ _ _ _) = case code of
+  "42501" -> PermissionDenied
+  "57014" -> DeadlineExpired
+  _ -> QueryUnavailable
 
 observeQuery :: CallContext -> Postgres -> Query a -> IO (ObservationOutcome a)
 observeQuery context resource query =

@@ -61,6 +61,9 @@ unknown references, duplicate IDs, missing baseline requirements, contradictory
 coverage, and undeclared adapters. A sampled row count cannot be labelled durable
 history or exactly-once delivery. Durable history selects `message-db` or
 `kiroku` and therefore adds the corresponding EP-5 acceptance gate.
+Durable sources also require `historyPolicy: append-only-during-run`, backed by
+the source owner's exclusion of deletion, truncation, and rewriting during the
+finite run. A store with active retention cannot silently claim complete history.
 
 The host contract names its canonical owning project/package, project-relative
 package directory, public module, executable, and build/invocation recipes.

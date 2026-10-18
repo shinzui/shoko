@@ -23,10 +23,9 @@ import Data.Char (isAlphaNum, isAscii, isLetter)
 import Data.Functor.Contravariant (contramap)
 import Data.Int (Int64)
 import Data.Text qualified as Text
-import Data.Text.Encoding qualified as Text
 import Hasql.Decoders qualified as D
 import Hasql.Encoders qualified as E
-import Hasql.Statement (Statement (..))
+import Hasql.Statement (Statement, unpreparable)
 import Shoko.Correlation (Correlation (..))
 import Shoko.Observation (PublicValue (..))
 import Shoko.Prelude
@@ -99,16 +98,6 @@ decoder SqlText = D.text
 decoder SqlInt64 = D.int8
 decoder SqlBool = D.bool
 
-typeName :: SqlType a -> Text
-typeName SqlText = "pg_catalog.text"
-typeName SqlInt64 = "pg_catalog.int8"
-typeName SqlBool = "pg_catalog.bool"
-
-checkedColumn :: SqlType a -> D.Row (Maybe a)
-checkedColumn kind = do
-  correctType <- D.column (D.nonNullable D.bool)
-  if correctType then D.column (D.nullable (decoder kind)) else fail "unexpected-column-type"
-
 renderPredicate :: Int -> Predicate -> (Text, E.Params (), Int)
 renderPredicate index (Equal column kind value) =
   (quote column <> " = $" <> Text.pack (show index), contramap (const value) (E.param (E.nonNullable (encoder kind))), index + 1)
@@ -124,7 +113,7 @@ compileQuery selected query = case query of
   Exists table scope predicate -> statement table scope predicate (\whereSql -> "SELECT EXISTS (SELECT 1 FROM " <> tableName table <> whereSql <> ")") (D.singleRow (D.column (D.nonNullable D.bool)))
   Absent table scope predicate -> fmap not <$> compileQuery selected (Exists table scope predicate)
   Count table scope predicate -> statement table scope predicate (\whereSql -> "SELECT count(*) FROM " <> tableName table <> whereSql) (D.singleRow (D.column (D.nonNullable D.int8)))
-  Value table scope predicate column kind -> statement table scope predicate (\whereSql -> "SELECT pg_typeof(" <> quote column <> ") = '" <> typeName kind <> "'::regtype, " <> quote column <> " FROM " <> tableName table <> whereSql <> " LIMIT 2") (classify <$> D.rowList (checkedColumn kind))
+  Value table scope predicate column kind -> statement table scope predicate (\whereSql -> "SELECT " <> quote column <> " FROM " <> tableName table <> whereSql <> " LIMIT 2") (classify <$> D.rowList (D.column (D.nullable (decoder kind))))
   where
     statement :: Table -> Scope -> Maybe Predicate -> (Text -> Text) -> D.Result b -> Either Text (Statement () b)
     statement _ (Scope key column) predicate sql result = case selected of
@@ -132,7 +121,7 @@ compileQuery selected query = case query of
         | key /= "" && key == selectedKey && value /= "" ->
             let mandatory = Equal column SqlText value
                 (whereSql, params, _) = renderPredicate 1 (maybe mandatory (And mandatory) predicate)
-             in Right (Statement (Text.encodeUtf8 (sql (" WHERE " <> whereSql))) params result False)
+             in Right (unpreparable (sql (" WHERE " <> whereSql)) params result)
       _ -> Left "correlation-unavailable"
     classify [] = NoRows
     classify [Nothing] = NullValue

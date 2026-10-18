@@ -45,6 +45,27 @@ tests =
         readCount === 4
         (unavailable, _) <- evalIO (closingRun False)
         resultVerdict unavailable === Just Unknown,
+      testPropertyNamed "a read crossing the cutoff is followed by a closing snapshot" "crossingClosingRead" $ withTests 1 $ property $ do
+        result <- evalIO crossingRun
+        resultVerdict result === Just Fail,
+      testPropertyNamed "late sampled presence cannot violate an earlier negative window" "lateSampledWitness" $ withTests 1 $ property $ do
+        calls <- evalIO (newIORef 0)
+        (clock, advance) <- evalIO (newFakeClock epoch)
+        let Binding n caps describe acquire release baseline action observation = memoryBinding calls
+            late :: AccountStore -> CallContext -> Account a -> IO (ObservationOutcome a)
+            late resource context op = case op of
+              Created _ -> advance 21000 >> pure (Observed [Occurrence Nothing True] (Coverage SampledState 21000 21000 True))
+              _ -> observation resource context op
+            binding = Binding n caps describe acquire release baseline action late
+            selected =
+              scenario "late-sample" "Finite negative state window" "v1" $
+                expect $
+                  within (duration 20) $
+                    never "absent" (observe "exists" (Created (pure "toy-key")) id)
+        result <- evalIO $ case resolveScenario ledgerEnvironment testOptions (BusinessKeyFrom "accountId" (pure "toy-key")) binding selected of
+          Left errors -> fail (show errors)
+          Right resolved -> runScenario clock (LogicalInput "late-sample-v1" []) resolved
+        resultVerdict result === Just Unknown,
       testPropertyNamed "nested within keeps the earliest deadline" "nestedWithin" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
         (clock, advance) <- evalIO (newFakeClock epoch)
@@ -116,3 +137,18 @@ closingRun available = do
   result <- runScenario clock (LogicalInput "closing-history-v1" []) resolved
   count <- readIORef attempts
   pure (result, count)
+
+crossingRun :: IO RunResult
+crossingRun = do
+  rows <- newIORef []
+  calls <- newIORef 0
+  (clock, advance) <- newFakeClock epoch
+  let Binding n caps describe acquire release baseline action observation = ledgerBinding rows calls False
+      crossing :: () -> CallContext -> Ledger a -> IO (ObservationOutcome a)
+      crossing resource context op = do
+        result <- observation resource context op
+        advance 40000
+        pure result
+      binding = Binding n caps describe acquire release baseline action crossing
+  resolved <- either (fail . show) pure (resolveScenario ledgerEnvironment testOptions (businessKeyFromResult "deliveryId" "append") binding (ledgerScenario 0 Eventually))
+  runScenario clock (LogicalInput "crossing-history-v1" []) resolved

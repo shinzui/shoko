@@ -25,3 +25,14 @@ The bootstrap reuses the shared toolchain and remains upgradeable through Seihou
 Implementation baseline, 2026-10-18: use Seihou nix-haskell-flake 0.31.0 and GHC 9.12.4. The unmanaged package module exports the core library as both a package and a test-bearing flake check. `cabal.project` and the Nix package definition apply `-Werror` only to first-party code. Keep the complete Cabal solver selection in `cabal.project.freeze` and select direct dependencies coherent with the managed Nix package set; upgrading to a newer Hackage release is deliberate work, not an implicit solver change. See [dependency evidence](../dependencies.md) and [development commands](../development.md).
 
 Keep source/test directories named `Result` trackable on case-insensitive filesystems: the template's unanchored Nix `result` ignore rule otherwise hides them from Git-backed flakes. Preserve the generated rules and append source-directory exceptions. `just fmt` formats Cabal metadata before the complete pass because Fourmolu reads that metadata while Cabal-gild may rewrite it.
+
+Event-reader integration, 2026-10-18: released Kiroku 0.11 requires Hasql 1.10,
+so upgrade the adapter's shared Hasql API deliberately and pin a compatible
+released family in the unmanaged package module and Cabal freeze. Preserve the
+managed toolchain pins. Validate SQL/HTTP again across this shared upgrade.
+The Message DB observer uses the plan's allowed public-function SQL bridge:
+its tagged Haskell client is not published on Hackage, and its public migration
+dependency still uses the removed pre-1.10 statement constructor. Do not solve
+that conflict with unpublished source edits or relaxed bounds. Pinned upstream
+SQL fixtures retain licenses and per-file source hashes and exercise actual
+stores in both Cabal and native Nix checks. See [dependency evidence](../dependencies.md).

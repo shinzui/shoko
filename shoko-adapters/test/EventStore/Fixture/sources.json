@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "store": "kiroku",
+      "project": "mori://shinzui/kiroku",
+      "revision": "7394055de458bef8f6ec2e68231f3ca7932bb9be",
+      "release": "kiroku-store-migrations-0.7.1.0",
+      "artifactUriStatus": "Project-relative source paths; artifact-level URI pending.",
+      "files": {
+        "LICENSE": "84b0c0f46d9275b103294852c25f62cdf48e5cfdecffff1b0aebcbf01b01f099",
+        "migrations/manifest": "ad97be6fdd661eecd62f38fb43c216299fa75a43868d6df70c8e9bccc628afdd",
+        "migrations/0001-kiroku-bootstrap.sql": "af7c777f8702d9b5bce6b3ea16540ab7542bc78725cb45e945c6d5b6025a4d66",
+        "migrations/0002-add-subscription-dead-letters.sql": "2771cdd2605a8808ea469c0bcba175c8ba4c5d2465f43eb05c56edb188fa8141",
+        "migrations/0003-notify-trigger-append-guard.sql": "432796c59389d45478ba773b62e9f38d0a562807061eb49280d295ec83248351",
+        "migrations/0004-dead-letters-event-id-index.sql": "f698db092ebf34beeddecc949bbd506afc0b9c63d3e9983ad5d14f203f2ee1cd",
+        "migrations/0005-index-hygiene-and-streams-fillfactor.sql": "80c28c7743f1d9967eadf921c0509fc8477db16500466bf7a49c5f59aadb0fa2",
+        "migrations/0006-stream-name-length-check.sql": "a0e4338a2feadf8f01499a3809d3de78966966689b095ea46195c4d07743e4aa",
+        "migrations/0007-stream-truncate-before.sql": "a4fe42ad8702b43c3d6f72edf263d6b301e783493d49f40a35dd14d2a7928fa7",
+        "migrations/0008-schema-management-comment.sql": "3fb3dd5a7172da3cd14edecb0877cc9963fc9a6dceaff9ed41705a2365070f70",
+        "migrations/0009.sql": "62c80d627dc8f17393d26ff7dbc00cabde11ed38ee7bf3cb1ae42ea89f484c74",
+        "migrations/0010.sql": "debc19187d79cd263be66c6c85cd789c1176e508d562a27390095aaa70f650c4",
+        "migrations/0011.sql": "bf8b76a712a31cb602aee793a11691283ccd1eafdc16224e45e14484512b5af7",
+        "migrations/0012.sql": "32a0a0c877ff1aa6c1f74de8db62c74884e96a9c7500b2b65725b9e654101a7a",
+        "migrations/0013.sql": "49e519280a578e5b0f02603173b492075b072d0ae52d0e5848fea8ae1d6f7d53",
+        "migrations/0014.sql": "b93580ef072e85a6a598724fa8746aaa079346d7dd4a9c859412cc07113ff4d1",
+        "migrations/0015.sql": "821b12e410c1cece52aee018f1916a8cb01b2e900784817ba9b33d37b78d3be5"
+      }
+    },
+    {
+      "store": "message-db",
+      "project": "mori://message-db/message-db",
+      "revision": "e6999a6bd95ace6e8d70ec62a00c66b27ce8bf3b",
+      "release": "1.3.0",
+      "artifactUriStatus": "Project-relative source paths; artifact-level URI pending.",
+      "files": {
+        "MIT-License.txt": "183a27124446fe91f0ca8ebd4a163ad1b5dc563612fc861f66528fb9a44a3701",
+        "database/schema/message-store.sql": "85271e039fc0df8e11e4298af0727bde257ce33f3334df3feecae53d6fc6ebcd",
+        "database/tables/messages.sql": "35ed39515f75a98f85aeb8100ef01be63f42672284f277187aaa87756e204789",
+        "database/types/message.sql": "105b62f2a903db1e496799476e79cd75fc6826dac5180d6c2a6e569c3e54cfb5",
+        "database/functions/message-store-version.sql": "cac8a1a23da466994e087490c99b26506710b6075da7fa805fec6c0f1e55f326",
+        "database/functions/hash-64.sql": "24c3407535d9d75a12c8a7e97de6755134b5ebc4eb29acd772e5577db7a51a43",
+        "database/functions/acquire-lock.sql": "111a16356bab03a2c81afa93260c947c217ee2eb30deeb9745f904dab0868e83",
+        "database/functions/category.sql": "04add95eb30a248d8c944e8ca617ab13dff214f2170222a29886513c276fc459",
+        "database/functions/is-category.sql": "7ed57dcbc8b7528cc5c9c61b9aa6813eefdbc832fe8b4c701cd76b5ec30e9a86",
+        "database/functions/id.sql": "a3affcb291ed33837238407808328bdd55cb92903413489ed23a2490f5931fcb",
+        "database/functions/cardinal-id.sql": "b4db2729ec9c9e0ef6e1b789846ca8507dc87f926d264aa7392190faecf6d1b6",
+        "database/functions/stream-version.sql": "16b9ab90738947f263218002703d00b095406f03296f6b4c8458abf840a0b202",
+        "database/functions/write-message.sql": "94f9e86cf1d6e63ea795aa47e0c93f576296a97316dd277073d9ed887b24d95a",
+        "database/functions/get-stream-messages.sql": "5f564a41da2597f1858d5c156510373c130076c6f261fc43f4e472cecc6d6bf3",
+        "database/functions/get-category-messages.sql": "a4e807674a737209b162308794640e1563b5ff43045362e7549e0758166a36a5",
+        "database/functions/get-last-stream-message.sql": "e5a4bcfe54b94e7f8ee193b68cef75ed120211ecf7a3096c947ae8fc85bd9c39",
+        "database/indexes/messages-category.sql": "36d05b40be7051936bad0b672d0162c7539ce3041e7a08af26f1f403f540016e",
+        "database/indexes/messages-stream.sql": "4c0575479e45e1045bf113ae4dc672b07d2389288a788f821141de13e04db134",
+        "database/indexes/messages-id.sql": "8330f1d8a47a7da46eacc6971fe83dd272778d562ee5be1abae7bcf717ea87f5"
+      }
+    }
+  ]
+}

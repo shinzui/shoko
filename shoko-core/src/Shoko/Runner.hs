@@ -447,9 +447,15 @@ runExpectation
                       next = SearchState nextIds count nextGaps nextCoverage noIdentity publicDetails
                   case temporal of
                     Eventually | witness && finished <= cutoff -> final next Satisfied Pass
-                    Never | witness -> final next Mismatch Fail
+                    Never
+                      | witness && (finished <= cutoff || case nextCoverage of Just (Coverage DurableHistory _ _ _) -> True; _ -> False) -> final next Mismatch Fail
                     ExactlyOnce | Set.size nextIds > 1 -> final next Mismatch Fail
                     _
+                      -- A read that began before the cutoff may finish after
+                      -- it with an older database snapshot. Take the actual
+                      -- closing read now, while execution time remains. A
+                      -- read already begun at/after the cutoff closes once.
+                      | advertised == DurableHistory && finished >= cutoff && current < cutoff && requestEnd > cutoff && finished < runEnd -> loop next
                       | finished >= cutoff -> close next
                       | otherwise -> sleep (min cutoff (finished + toInteger (durationMicros polling))) >> loop next
     loop (SearchState Set.empty 0 False Nothing False [])

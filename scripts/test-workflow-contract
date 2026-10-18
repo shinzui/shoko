@@ -80,9 +80,12 @@ class WorkflowContractTests(unittest.TestCase):
     def test_selected_event_reader_can_discharge_history(self):
         value = copy.deepcopy(self.example)
         value["requiredAdapters"].append("message-db")
-        value["evidenceSources"][0].update(adapter="message-db", coverage="durable-history", endpointId="accounts-db")
+        value["evidenceSources"][0].update(adapter="message-db", coverage="durable-history", endpointId="accounts-db", historyPolicy="append-only-during-run")
         value["requirements"][0]["coverage"] = "durable-history"
         validate_contract(value, self.schema)
+        del value["evidenceSources"][0]["historyPolicy"]
+        with self.assertRaises(ContractError):
+            validate_contract(value, self.schema)
 
     def invoke(self, value, command="validate"):
         with tempfile.TemporaryDirectory(prefix="shoko-contract-") as directory:

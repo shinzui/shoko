@@ -55,7 +55,9 @@ Implementation handoff, 2026-10-18: `schemas/workflow-v1.schema.json`,
 `scripts/workflow_contract.py`, `scripts/workflow-env validate`, the explicitly
 synthetic `integration/examples/workflow.example.json`, and
 `docs/workflows/first-staging-workflow.md` now define and validate the offline
-contract. No default `integration/workflow.json` exists because approved concrete
+contract. Durable sources also require an explicit owner-backed
+`historyPolicy: append-only-during-run`; without it the selected reader cannot
+claim complete negative coverage. No default `integration/workflow.json` exists because approved concrete
 target/access/test inputs remain unavailable. M1 remains unfinished. The
 `workflow-check`/`workflow-smoke` wrappers reserve the planned interfaces and exit
 2 without live calls; actual discovery and smoke implementations remain M2 work.

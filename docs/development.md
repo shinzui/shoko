@@ -23,6 +23,11 @@ provenance, all exit classes, safe credentials, and atomic persistence.
 The offline workflow contract suite checks source/coverage mappings, canonical
 host ownership, readiness prerequisites, and rejection of synthetic manifests
 as staging contracts. It runs in both `just check` and `nix flake check`.
+The event-store suite uses pinned real Kiroku and Message DB schemas, separate
+writer/reader roles, and the public core runner. `just test-event-stores` requires
+both stores; `just test-event-store kiroku` and `just test-event-store message-db`
+select one explicitly. Its Unix-only cluster is owned by that invocation, and
+checkpoint rows must remain unchanged. No staging access is required.
 First-party code treats warnings as errors through `cabal.project` and the Nix
 package definition. Dependencies retain their own warning policy. CI invokes the
 same commands on Ubuntu; local acceptance is also checked on Apple Silicon macOS.

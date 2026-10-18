@@ -12,8 +12,7 @@ import Data.String (fromString)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Hasql.Connection qualified as C
-import Hasql.Connection.Setting qualified as CS
-import Hasql.Connection.Setting.Connection qualified as CC
+import Hasql.Connection.Settings qualified as CS
 import Hasql.Session qualified as S
 import Hedgehog (evalIO, property, withTests)
 import Shoko
@@ -89,9 +88,9 @@ postgresTests =
         check (either (== Pg.DeadlineExpired) (const False) answer),
       test "read credential cannot mutate and permission error is typed" $ do
         settings <- Text.pack <$> getEnv "SHOKO_TEST_PG"
-        bracket (C.acquire [CS.connection (CC.string settings)]) (either (const (pure ())) C.release) $ \case
+        bracket (C.acquire (CS.connectionString settings)) (either (const (pure ())) C.release) $ \case
           Left _ -> fail "fixture connection failed"
-          Right connection -> S.run (S.sql "INSERT INTO fixture.accounts(id) VALUES ('forbidden')") connection >>= check . either (const True) (const False)
+          Right connection -> C.use connection (S.script "INSERT INTO fixture.accounts(id) VALUES ('forbidden')") >>= check . either (const True) (const False)
         answer <- query "one" (Pg.rowCount (Pg.Table (ident "pg_catalog") (ident "pg_authid")) (Pg.Scope "accountId" (ident "rolname")) Nothing)
         check (either (== Pg.PermissionDenied) (const False) answer)
     ]

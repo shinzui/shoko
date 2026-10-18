@@ -43,9 +43,15 @@ in  Schema.Project::{
         , type = Schema.PackageType.Library
         , language = Schema.Language.Haskell
         , path = Some "shoko-adapters"
-        , description = Some "Scoped SQL and bounded HTTP evidence adapters"
+        , description = Some "Scoped SQL, HTTP, Kiroku, and Message DB evidence adapters"
         , dependencies =
           [ Schema.Dependency.ByName "shinzui/shoko:shoko-core"
+          , Schema.Dependency.ByName "haskell/aeson:aeson"
+          , Schema.Dependency.ByName "haskell/time:time"
+          , Schema.Dependency.ByName "haskell-hvr/uuid:uuid"
+          , Schema.Dependency.ByName "haskell/vector:vector"
+          , Schema.Dependency.ByName "shinzui/kiroku:kiroku-store"
+          , Schema.Dependency.ByName "hasql/hasql:postgresql-connection-string"
           , Schema.Dependency.ByName "hasql/hasql:hasql"
           , Schema.Dependency.ByName "snoyberg/http-client:http-client"
           , Schema.Dependency.ByName "snoyberg/http-client:http-client-tls"
@@ -152,7 +158,7 @@ in  Schema.Project::{
         , key = "adapters"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module
-        , description = Some "Scoped PostgreSQL queries and bounded HTTP transport"
+        , description = Some "Scoped SQL/HTTP and finite Kiroku/Message DB evidence readers"
         , location = Schema.DocLocation.LocalFile "docs/adapters.md"
         }
       , Schema.DocRef::{

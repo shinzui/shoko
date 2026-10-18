@@ -19,7 +19,7 @@ freeze file, and Nix lock establish the accepted selection.
 | cryptohash-sha256 | 0.11.102.1 | 0.11.102.1 | [SHA-256](mori://haskell-hvr/cryptohash-sha256/packages/cryptohash-sha256) | `89c1b9030989cc914d057061d90933628481abb2` (v0.11.102.1) |
 | bytestring | 0.12.2.0 (GHC boot package) | 0.12.2.0 | [ByteString](mori://haskell/bytestring/packages/bytestring) | `d984ad00644c0157bad04900434b9d36f23633c5` (0.12.2.0) |
 | time | 1.14 (GHC boot package) | 1.16.0.1 | [Time](mori://haskell/time/packages/time) | `e5c5d1987011efe88a21ab6ded45aaa33a16274f` (1.14) |
-| hasql | 1.9.3.1 | 2.0.1.0 | [Hasql](mori://hasql/hasql/packages/hasql) | `d353314c3224c551109a18e7d7c591613b483b49` (selected); `ef3e361ced8ad62652f1a8e7a77b3d0d0e2b9065` (latest) |
+| hasql | 1.10.3.7 | 2.0.1.0 | [Hasql](mori://hasql/hasql/packages/hasql) | `cde5581845d51413d34c1847454df05073f33bc4` (selected); `ef3e361ced8ad62652f1a8e7a77b3d0d0e2b9065` (latest) |
 | http-client | 0.7.19 | 0.7.19 | [HTTP client](mori://snoyberg/http-client/packages/http-client) | `a0b418c12ff3c9878f21bff92bb174c239a9cfe3` (http-client-0.7.19) |
 | http-client-tls | 0.3.6.4 | 0.4.0 | [TLS backend](mori://snoyberg/http-client/packages/http-client-tls) | No matching upstream release tag; selected Hackage archive inspected |
 | http-types | 0.12.4 | 0.12.6 | [HTTP types](mori://Vlix/http-types/packages/http-types) | `6c4f373c4d3ea00f824c5ed417ff4c20c8825d05` (v0.12.4); latest `3cbf2ab6d075a54de699884c5183b44535575b9b` |
@@ -83,13 +83,15 @@ Haskell runtime dependency. Mori has no registered jsonschema project; API
 lookup therefore used the [official validator documentation](https://python-jsonschema.readthedocs.io/en/stable/validate/)
 and the [PyPI registry](https://pypi.org/pypi/jsonschema/json).
 
-SQL/HTTP selections match the managed Nix package set. Hasql deliberately uses
-the released 1.9 family; later event readers must verify compatibility with this
-accepted selection. Newer major APIs are not silently mixed with it. API research used the exact 1.9.3.1 tagged source
-from the Mori-located corpus and the curated 1.10 migration guide. Because 1.9's
-integer decoder accepts arbitrary-length bytes, the adapter checks column types
-in the SQL projection before decoding. This is covered by a real schema-mismatch
-test. No compatibility override or source patch is used.
+The initial SQL adapter selected Hasql 1.9.3.1 from the managed package set.
+EP-5 deliberately upgrades it to **1.10.3.7**, the latest compatible 1.10
+release observed, because released Kiroku 0.11 requires `hasql >=1.10 && <1.11`.
+Hasql 2.0 remains outside Kiroku's supported bounds. The SQL adapter now uses
+`Connection.use`, `Session.script`, closed statement constructors, and explicit
+error types from the [migration guide](mori://hasql/hasql/docs/hasql-1.10-migration).
+Hasql 1.10 validates PostgreSQL column OIDs itself; the real wrong-column-type
+regression remains required. Malformed/empty connection strings are rejected
+before Hasql's settings parser can turn them into ambient defaults.
 
 Release evidence: [Hasql](https://hackage.haskell.org/package/hasql/preferred.json),
 [HTTP client](https://hackage.haskell.org/package/http-client/preferred.json),
@@ -102,7 +104,7 @@ The released TLS archive confirms `tlsManagerSettings`; HTTP client source
 confirms automatic reused-connection retries are configurable and `closeManager`
 is a deprecated no-op. Response scopes and zero idle connections bound owned
 socket lifetime. PostgreSQL's [type-information reference](https://www.postgresql.org/docs/current/functions-info.html)
-defines the `pg_typeof`/`regtype` comparison used for checked column decoding.
+documents the column metadata that distinguishes PostgreSQL types.
 
 The CLI selects all four Settei packages at released **0.2.0.0**, also the latest
 Hackage release observed on 2026-10-18: [core](https://hackage.haskell.org/package/settei/preferred.json),
@@ -145,3 +147,65 @@ Registry evidence: [directory](https://hackage.haskell.org/package/directory/pre
 [unix](https://hackage.haskell.org/package/unix/preferred.json),
 [optparse](https://hackage.haskell.org/package/optparse-applicative/preferred.json),
 and [githash](https://hackage.haskell.org/package/githash/preferred.json).
+
+## Event-store selection
+
+EP-5 selects released **kiroku-store 0.11.0.0**, the latest Hackage release
+observed, at upstream revision `7394055de458bef8f6ec2e68231f3ca7932bb9be`.
+The matching **kiroku-store-migrations 0.7.1.0** release has the same revision.
+[The owning project](mori://shinzui/kiroku) supplies both releases. Fixtures vendor
+its complete ordered migration set verbatim, with license and per-file SHA-256
+hashes in `shoko-adapters/test/EventStore/Fixture/sources.json`; those bytes were
+compared with the selected upstream tag. No migration is applied to an existing
+application database.
+
+The coherent Hasql 1.10 family uses **hasql-pool 1.4.2.3** (tag revision
+`aa55681c21e4b5183878ae2a9959b59a936cbb3e`), **hasql-transaction 1.2.3.1**
+(`81adf1ad3d8cc60d64a1354eda58d4c46b705532`), and **hasql-notifications
+0.2.5.0**. No upstream 0.2.5.0 notification tag exists; Hackage supplies that
+fixed-hash release. The newer pool 1.5 and notifications 0.2.6 families require
+Hasql 2 and do not satisfy Kiroku's bounds. These packages belong to
+[the Hasql corpus](mori://hasql/hasql).
+
+Supporting releases are **postgresql-binary 0.15.0.1**, upstream revision
+`ba03818cb1d94a3df496c445cea974e921bd7314`; **streamly-core 0.3.1**, revision
+`e36596a2741a053d2cf3ee9efb32c6a823c0b89c`; and **mmzk-typeid 0.7.1.2**,
+revision `2a39f4c7f252730e50284346a8f50133dcc06c75`. The latter two are owned by
+[Streamly](mori://composewell/streamly) and [TypeID](mori://MMZK1526/mmzk-typeid).
+PostgreSQL binary's intended project URI is `mori://nikita-volkov/postgresql-binary`
+(registry coverage pending). The existing **postgresql-connection-string
+0.1.0.6** supports explicit parse validation at the adapter boundary. All selected
+release metadata was read from Hackage; upstream tag checks are recorded above.
+`flake.module.nix` fixes unpacked hashes, while `cabal.project` and its regenerated
+freeze file select the same direct event-store/Hasql family. Transitive versions
+remain recorded separately by each build system: the new connection-string
+parser uses Megaparsec 9.8.3 in Cabal and 9.7.0 in the managed Nix set, both
+within its released bounds and exercised by the two builds. No generated Nix pin, dependency
+source patch, or bounds waiver is used. External database-dependent suites are
+not run by these library derivations; Shoko's native fixture checks exercise the
+actual supported public append/read APIs. External test-only package arguments
+are excluded from those library inputs.
+
+The [Message DB server](mori://message-db/message-db) fixture vendors its
+1.3.0 schema, public functions, indexes, and license from upstream revision
+`e6999a6bd95ace6e8d70ec62a00c66b27ce8bf3b`, also checked by per-file hashes.
+The actual `message_store_version()` result must equal 1.3.0. The adapter uses
+those public stream/category read functions with no arbitrary SQL condition.
+
+The [Haskell client](mori://tan/message-db-hs/packages/message-db-hs) has a
+0.2.0.0 upstream tag at `8db65db221343c23fec49f5288ee6716b9d4e7bc`, but no
+Hackage release listing. Its `hasql-migration` dependency cannot use the public
+Hackage 0.3.1 release with Hasql 1.10: that release constructs `Statement`
+directly, which 1.10 no longer exports. The local fork has migrated APIs, but
+copying its unpublished changes or downgrading Kiroku is not a coherent released
+selection. The plan's allowed thin SQL bridge avoids that dependency and is
+verified against the exact real server functions. It introduces no observer
+subscription, consumer-group position, or runtime service dependency.
+
+Direct event records also use the already frozen **uuid 1.3.16.1** and
+**vector 0.13.2.0**, both the latest Hackage releases observed. Their upstream
+release revisions are `cacb242660a8e441e4d9179237b5a42054fbe581` and
+`d9d0d46623fdecce7652f59caa4a28849292a0e7`. UUID is owned by
+`mori://haskell-hvr/uuid/packages/uuid`; Vector's intended handle is
+`mori://haskell/vector/packages/vector` (registry coverage pending). No new
+version divergence from the existing freeze is introduced for these two packages.

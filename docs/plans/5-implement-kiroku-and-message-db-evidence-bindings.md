@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-18T17:14:48Z
       mode: "update"
       note: "Accept selected event readers independently before first MVP use."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-18T20:42:12Z
+      mode: "implement"
+      note: "Implement real-store readers under the eligible-adapter fallback while staging inputs are pending."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -45,12 +50,48 @@ Both readers remain full-bootstrap deliverables. First registration MVP acceptan
 ## Progress
 
 
-- [ ] M1: A bounded Kiroku reader returns correlated occurrence evidence and demonstrates an actual store-write/read/runner roundtrip.
-- [ ] M2: A thin Message DB reader returns business-key-scoped occurrence evidence without treating its category filter as an exact execution selector.
-- [ ] M3: Both readers pass shared coverage, pagination, cardinality, outage, and non-interference acceptance.
+- [x] M1 (2026-10-18): The released Kiroku 0.11 reader passes the actual append -> read -> public runner cardinality path, with bounded stream/category pages, exact business-key/UUID filtering, and scoped occurrence IDs. All 18 Kiroku shared contract groups pass locally.
+- [x] M2 (2026-10-18): The thin Message DB 1.3.0 public-function bridge passes all 18 shared contract groups locally, enforces decoded business keys, and rejects unsupported execution-ID mode. The actual server version is checked.
+- [x] M3 (2026-10-18): Both real stores pass all 18 shared contract groups, including repeated pages, missing/duplicate occurrence handling, bounded coverage, ambiguity at cutoffs, source failures, actual blocked-read cancellation/connection release, delayed commits, and unchanged checkpoints. The complete workspace check and native Nix adapter fixture both pass.
 
 ## Surprises & Discoveries
 
+
+Released `mori://shinzui/kiroku/packages/kiroku-store` 0.11.0.0 requires Hasql
+1.10, so the previously accepted 1.9 selection could not be retained. The
+coherent released family is pinned in `cabal.project`, its freeze, and the
+unmanaged Nix module; SQL/HTTP must be revalidated. No generated toolchain pin,
+source patch, or bounds waiver is used. Dependency evidence is in
+`docs/dependencies.md`.
+
+The 0.2.0.0 tag of `mori://tan/message-db-hs/packages/message-db-hs` is not
+published on Hackage. Its public `hasql-migration` 0.3.1 dependency constructs
+Hasql's removed `Statement` constructor, so it is incompatible with this Kiroku
+family. The local migration fork has newer APIs but is not the released source.
+Use this plan's allowed thin bridge, verified against the actual Message DB
+1.3.0 public server functions, rather than adding unpublished dependencies.
+
+A global position is not a safe universal committed prefix. The Message DB test
+holds a lower-position write uncommitted in the selected category while another
+category commits a higher position. A baseline and later observation still find
+the delayed event. Both adapters therefore re-scan the finite scope in a single
+repeatable-read snapshot and exclude baseline IDs. Page exhaustion remains
+incomplete; no observer checkpoint is advanced.
+
+The real core consumer exposed two closing-read boundaries. Durable `eventually`
+misses need a closing read, and a response finishing after the cutoff may contain
+a snapshot taken before it. Adapters report visibility only through a conservative
+request-start lower bound. If a read crosses the cutoff, core obtains one actual
+closing snapshot while execution time remains. Matching events first seen after
+the cutoff are ambiguous and cannot produce accepted cardinality. Source UTC
+and host monotonic clocks are never compared.
+
+Kiroku supports retention/hard deletion, so complete history requires an explicit
+source-owner append-only guarantee over the finite run. `UnverifiedHistory`
+permits witnesses without complete negative coverage. The workflow schema now
+requires the owner's `append-only-during-run` policy for durable sources. No
+retention job, store lease, application writer, or staging setting is managed by
+the observer.
 
 ## Decision Log
 
@@ -59,6 +100,26 @@ On 2026-10-01, implement both event readers behind the core evidence contract in
 
 ## Outcomes & Retrospective
 
+
+Complete on 2026-10-18. Both actual stores pass 18 shared contract groups each
+in Cabal and native Nix fixtures, with pinned upstream schema/functions, isolated
+writer/reader credentials, transaction visibility, exact correlation, repeated
+pages, cardinality, honest cutoff coverage, cancellation/connection release,
+and unchanged application checkpoints. The full
+`nix develop --command just check` passes: 40 core tests, 15 existing SQL/HTTP
+checks, 36 event-store checks, 43 CLI invocations, eight workflow-contract
+groups, seven result examples, and all seven native Nix checks. Existing result
+goldens remain unchanged. Mori metadata type-checks and changed Markdown
+links/fences validate.
+
+The released package set is coherent without generated-pin changes or bounds
+waivers. The observer deliberately favors finite re-scans and honest Unknown
+results over an unsafe position/time shortcut. Durable source policy and the
+core closing-read lessons are distilled into ADR 0001/0003 and the public guides.
+No staging access, application deployment change, Keiro execution-ID propagation,
+or registration acceptance is established by these verifier fixtures. Resume
+EP-2 with its actual owner inputs before EP-7; both generic reader prerequisites
+are now available whichever source that workflow selects.
 
 ## Context and Orientation
 
@@ -143,5 +204,28 @@ Use unique databases/streams and isolated fixture roles; keep migrations and fix
 
 ## Interfaces and Dependencies
 
+
+Pure contract helpers take the public source name and query, so policy and CLI
+inspection require no reader allocation or credentials. Readers are created in
+`Binding.acquire`; the compiled consumer proves denied policy leaves allocation
+at zero.
+
+The implemented public modules are `Shoko.Adapter.EventStore`,
+`Shoko.Adapter.Kiroku` / `.Evidence`, and `Shoko.Adapter.MessageDb` / `.Evidence`.
+`eventQuery` takes finite limits, a named stream/category, explicit history policy,
+correlation mode, event type, and a typed payload decoder. Each fresh reader owns
+one run's opaque baseline token and ID sets. A unique public source name identifies
+that scope/decoder; credentials have no rendering instances. `EventEvidence a`
+retains position, UTC timestamp, optional causation ID, and the decoded context
+value. See `docs/adapters.md` and the compiling consumer in
+`shoko-adapters/test/EventStore/Contract.hs` for the actual Binding integration.
+
+Kiroku uses its released bounded SQL read/append API. Its unbounded store-wide
+`findByCorrelation` helper cannot preserve the finite scoped query contract, so
+exact typed UUID metadata is filtered within the paged selected scope instead.
+Pinned migration SQL is installed verbatim only into disposable owned databases;
+`shoko-adapters/test/EventStore/Fixture/sources.json` records canonical projects, revisions,
+project-relative paths, licenses, and hashes. The native adapter derivation runs
+the same two-store fixture script against built binaries.
 
 Hard dependencies: Complete `docs/plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md`, plus M1 of `docs/plans/4-implement-postgresql-and-http-evidence-bindings.md`, whose accepted output is the adapter package and working PostgreSQL observation infrastructure. The latter plan may remain In Progress while HTTP work continues. Soft dependency: M1 of `docs/plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md` for real vocabulary and key mappings. This plan owns event-store modules/tests and extends the existing adapter package manifest in coordination with its SQL/HTTP owner. Core owns the evidence/result types. The final staging host owns domain mapping; generic store readers must not import registration-specific event types.

@@ -67,7 +67,13 @@ complete closing history read, using remaining execution time after its cutoff.
 Sampled-state behavior remains unchanged. A positive observation completed after
 the cutoff cannot Pass; closing source failures remain Unknown. Complete catch-up
 can repair gaps only through the finite evidence cutoff, without claiming future
-coverage.
+coverage. A request beginning before the cutoff and finishing after it may
+contain an older snapshot, so the runner obtains one fresh closing read while
+execution time remains. Adapters report visibility only through a conservative
+request-start lower bound, capped by the evidence cutoff. A sampled-state
+witness obtained after a negative cutoff cannot establish a violation inside
+that earlier window; historical witnesses still rely on the source's explicit
+interval-membership contract.
 
 The event adapters re-scan the entire bounded source scope under repeatable-read
 snapshots and exclude pre-action occurrence IDs. This avoids treating a visible

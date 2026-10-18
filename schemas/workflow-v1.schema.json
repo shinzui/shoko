@@ -504,8 +504,28 @@
         "selector": {
           "type": "string",
           "minLength": 1
+        },
+        "historyPolicy": {
+          "const": "append-only-during-run",
+          "description": "Owner-backed exclusion of deletion, truncation, and rewriting of this scope throughout the finite run."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "coverage": {
+                "const": "durable-history"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "historyPolicy"
+            ]
+          }
+        }
+      ]
     },
     "workload": {
       "type": "object",
