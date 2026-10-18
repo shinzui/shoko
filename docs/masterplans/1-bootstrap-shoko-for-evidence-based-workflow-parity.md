@@ -72,7 +72,7 @@ Research F2/F3/F5/F7/F10/F12 inform EP-3/EP-6; F4/F8/F9 inform evidence/results;
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Haskell/Seihou foundation | [Plan 1](../plans/1-bootstrap-the-haskell-workspace-with-seihou-and-jitsurei-standards.md) | None | None | In Progress |
+| 1 | Haskell/Seihou foundation | [Plan 1](../plans/1-bootstrap-the-haskell-workspace-with-seihou-and-jitsurei-standards.md) | None | None | Complete |
 | 2 | Registration workflow and Kubernetes staging target | [Plan 2](../plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md) | M1: None; M2: EP-1 | None | Not Started |
 | 3 | Inspectable DSL and bounded runner | [Plan 3](../plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md) | EP-1 | EP-2 M1 | Not Started |
 | 4 | PostgreSQL and HTTP bindings | [Plan 4](../plans/4-implement-postgresql-and-http-evidence-bindings.md) | EP-3 | EP-2 M1 | Not Started |
@@ -113,7 +113,7 @@ The early integration sequence is two core consumers including positive/negative
 ## Progress
 
 
-Implementation began on 2026-10-18. EP-1 is In Progress: Seihou 0.31.0 generated the environment without conflicts, and the managed shell reports GHC 9.12.4. Core package compilation and checks are underway. The user is preparing the staging context, namespace, test identity, OTP route, and credential references and requested deferring those details until the foundation is built. EP-2 remains Not Started; no concrete staging contract or accepted readiness evidence exists. No cluster calls, application deployment changes, or staging acceptance runs have occurred.
+EP-1 is Complete on 2026-10-18: Seihou 0.31.0, GHC 9.12.4, the public core package/consumer, Cabal/Nix checks, formatting, and CI configuration are accepted. `just check` passed in the primary tree and a clean detached checkout of `8cb274a`; the managed lock stayed unchanged. The user is preparing the staging context, namespace, test identity, OTP route, and credential references and requested deferring those details until the foundation is built. EP-2 remains Not Started; no concrete staging contract or accepted readiness evidence exists. EP-3 is the next eligible generic work while staging prerequisites remain pending. No cluster calls, application deployment changes, or staging acceptance runs have occurred. Linux CI is configured but has not been executed in this session.
 
 Completion requires all registry rows Complete, a passing real positive workflow, a passing documented negative scenario, Fail/Unknown controls, and repeatable scoped cleanup/retention in staging. A working library/demo alone cannot complete the initiative. A second implementation is not required.
 

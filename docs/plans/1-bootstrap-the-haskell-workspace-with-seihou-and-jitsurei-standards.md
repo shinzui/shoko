@@ -49,9 +49,9 @@ A contributor can enter a reproducible Haskell shell, build the first Shōko lib
 
 
 - [x] M1 (2026-10-18): Seihou 0.31.0 generated the environment with zero conflicts; `nix develop --command ghc --numeric-version` reports 9.12.4, evaluation leaves the generated lock unchanged, and `seihou diff` reports no drift.
-- [ ] M2: The initial core package builds, its public API is usable by a test consumer, and CI runs the documented build and formatting checks.
+- [x] M2 (2026-10-18): The library and separate public API consumer build and pass under Cabal and Nix. `nix develop --command just check` passed in both the primary tree and a clean detached checkout of commit `8cb274a`; all three flake checks passed. CI invokes the same command on Ubuntu.
 
-The library and separate Tasty/Hedgehog consumer compile and pass. `nix develop --command just check` passed on aarch64-darwin, including all three flake checks (core package/tests, treefmt, pre-commit). CI is configured to invoke the same checks on Ubuntu. A clean detached checkout remains to be verified before M2 acceptance; no Linux CI run is claimed.
+The accepted local platform is aarch64-darwin. The clean checkout stayed clean and its lock did not change. `cabal check` reports no errors or warnings. CI is checked in but has not been pushed or executed on GitHub; no Linux runtime acceptance is claimed. This completes the foundation prerequisite for the remaining generic packages.
 
 ## Surprises & Discoveries
 
@@ -68,6 +68,7 @@ On 2026-10-01, choose one initial `shoko-core` package, expanding to adapters an
 ## Outcomes & Retrospective
 
 
+Completed 2026-10-18. Contributors can build, test, and format the public core package through the managed GHC 9.12.4 shell. Package metadata, frozen dependency resolution, an unmanaged Nix package/check module, explicit test recipes, CI, Mori metadata, and development/dependency guides are checked in. The acceptance consumer deliberately proves only the package boundary; it does not claim scenario semantics or live staging behavior. Existing ADR 0001 now records the durable build/solver convention. No unpublished dependency sources, shared pin changes, database server startup, or application mutations were needed.
 ## Context and Orientation
 
 
