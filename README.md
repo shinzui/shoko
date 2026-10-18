@@ -2,7 +2,7 @@
 
 Shōko is a Haskell DSL for specifying and verifying observable behavior across distributed systems. A scenario describes the evidence that establishes correct behavior; adapters determine how to obtain that evidence from a particular implementation and environment.
 
-**Status:** experimental. `shoko-core` provides typed scenario descriptions, capability preflight, bounded Pass/Fail/Unknown execution, and versioned evidence reports on GHC 9.12.4. Transport adapters, the CLI, and real staging acceptance remain in the implementation plans. See the [core API guide](docs/core.md) and its compiling consumers.
+**Status:** experimental. `shoko-core` provides typed scenario descriptions, capability preflight, bounded Pass/Fail/Unknown execution, and versioned evidence reports on GHC 9.12.4. `shoko-adapters` provides scoped PostgreSQL reads and bounded HTTP transport, exercised through actual local IO. The CLI and real staging acceptance remain in the implementation plans. See the [core API guide](docs/core.md), [adapter guide](docs/adapters.md), and their compiling consumers.
 
 Build and check the foundation from the repository root:
 

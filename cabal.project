@@ -1,8 +1,12 @@
-packages: shoko-core
+packages: shoko-core shoko-adapters
 index-state: 2026-10-18T00:00:00Z
 tests: True
 -- Match the released packages in the managed Nix package set.
 constraints:
+  http-client == 0.7.19,
+  http-client-tls == 0.3.6.4,
+  http-types == 0.12.4,
+  hasql == 1.9.3.1,
   aeson == 2.2.4.1,
   async == 2.2.6,
   cryptohash-sha256 == 0.11.102.1,
@@ -12,4 +16,7 @@ constraints:
   tasty-hedgehog == 1.4.0.2
 
 package shoko-core
+  ghc-options: -Werror
+
+package shoko-adapters
   ghc-options: -Werror

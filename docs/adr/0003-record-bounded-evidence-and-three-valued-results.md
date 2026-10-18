@@ -39,3 +39,12 @@ The first runner implements only `eventually`, `never`, and `exactlyOnce` plus d
 Revision 2026-10-01: retain action-outcome evidence and clarify that a correctly rejected negative scenario is Pass, while unavailable evidence remains Unknown in staging and automation.
 
 Revision 2026-10-18: specify terminal action handling, finite cleanup grace/disposition, and sanitized logical-input identity for repeatable rewrite verification.
+
+Implementation clarification, 2026-10-18: SQL snapshots use independent read-only
+transactions with server and host deadlines. A column descriptor verifies its
+actual PostgreSQL type before Hasql 1.9 decodes bytes, since successful binary
+decoding alone can accept an incompatible type. HTTP disables redirects and
+automatic connection retries, limits response bytes, and uses response scopes
+with zero idle connections. Both adapters report sampled coverage. Secret-bearing
+transport errors and payloads have no result rendering path; exact domain
+status/body classification remains in the context binding.

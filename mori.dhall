@@ -38,6 +38,20 @@ in  Schema.Project::{
           , Schema.Dependency.ByName "hedgehogqa/haskell-hedgehog:hedgehog"
           ]
         }
+      , Schema.Package::{
+        , name = "shoko-adapters"
+        , type = Schema.PackageType.Library
+        , language = Schema.Language.Haskell
+        , path = Some "shoko-adapters"
+        , description = Some "Scoped SQL and bounded HTTP evidence adapters"
+        , dependencies =
+          [ Schema.Dependency.ByName "shinzui/shoko:shoko-core"
+          , Schema.Dependency.ByName "hasql/hasql:hasql"
+          , Schema.Dependency.ByName "snoyberg/http-client:http-client"
+          , Schema.Dependency.ByName "snoyberg/http-client:http-client-tls"
+          , Schema.Dependency.ByName "Vlix/http-types:http-types"
+          ]
+        }
       ]
     , dependencyRefs =
       [ Schema.MoriRef::{
@@ -109,6 +123,13 @@ in  Schema.Project::{
       ]
     , docs =
       [ Schema.DocRef::{
+        , key = "adapters"
+        , kind = Schema.DocKind.Guide
+        , audience = Schema.DocAudience.Module
+        , description = Some "Scoped PostgreSQL queries and bounded HTTP transport"
+        , location = Schema.DocLocation.LocalFile "docs/adapters.md"
+        }
+      , Schema.DocRef::{
         , key = "core"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module

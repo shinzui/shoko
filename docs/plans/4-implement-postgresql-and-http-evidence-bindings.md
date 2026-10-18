@@ -17,6 +17,11 @@ provenance:
       at: 2026-10-02T04:18:41Z
       mode: "update"
       note: "Associate the bootstrap plan with the shared Mina intention requested by the user."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-18T19:06:11Z
+      mode: "implement"
+      note: "Implement generic scoped SQL and bounded HTTP with real local adapter fixtures."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -38,20 +43,32 @@ A consumer can execute an HTTP action and verify its domain consequences in Post
 ## Progress
 
 
-- [ ] M1: Generic PostgreSQL existence, count, value, and absence observations work with typed parameters and truthful coverage.
-- [ ] M2: HTTP actions and reads share core deadlines, correlation, policy, and sanitized evidence.
-- [ ] M3: A real local HTTP-to-PostgreSQL roundtrip exercises the public runner, including Fail and Unknown controls.
+- [x] M1 (2026-10-18): Typed equality/conjunction, mandatory business-key scope, existence/count/absence, and null/absent/single/multiple column results pass actual PostgreSQL tests. Read-only permissions, checked column types, identifier rejection, missing correlation, and server deadlines are verified.
+- [x] M2 (2026-10-18): Named endpoint allowlists, explicit domain decoding, business-key GET reads, verified TLS settings, no mutation retries/redirects, bounded response bodies, validated trace context, opt-in run labels, and sanitized evidence pass real loopback HTTP tests.
+- [x] M3 (2026-10-18): The real local HTTP-to-PostgreSQL/REST roundtrip exercises the public runner, result round trips, typed rejection Pass, unexpected success/rejection Fail, and SQL/HTTP/decoding Unknown controls. All 15 adapter tests and 37 core tests pass through `nix develop --command just check`, including the isolated native Nix adapter derivation running the same fixture. `cabal check` reports no warnings; generated Nix files/lock are unchanged.
 
 ## Surprises & Discoveries
 
 
+Hasql 1.9.3.1 matches the managed package set, while the latest release is 2.0.1.0. The exact released 1.9 source was inspected. Its integer decoder accepts arbitrary-length bytes: a text column initially decoded to an integer without failure. Column queries now project a `pg_typeof`/`regtype` compatibility check and reject mismatches before decoding. The real mismatch test proves unavailable evidence.
+
+The Unknown control originally included a healthy REST assertion conclusively showing the expected row absent, correctly making aggregate Fail dominate SQL Unknown. The independent source-outage control now tests only the unavailable consequence. This is test separation, not a semantics change.
+
+Real-time polling close to the cutoff can start a request with too little budget and honestly produce Unknown. The local transport smoke test now schedules one conclusive state sample in a generous bounded window and waits for expiry; fake-clock core tests own repeated-poll and exact-boundary semantics. Failure logs are retained under ignored `.dev/adapter-tests/` with fixture sentinels redacted before scoped cleanup.
+
 ## Decision Log
 
+
+On 2026-10-18, use a connection per sampled SQL read, one read-only transaction, server statement timeout, and bracketed close. Avoid shared transaction state between concurrent expectations. Both SQL and REST expose sampled coverage only; scoped absence can be an eventually assertion but never claims continuous history.
+
+On 2026-10-18, disable HTTP redirects, reused-connection retries, ambient proxy routing, and idle socket retention. The host supplies a fixed endpoint allowlist and exact status/body classification. Run-label propagation is an optional header contract, not a claim of downstream correlation.
 
 On 2026-10-01, implement a generic SQL/HTTP binding layer instead of adding TAN-specific dependencies. This is RES-1 M3's complete baseline for non-Haskell legacy services. HTTP mutation is never retried automatically merely because evidence is slow.
 
 ## Outcomes & Retrospective
 
+
+Complete on 2026-10-18. The reusable adapter package provides scoped typed SQL observations and bounded HTTP actions/reads, with real producer/consumer verification through core. The fixture owns a fresh Unix-only database cluster and loopback server, retains sanitized failure output, and cleans up on failure. ADR 0002–0003 and `docs/adapters.md` preserve correlation, type-checking, resource, transport, and sampled-coverage decisions. This acceptance uses actual local IO; it does not establish remote target authorization or deployed registration behavior. CLI integration is the next eligible work while staging details remain deferred.
 
 ## Context and Orientation
 

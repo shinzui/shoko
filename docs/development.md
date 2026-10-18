@@ -1,9 +1,9 @@
 # Development
 
 The workspace contains `shoko-core`, its typed descriptions and bounded runner,
-and separately compiled consumers. See the [core guide](core.md) for the public
-API. Adapters and the CLI follow in the child plans. No staging credentials or
-running database are needed for core checks.
+and `shoko-adapters` with separately compiled consumers. See the [core guide](core.md)
+and [adapter guide](adapters.md) for the public API. The CLI follows in its child
+plan. No staging credentials are needed for local checks.
 
 From the repository root, with Nix installed:
 
@@ -15,7 +15,7 @@ nix develop --command just check
 nix develop --command just fmt
 ```
 
-`check` builds all workspace components, runs the explicitly selected core test,
+`check` builds all workspace components, runs the explicitly selected core and real adapter tests,
 validates the result schema against checked-in examples, and runs
 `nix flake check`, including formatting, schema validation, and the Nix library/test build.
 First-party code treats warnings as errors through `cabal.project` and the Nix
@@ -59,5 +59,6 @@ a Git-backed flake. Do not edit generated pins or run a blanket flake update.
 
 The template prepares a local PostgreSQL data directory under ignored `db/` when
 entering the shell. It does not start the server. Core checks never connect to it.
-The generated `process-compose.yaml` is only for later local adapter fixtures;
-it is independent of the running staging application.
+`just test-adapters` creates its own temporary Unix-only cluster and HTTP server,
+without depending on the generated `process-compose.yaml` or any running database.
+It provisions only owned local fixture data and cleans up on test failure.

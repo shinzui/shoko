@@ -19,6 +19,10 @@ freeze file, and Nix lock establish the accepted selection.
 | cryptohash-sha256 | 0.11.102.1 | 0.11.102.1 | [SHA-256](mori://haskell-hvr/cryptohash-sha256/packages/cryptohash-sha256) | `89c1b9030989cc914d057061d90933628481abb2` (v0.11.102.1) |
 | bytestring | 0.12.2.0 (GHC boot package) | 0.12.2.0 | [ByteString](mori://haskell/bytestring/packages/bytestring) | `d984ad00644c0157bad04900434b9d36f23633c5` (0.12.2.0) |
 | time | 1.14 (GHC boot package) | 1.16.0.1 | [Time](mori://haskell/time/packages/time) | `e5c5d1987011efe88a21ab6ded45aaa33a16274f` (1.14) |
+| hasql | 1.9.3.1 | 2.0.1.0 | [Hasql](mori://hasql/hasql/packages/hasql) | `d353314c3224c551109a18e7d7c591613b483b49` (selected); `ef3e361ced8ad62652f1a8e7a77b3d0d0e2b9065` (latest) |
+| http-client | 0.7.19 | 0.7.19 | [HTTP client](mori://snoyberg/http-client/packages/http-client) | `a0b418c12ff3c9878f21bff92bb174c239a9cfe3` (http-client-0.7.19) |
+| http-client-tls | 0.3.6.4 | 0.4.0 | [TLS backend](mori://snoyberg/http-client/packages/http-client-tls) | No matching upstream release tag; selected Hackage archive inspected |
+| http-types | 0.12.4 | 0.12.6 | [HTTP types](mori://Vlix/http-types/packages/http-types) | `6c4f373c4d3ea00f824c5ed417ff4c20c8825d05` (v0.12.4); latest `3cbf2ab6d075a54de699884c5183b44535575b9b` |
 
 Registry release listings: [text](https://hackage.haskell.org/package/text.json),
 [tasty](https://hackage.haskell.org/package/tasty.json),
@@ -78,3 +82,24 @@ Nixpkgs pin; PyPI also reports 4.26.0. Upstream tag v4.26.0 resolves to
 Haskell runtime dependency. Mori has no registered jsonschema project; API
 lookup therefore used the [official validator documentation](https://python-jsonschema.readthedocs.io/en/stable/validate/)
 and the [PyPI registry](https://pypi.org/pypi/jsonschema/json).
+
+SQL/HTTP selections match the managed Nix package set. Hasql deliberately uses
+the released 1.9 family, shared with subsequent event readers; newer major APIs
+are not silently mixed with it. API research used the exact 1.9.3.1 tagged source
+from the Mori-located corpus and the curated 1.10 migration guide. Because 1.9's
+integer decoder accepts arbitrary-length bytes, the adapter checks column types
+in the SQL projection before decoding. This is covered by a real schema-mismatch
+test. No compatibility override or source patch is used.
+
+Release evidence: [Hasql](https://hackage.haskell.org/package/hasql/preferred.json),
+[HTTP client](https://hackage.haskell.org/package/http-client/preferred.json),
+[TLS](https://hackage.haskell.org/package/http-client-tls/preferred.json), and
+[HTTP types](https://hackage.haskell.org/package/http-types/preferred.json).
+Mori has no registered HTTP-types project; its intended canonical URI above is
+pending registry coverage. Lookup fell back to the released Hackage archive,
+whose metadata identifies [the upstream owner](https://github.com/Vlix/http-types).
+The released TLS archive confirms `tlsManagerSettings`; HTTP client source
+confirms automatic reused-connection retries are configurable and `closeManager`
+is a deprecated no-op. Response scopes and zero idle connections bound owned
+socket lifetime. PostgreSQL's [type-information reference](https://www.postgresql.org/docs/current/functions-info.html)
+defines the `pg_typeof`/`regtype` comparison used for checked column decoding.

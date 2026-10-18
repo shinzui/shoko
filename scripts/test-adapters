@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Own an isolated loopback HTTP server and Unix-only PostgreSQL cluster."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import socket
+import time
+import urllib.request
+import uuid
+
+root = Path.cwd()
+package = root / "shoko-adapters" if (root / "shoko-adapters").is_dir() else root
+if not (package / "shoko-adapters.cabal").is_file():
+    raise RuntimeError("run test-adapters from the workspace or adapter package root")
+
+
+def run(args, env, **kwargs):
+    subprocess.run(args, env=env, cwd=root, check=True, **kwargs)
+
+
+def run_tests(args, env):
+    result = subprocess.run(args, env=env, cwd=root, capture_output=True, text=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    if result.returncode:
+        artifacts = root / ".dev" / "adapter-tests"
+        artifacts.mkdir(parents=True, exist_ok=True)
+        output = (result.stdout + result.stderr).replace("ADAPTER-SECRET-SENTINEL", "[redacted]")
+        target = artifacts / (str(uuid.uuid4()) + ".log")
+        target.write_text(output)
+        print("Sanitized fixture failure output retained at " + str(target), file=sys.stderr)
+        raise RuntimeError("adapter test suite failed")
+
+
+with tempfile.TemporaryDirectory(prefix="shoko-adapters-", dir="/tmp") as temporary:
+    owned = Path(temporary)
+    env = dict(os.environ, PGHOST=str(owned), PGDATA=str(owned / "data"), PGPORT="5432",
+               PGDATABASE="shoko_adapter_test", PGUSER=os.environ.get("USER", ""))
+    # Ignore ambient routing/authentication settings. The fixture never targets
+    # an existing cluster, and never listens on a TCP database port.
+    for key in ("PGSERVICE", "PGSERVICEFILE", "PGHOSTADDR", "PGPASSWORD", "PGOPTIONS"):
+        env.pop(key, None)
+    run(["initdb", "--auth=trust", "--no-locale", "--encoding=UTF8"], env, stdout=subprocess.DEVNULL)
+    started = False
+    server = None
+    try:
+        run(["pg_ctl", "-w", "-l", str(owned / "postgres.log"), "-o", f"-F -k {owned} -h ''", "start"], env)
+        started = True
+        run(["createdb", "shoko_adapter_test"], env)
+        run(["psql", "-X", "-v", "ON_ERROR_STOP=1"], env, input="""
+CREATE SCHEMA fixture;
+CREATE TABLE fixture.accounts(id text, value text, amount bigint DEFAULT 1, active boolean DEFAULT true);
+CREATE VIEW fixture.slow AS SELECT 'slow'::text AS id FROM pg_sleep(0.4);
+INSERT INTO fixture.accounts(id, value) VALUES ('one', 'value'), ('null', NULL), ('many', 'a'), ('many', 'b');
+CREATE ROLE shoko_reader LOGIN;
+GRANT USAGE ON SCHEMA fixture TO shoko_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA fixture TO shoko_reader;
+""", text=True, stdout=subprocess.DEVNULL)
+        # Use quoted libpq strings for these generated local paths only.
+        env["SHOKO_TEST_PG"] = f"host={owned} dbname=shoko_adapter_test user=shoko_reader"
+        port_file = owned / "port"
+        server = subprocess.Popen([sys.executable, str(package / "test/Fixture/server.py"), str(port_file)], env=env)
+        deadline = time.monotonic() + 10
+        while not port_file.exists():
+            if server.poll() is not None or time.monotonic() >= deadline:
+                raise RuntimeError("adapter fixture failed to become ready")
+            time.sleep(0.02)
+        env["SHOKO_TEST_HTTP"] = "http://127.0.0.1:" + port_file.read_text()
+        with socket.socket() as closed:
+            closed.bind(("127.0.0.1", 0))
+            env["SHOKO_TEST_UNAVAILABLE_HTTP"] = "http://127.0.0.1:" + str(closed.getsockname()[1])
+        # Both suites and the roundtrip always run; missing PostgreSQL is a failure.
+        if len(sys.argv) == 3 and sys.argv[1] == "--binaries":
+            for suite in ("postgres-adapter-test", "http-adapter-test", "adapter-roundtrip-test"):
+                run_tests([str((root / sys.argv[2] / suite / suite).resolve())], env)
+        else:
+            run_tests(["cabal", "test", "postgres-adapter-test", "http-adapter-test", "adapter-roundtrip-test", "--test-show-details=direct"], env)
+        with urllib.request.urlopen(env["SHOKO_TEST_HTTP"] + "/metrics", timeout=2) as response:
+            metrics = json.load(response)
+        if metrics.get("/slow") != 1 or metrics.get("/redirect") != 1:
+            raise RuntimeError("mutation timeout/redirect was retried or not exercised")
+        print("Real PostgreSQL/HTTP suites passed; timeout mutation sent once.")
+    finally:
+        if server is not None:
+            server.terminate()
+            server.wait(timeout=5)
+        if started:
+            run(["pg_ctl", "-w", "-m", "immediate", "stop"], env)

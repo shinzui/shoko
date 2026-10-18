@@ -8,7 +8,10 @@ build:
 test:
     cabal test shoko-core-test --test-show-details=direct
 
-check: build test
+test-adapters:
+    python3 scripts/test-adapters
+
+check: build test test-adapters
     python3 scripts/check-result-schema.py
     nix flake check
 

@@ -39,3 +39,11 @@ Binding contracts are role-aware: supporting an operation as an observation does
 Revision 2026-10-01: select Settei explicitly after the configuration discussion, replacing the unspecified configuration implementation with its typed resolver and existing source adapters. The capability-policy boundary is unchanged.
 
 Revision 2026-10-01: make existing Kubernetes staging the first execution target and define explicit typed outcomes for positive and negative scenarios.
+
+Implementation clarification, 2026-10-18: generic SQL descriptors always add a
+selected business-key predicate; REST reads inject that key through a declared
+query parameter. Neither transport provides a broad-read fallback. HTTP endpoint
+allowlists fix destinations and methods before acquisition; metadata adds mutation
+and explicit external-effect capabilities. Native transport records without
+`Generic` use their library's public record API at this boundary. No orphan
+`Generic` or rendering instance is introduced for third-party resources.
