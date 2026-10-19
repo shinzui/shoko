@@ -1,6 +1,7 @@
 module ScenarioSpec (tests) where
 
 import Consumer.Account
+import Consumer.Composed qualified as Composed
 import Data.Either (isLeft, isRight)
 import Data.IORef
 import Data.Set qualified as Set
@@ -8,6 +9,7 @@ import Data.String (fromString)
 import Data.Text qualified as Text
 import Hedgehog (PropertyT, assert, evalIO, property, withTests, (===))
 import Shoko
+import Shoko.Scenario
 import Test.Tasty
 import Test.Tasty.Hedgehog
 
@@ -15,7 +17,26 @@ tests :: TestTree
 tests =
   testGroup
     "description and policy"
-    [ check "effect-free inspection and resolution" $ do
+    [ check "namespaced blocks retain references and declaration order" $ do
+        case inspectScenario Composed.composedScenario of
+          Left errors -> fail (show errors)
+          Right Description {nodes = ns, expectations = es} -> do
+            map (\NodeDescription {nodeId = key} -> key) ns === ["inviter.qualified", "invitee.qualified", "invitee.complete", "finish"]
+            map (\ExpectationDescription {expectationId = key} -> key) es === ["invitee.registered"]
+            map (\ExpectationDescription {predicate = key} -> key) es === ["(exists and not(absent))"],
+      check "strict/deferred order and invalid namespace/predicate labels" $ do
+        let build label test = scenario "labels" "Labels" "v1" $ namespace label $ do
+              a <- Composed.qualifiedAgent
+              _ <- Composed.completeRegistration a
+              expect $ eventually "strict" (observeThat (Composed.Registered (fromRef a)) test)
+              expectAfterActions $ eventually "deferred" (observe "ok" (Composed.Registered (fromRef a)) id)
+        case inspectScenario (build "outer.inner" (Shoko.predicate "valid" id)) of
+          Right Description {expectations = es} -> map (\ExpectationDescription {expectationId = key} -> key) es === ["outer.inner.registered", "outer.inner.strict", "outer.inner.deferred"]
+          Left errors -> fail (show errors)
+        mapM_ (\label -> assert (isLeft (inspectScenario (build label (Shoko.predicate "valid" id))))) ["", ".x", "x..y", "x."]
+        mapM_ (\label -> assert (isLeft (inspectScenario (build "valid" (Shoko.predicate label id))))) ["", "x and y", "(x)", "é"]
+        assert (isLeft (inspectScenario (build "valid" (onPart "bad:part" id (Shoko.predicate "ok" id))))),
+      check "effect-free inspection and resolution" $ do
         calls <- evalIO (newIORef 0)
         let inspected = inspectScenario accountScenario
             resolved =

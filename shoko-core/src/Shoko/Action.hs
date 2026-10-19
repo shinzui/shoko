@@ -7,6 +7,9 @@ module Shoko.Action
     Vocabulary (..),
     OperationRole (..),
     OperationInfo (..),
+    declareOperation,
+    dependsOn,
+    withSubstep,
     Action,
     accept,
     acceptedTags,
@@ -58,3 +61,15 @@ data ActionOutcome a
   = ActionObserved !Text !a
   | ActionObservedWithDetails !Text !a ![(Text, PublicValue)]
   | ActionUnavailable !Text
+
+-- | Start an operation inventory and derive dependencies from its typed inputs.
+declareOperation :: Text -> [Capability] -> OperationInfo
+declareOperation key caps = OperationInfo key (Set.fromList caps) [] []
+
+dependsOn :: Input a -> OperationInfo -> OperationInfo
+dependsOn input (OperationInfo key caps deps steps) =
+  OperationInfo key caps (deps ++ inputDependencies input) steps
+
+withSubstep :: Text -> [Capability] -> OperationInfo -> OperationInfo
+withSubstep key caps (OperationInfo name required deps steps) =
+  OperationInfo name required deps (steps ++ [(key, Set.fromList caps)])

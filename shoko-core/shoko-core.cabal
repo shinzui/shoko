@@ -79,6 +79,7 @@ test-suite shoko-core-test
   main-is: Main.hs
   other-modules:
     Consumer.Account
+    Consumer.Composed
     Consumer.DeliveryLedger
     CoverageSpec
     FaultSpec

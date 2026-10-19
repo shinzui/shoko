@@ -124,3 +124,10 @@ Vocabulary transformations are named `hoistAction`, `hoistObservation`,
 changing operations; ordinary `fmap` changes result values. Explicit sum injection
 remains the foundation, with `Member` as optional convenience. These refinements
 are planned and must pass the plan's public-consumer and type-boundary checks.
+
+Implementation revision, 2026-10-19: namespaced builder blocks and named predicate
+composition are implemented. `expectAfterActions` permits a block to declare its
+consequences before later actions; it retains the fixed action sequence and starts
+all observations after the last action. Strict `expect` retains its ordering check.
+Namespace collection assigns symbolic references lexically, preserving returned
+and external references without renaming operation or predicate identifiers.

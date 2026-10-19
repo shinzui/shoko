@@ -16,6 +16,11 @@ provenance:
       at: 2026-10-19T02:33:54Z
       mode: "update"
       note: "Validate and repair handler abstraction, effectful input resolution, source ownership, composition cleanup, and correlation API contracts."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-19T03:08:37Z
+      mode: "implement"
+      note: "Implement reusable blocks, handler-based bindings, vocabulary composition, and scenario-owned correlation with acceptance checks."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -47,7 +52,7 @@ This plan should land before [plan 7](7-verify-one-real-workflow-across-legacy-a
 ## Progress
 
 
-- [ ] M1: Scenario and observation blocks. A fixture fragment reused twice under `namespace` inspects with distinct identifiers. A fragment using `expectAfterActions` can be followed by further actions. Named predicate combinators produce derived predicate identifiers. `just test` passes and goldens are unchanged.
+- [x] M1 (2026-10-19): Scenario and observation blocks. Verified all 44 core tests, the full `nix develop --command just check` gate, and byte-identical regenerated goldens. A fixture fragment reused twice under `namespace` inspects with distinct identifiers. A fragment using `expectAfterActions` can be followed by further actions. Named predicate combinators produce derived predicate identifiers. `just test` passes and goldens are unchanged.
 - [ ] M2: Handler-based bindings. `Binding` is built from per-operation `Handler` values that own their contract, evidence `Source`, and correlation requirement. `CallContext` and `BindingContract` are abstract. Effectful reference resolution records undeclared accesses even if a handler ignores the error. Distinct identifier/time types prevent accidental interchange, and typed handler errors retain their causes through preflight while input errors remain distinguishable during execution. All four adapters export handler constructors. Every consumer, test, demo, and CLI path is migrated. Run results are schema v2. `just check` passes.
 - [ ] M3: Vocabulary sums and binding combination. `(:+:)` combines two context vocabularies, `combineBindings` combines their bindings with correct acquisition and release order, and conflicting operation identifiers are a definition error. Concrete-vocabulary workflow blocks lift with `hoistScenarioBuilder` and compose without losing their typed return values. The composed consumer runs two vocabularies to Pass.
 - [ ] M4: Scenario-owned correlation handles. Two instances of a self-contained block declare the same business-key name under distinct namespaced handles; each observation explicitly selects its instance with `correlatedBy`. Preflight checks selection, declaration, and handler compatibility. Reports identify each resolved instance. `CorrelationPlan` is gone from `resolveScenario` and `Entry`.

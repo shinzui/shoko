@@ -13,6 +13,8 @@ module Shoko
     given,
     act,
     expect,
+    namespace,
+    expectAfterActions,
     inspectScenario,
     runScenario,
   )
@@ -26,7 +28,7 @@ import Shoko.Expectation
 import Shoko.Observation
 import Shoko.Prelude
 import Shoko.Runner (runScenario)
-import Shoko.Scenario (Scenario, ScenarioBuilder, act, expect, given, inspectScenario, scenario)
+import Shoko.Scenario (Scenario, ScenarioBuilder, act, expect, expectAfterActions, given, inspectScenario, namespace, scenario)
 
 -- | Version of the public core package.
 version :: Text

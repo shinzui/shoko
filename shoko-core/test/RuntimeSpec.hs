@@ -3,6 +3,7 @@
 module RuntimeSpec (tests) where
 
 import Consumer.Account
+import Consumer.Composed qualified as Composed
 import Consumer.DeliveryLedger (ledgerEnvironment)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (cancel, waitCatch, withAsync)
@@ -24,7 +25,27 @@ tests :: TestTree
 tests =
   testGroup
     "execution boundaries"
-    [ testPropertyNamed "inclusive observation deadline" "deadlineBoundary" $ withTests 1 $ property $ do
+    [ testPropertyNamed "deferred observation waits for the final action" "deferredOrder" $ withTests 1 $ property $ do
+        events <- evalIO (newIORef [])
+        (clock, _) <- evalIO (newFakeClock epoch)
+        case resolveScenario testEnvironment testOptions (BusinessKeyFrom "registrationId" (pure "registration")) (Composed.composedBinding events) Composed.composedScenario of
+          Left errors -> fail (show errors)
+          Right resolved -> do
+            result <- evalIO (runScenario clock (LogicalInput "blocks" []) resolved)
+            resultVerdict result === Just Pass
+            evalIO (readIORef events) >>= (=== ["qualified", "qualified", "agent", "finished", "polled"]),
+      testPropertyNamed "nested blocks return references and accept external inputs" "nestedReferences" $ withTests 1 $ property $ do
+        events <- evalIO (newIORef [])
+        (clock, _) <- evalIO (newFakeClock epoch)
+        let selected = scenario "nested" "Nested references" "v1" $ do
+              outside <- Composed.qualifiedAgent
+              returned <- namespace "outer" $ namespace "inner" $ Composed.completeRegistration outside
+              _ <- act "finish" (accept ["finished"] (Composed.Finish (fromRef returned)))
+              pure ()
+        case resolveScenario testEnvironment testOptions (BusinessKeyFrom "registrationId" (pure "registration")) (Composed.composedBinding events) selected of
+          Left errors -> fail (show errors)
+          Right resolved -> evalIO (runScenario clock (LogicalInput "nested" []) resolved) >>= (\result -> resultVerdict result === Just Pass),
+      testPropertyNamed "inclusive observation deadline" "deadlineBoundary" $ withTests 1 $ property $ do
         before <- evalIO (boundary 29999)
         at <- evalIO (boundary 30000)
         afterDeadline <- evalIO (boundary 30001)

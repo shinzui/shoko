@@ -13,10 +13,10 @@ import Shoko.Environment
 import Shoko.Evidence
 import Shoko.Expectation
 import Shoko.Internal.Digest qualified as Digest
-import Shoko.Observation
+import Shoko.Observation hiding (predicate)
 import Shoko.Prelude
 import Shoko.Result
-import Shoko.Scenario
+import Shoko.Scenario hiding (namespace)
 
 encodeRunResult :: RunResult -> ByteString
 encodeRunResult = encode . resultValue

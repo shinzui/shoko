@@ -150,7 +150,7 @@ resolveScenario
       stepContract (Step _ fixture action) = requirements (if fixture then FixtureOperation else ActionOperation) (actionOperation action) False
       expectationContract (Expectation _ _ _ observation) = requirements ObservationOperation (observationOperation observation) True
       validTarget Nothing = True
-      validTarget (Just (TargetIdentity targetName namespace revision)) = all (/= "") [targetName, namespace, revision]
+      validTarget (Just (TargetIdentity targetName targetNamespace revision)) = all (/= "") [targetName, targetNamespace, revision]
 
 -- | Used by the single runner interpreter; consumers should use inspection.
 resolvedParts ::

@@ -84,7 +84,7 @@ dispatch (Registry environments entries) (Invocation command path overrides synt
     commandId (Run name) = name
     commandId _ = ""
     validTarget Nothing = True
-    validTarget (Just (TargetIdentity name namespace revision)) = all (/= "") [name, namespace, revision]
+    validTarget (Just (TargetIdentity name targetNamespace revision)) = all (/= "") [name, targetNamespace, revision]
 
 executeEntry :: Command -> HostConfig -> Text -> Bool -> Maybe FilePath -> Entry -> IO CliRun
 executeEntry command config@(HostConfig environment implementation format grants policy expected access redactions) provenance synthetic outputPath (Entry source correlation logical factories metadata) =
