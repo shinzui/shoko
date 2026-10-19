@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Shoko.Action
   ( Ref,
     refId,
@@ -14,6 +16,7 @@ module Shoko.Action
     accept,
     acceptedTags,
     actionOperation,
+    hoistAction,
     ActionOutcome (..),
   )
 where
@@ -73,3 +76,6 @@ dependsOn input (OperationInfo key caps deps steps) =
 withSubstep :: Text -> [Capability] -> OperationInfo -> OperationInfo
 withSubstep key caps (OperationInfo name required deps steps) =
   OperationInfo name required deps (steps ++ [(key, Set.fromList caps)])
+
+hoistAction :: (forall x. f x -> g x) -> Action f a -> Action g a
+hoistAction transform (Action tags op) = Action tags (transform op)

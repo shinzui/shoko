@@ -142,3 +142,20 @@ and cleanup requirements before acquisition. Effectful input resolution records
 undeclared accesses even when a handler ignores the returned error. Distinct
 source/business-key identifiers and absolute monotonic timestamps prevent category
 mistakes while preserving scalar wire representations.
+
+Vocabulary composition revision, 2026-10-19: `(:+:)` combines context-owned
+vocabularies; result-preserving `hoistAction`, `hoistObservation`,
+`hoistExpectations`, and `hoistScenarioBuilder` lift concrete workflow definitions.
+`Member` is optional convenience for distinct vocabularies in right-nested sums;
+explicit `InL`/`InR` selects repeated vocabularies or other sum shapes. A workflow
+block remains a builder returning symbolic values, while finalized scenarios own
+independent identity, revision, resources, and reports.
+
+`combineBindings` acquires both component resources, unions unconditional lifecycle
+requirements, and registers completed leaf releases under masking. Cleanup runs
+in reverse registration order under one shared grace deadline, including partial
+acquisition failure and cancellation. Structural source-owner paths reject labels
+shared by independently acquired components even when their coverage agrees.
+Operation IDs with differing capability or substep inventories are definition
+errors; per-use input dependencies may differ. Context owners remain responsible
+for stable, meaningful operation IDs and shared reader identities.

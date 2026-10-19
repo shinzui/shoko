@@ -1073,7 +1073,8 @@
                       "unresolved-reference",
                       "action-after-expectations",
                       "empty-outcome-contract",
-                      "empty-expectations"
+                      "empty-expectations",
+                      "conflicting-operation"
                     ]
                   },
                   "id": {

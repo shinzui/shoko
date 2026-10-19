@@ -9,6 +9,7 @@ module Shoko
     differenceMicros,
     module Shoko.Binding,
     module Shoko.Correlation,
+    module Shoko.Compose,
     module Shoko.Environment,
     module Shoko.Expectation,
     module Shoko.Observation,
@@ -20,6 +21,7 @@ module Shoko
     expect,
     namespace,
     expectAfterActions,
+    hoistScenarioBuilder,
     inspectScenario,
     runScenario,
   )
@@ -28,6 +30,7 @@ where
 import Shoko.Action
 import Shoko.Binding
 import Shoko.Clock (MonotonicTime (..), addDuration, differenceMicros, monotonicMicros)
+import Shoko.Compose
 import Shoko.Correlation
 import Shoko.Environment
 import Shoko.Expectation
@@ -35,7 +38,7 @@ import Shoko.Identifier
 import Shoko.Observation
 import Shoko.Prelude
 import Shoko.Runner (runScenario)
-import Shoko.Scenario (Scenario, ScenarioBuilder, act, expect, expectAfterActions, given, inspectScenario, namespace, scenario)
+import Shoko.Scenario (Scenario, ScenarioBuilder, act, expect, expectAfterActions, given, hoistScenarioBuilder, inspectScenario, namespace, scenario)
 
 -- | Version of the public core package.
 version :: Text

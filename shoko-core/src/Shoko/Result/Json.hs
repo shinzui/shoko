@@ -441,6 +441,7 @@ definitionValue problem = case problem of
   UnresolvedReference key -> identified "unresolved-reference" key
   ActionAfterExpectations -> identified "action-after-expectations" ""
   EmptyOutcomeContract key -> identified "empty-outcome-contract" key
+  ConflictingOperation key -> identified "conflicting-operation" key
   EmptyExpectations -> identified "empty-expectations" ""
 
 parsePreflight :: Value -> Parser PreflightError
@@ -470,6 +471,7 @@ parseDefinition = checked ["code", "id"] "definition-error" $ \o -> do
     "unresolved-reference" -> UnresolvedReference <$> o .: "id"
     "action-after-expectations" -> pure ActionAfterExpectations
     "empty-outcome-contract" -> EmptyOutcomeContract <$> o .: "id"
+    "conflicting-operation" -> ConflictingOperation <$> o .: "id"
     "empty-expectations" -> pure EmptyExpectations
     _ -> fail "unknown definition code"
 

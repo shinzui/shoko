@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Shoko.Expectation
   ( Expectation (..),
     Temporal (..),
@@ -7,6 +9,7 @@ module Shoko.Expectation
     exactlyOnce,
     within,
     expectationList,
+    hoistExpectations,
   )
 where
 
@@ -50,3 +53,8 @@ within duration (Expectations (a, es)) = Expectations (a, map addWindow es)
 
 expectationList :: Expectations op a -> [Expectation op]
 expectationList (Expectations (_, es)) = es
+
+hoistExpectations :: (forall x. f x -> g x) -> Expectations f a -> Expectations g a
+hoistExpectations transform (Expectations (a, es)) = Expectations (a, map hoist es)
+  where
+    hoist (Expectation key t windows observation) = Expectation key t windows (hoistObservation transform observation)

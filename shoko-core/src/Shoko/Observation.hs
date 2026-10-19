@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Shoko.Observation
   ( Observation,
     observe,
@@ -10,6 +12,7 @@ module Shoko.Observation
     observeThat,
     validPredicate,
     observationOperation,
+    hoistObservation,
     predicateId,
     matches,
     CoverageStrength (..),
@@ -100,3 +103,6 @@ data ObservationOutcome a
 -- | Only explicit public summaries are serializable. Raw typed values never are.
 data PublicValue = PublicChoice !Text | PublicCount !Integer | PublicFlag !Bool
   deriving stock (Eq, Show, Generic)
+
+hoistObservation :: (forall x. f x -> g x) -> Observation f a -> Observation g a
+hoistObservation transform (Observation key op test leaves) = Observation key (transform op) test leaves

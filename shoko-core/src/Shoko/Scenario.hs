@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Shoko.Scenario
   ( Scenario,
     ScenarioBuilder,
@@ -7,6 +9,7 @@ module Shoko.Scenario
     expect,
     namespace,
     expectAfterActions,
+    hoistScenarioBuilder,
     Description (..),
     NodeDescription (..),
     ExpectationDescription (..),
@@ -105,6 +108,7 @@ data DefinitionError
   | ActionAfterExpectations
   | EmptyOutcomeContract !Text
   | EmptyExpectations
+  | ConflictingOperation !Text
   deriving stock (Eq, Show, Generic)
 
 -- Internal traversal assigns only symbolic references. It never invokes IO.
@@ -142,6 +146,7 @@ scenarioParts (Scenario key title revision program) =
       identifiers = key : map nodeKey nodeDescriptions ++ map expectationKey expectationDescriptions
       errors =
         validateEntries (Set.fromList (map nodeKey nodeDescriptions)) Set.empty False entries
+          ++ conflictingOperations (map (\(NodeDescription _ _ info _) -> info) nodeDescriptions ++ map (\(ExpectationDescription _ _ _ info _) -> info) expectationDescriptions)
           ++ duplicateErrors identifiers
           ++ [InvalidIdentifier | any Text.null (title : revision : identifiers)]
           ++ [EmptyExpectations | null expectations]
@@ -192,3 +197,19 @@ inspectScenario :: (Vocabulary op) => Scenario op -> Either [DefinitionError] De
 inspectScenario descriptionSource = case scenarioParts descriptionSource of
   Left errors -> Left errors
   Right (description, _, _) -> Right description
+
+-- Dependency nodes vary per use; only operation-level contracts must agree.
+conflictingOperations :: [OperationInfo] -> [DefinitionError]
+conflictingOperations [] = []
+conflictingOperations (OperationInfo key caps _ steps : rest) =
+  [ConflictingOperation key | any conflicts rest] ++ conflictingOperations rest
+  where
+    conflicts (OperationInfo other otherCaps _ otherSteps) = key == other && (caps /= otherCaps || Set.fromList steps /= Set.fromList otherSteps)
+
+hoistScenarioBuilder :: (forall x. f x -> g x) -> ScenarioBuilder f a -> ScenarioBuilder g a
+hoistScenarioBuilder _ (Pure a) = Pure a
+hoistScenarioBuilder transform (Bind first next) = Bind (hoistScenarioBuilder transform first) (hoistScenarioBuilder transform . next)
+hoistScenarioBuilder transform (AddStep key fixture action) = AddStep key fixture (hoistAction transform action)
+hoistScenarioBuilder transform (AddExpectations es) = AddExpectations (hoistExpectations transform es)
+hoistScenarioBuilder transform (AddDeferred es) = AddDeferred (hoistExpectations transform es)
+hoistScenarioBuilder transform (Namespace label program) = Namespace label (hoistScenarioBuilder transform program)

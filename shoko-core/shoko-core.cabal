@@ -48,6 +48,7 @@ library
     Shoko.Action
     Shoko.Binding
     Shoko.Clock
+    Shoko.Compose
     Shoko.Correlation
     Shoko.Environment
     Shoko.Evidence
@@ -81,6 +82,7 @@ test-suite shoko-core-test
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:
+    ComposeSpec
     Consumer.Account
     Consumer.Composed
     Consumer.DeliveryLedger
