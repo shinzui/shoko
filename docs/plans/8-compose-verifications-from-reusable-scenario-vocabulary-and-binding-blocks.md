@@ -165,6 +165,8 @@ The implementation review tightened two boundaries already required by this plan
 Durable decisions are distilled into ADR 0002 (builder/finalized-scenario boundary, fixed activation, handler/source ownership, hoisting, typed errors, composition lifetimes, and explicit instance selection) and ADR 0003 (strict v2 results, ordered resolutions, digest identity, and per-instance CorrelationLost). Metadata equality still cannot prove arbitrary IO closures or decoder identity; binding authors retain the documented reader/query-sharing obligations. No active downstream host was found to migrate; plan 7 records how its future context host consumes this API. Live staging acceptance remains plan 7's separate work.
 
 
+Documentation follow-up, 2026-10-19: the HTML implementation explainer now shows composition as implemented, uses current explicit correlation in its compiling-consumer excerpt, and links the three registration demos and v2 result schema. The capability catalog and terminology also remove residual claims about external correlation plans, future composition, and core result v1; the unchanged workflow-manifest format remains v1. This closes omissions found after the initial M5 documentation pass. Validation: `just check-docs` passes; the explainer has balanced HTML, 54 unique IDs, 36 valid local/anchor links, and JavaScript accepted by `node --check`. Browser policy blocks local-file preview, so this follow-up has no visual preview evidence.
+
 ## Context and Orientation
 
 

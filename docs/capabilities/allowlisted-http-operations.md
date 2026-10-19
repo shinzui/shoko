@@ -33,7 +33,7 @@ The transport verifies TLS, disables redirects, ambient proxies, and automatic c
 
 ## Limits
 
-Observation coverage is sampled state. The binding contract supports business-key correlation; an optional execution header is only a run label. Authors must declare external effects and classify domain rejections precisely. Timed-out mutations are not retried.
+Observation coverage is sampled state. Observation handlers require business-key correlation selected by the scenario. An opted-in execution header carries the scenario’s declared execution ID as a run label; it does not prove downstream propagation. Authors must declare external effects and classify domain rejections precisely. Timed-out mutations are not retried.
 
 ## Use and evidence
 

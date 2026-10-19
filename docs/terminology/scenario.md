@@ -24,7 +24,7 @@ anchors:
 
 A named, revisioned description of a workflow and its expected observable consequences.
 
-A scenario declares fixtures and actions in a fixed order, followed by expectations. The same description can be resolved against different implementation bindings. Its structure is inspectable before any operation runs.
+A scenario declares fixtures and actions in a fixed order and expectations that activate after the final action. Reusable builders can declare deferred checks with `expectAfterActions` before later actions, while strict `expect` prevents later actions. The same description can be resolved against different implementation bindings. Its structure is inspectable before any operation runs.
 
 See the [implementation or guide](../../shoko-core/src/Shoko/Scenario.hs).
 

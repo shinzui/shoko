@@ -23,7 +23,7 @@ anchors:
 
 The scenario host's inventory of supported environment names and compiled scenario entries.
 
-Each entry packages a typed scenario, correlation plan, logical-input summary, named binding factories, and metadata callback. This is the local `Shoko.Cli.Registry`, distinct from the external Mori project registry. Binding factories remain pure so inspection can describe them without credentials or resource IO.
+Each entry packages a typed scenario with its own correlation declarations, logical-input summary, named binding factories, and metadata callback. This is the local `Shoko.Cli.Registry`, distinct from the external Mori project registry. Binding factories remain pure so inspection can describe them without credentials or resource IO.
 
 See the [implementation or guide](../../shoko-cli/src/Shoko/Cli/Registry.hs).
 

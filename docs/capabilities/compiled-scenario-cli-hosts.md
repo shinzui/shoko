@@ -42,7 +42,7 @@ evidence:
 
 A host registers compiled scenarios, pure binding factories, credential references, safe logical inputs, and a live metadata callback. Callers can list scenarios, explain descriptions and configuration provenance, validate policy without resource IO, or execute one run. Configuration precedence is defaults, one explicit YAML file, declared environment variables, and named options.
 
-JSON stdout is one core v1 result. Exit classes distinguish Pass (0), Fail (1), invocation/configuration/policy/target errors (2), Unknown (3), and runner/command faults (4). `--output` atomically publishes a completed JSON file without replacing an existing file; persistence failure retains stdout and returns exit 4.
+JSON stdout is one core v2 result. Exit classes distinguish Pass (0), Fail (1), invocation/configuration/policy/target errors (2), Unknown (3), and runner/command faults (4). `--output` atomically publishes a completed JSON file without replacing an existing file; persistence failure retains stdout and returns exit 4.
 
 ## Limits
 

@@ -48,7 +48,7 @@ current vocabulary catalog.
 ## Execution and policy
 
 - [binding](binding.md) — The implementation-specific handlers and contracts that give a scenario's operations their runtime meaning.
-- [binding contract](binding-contract.md) — The pure declaration of a handler's permissions, cleanup requirements, correlation support, source, and coverage strength.
+- [binding contract](binding-contract.md) — The pure declaration of a handler's capability and cleanup requirements.
 - [capability](capability.md) — A declared permission category required by an operation or resource lifecycle and granted by an environment.
 - [cleanup grace](cleanup-grace.md) — The separate finite period available to release resources and run registered finalizers after execution.
 - [disposition](disposition.md) — The recorded outcome of a resource's contracted cleanup or retention.
