@@ -5,6 +5,15 @@ The workspace contains `shoko-core`, its typed descriptions and bounded runner,
 See the [core](core.md), [adapter](adapters.md), and [host](scenario-hosts.md) guides.
 No staging credentials are needed for local checks.
 
+The [capability catalog](capabilities/index.md) records implemented consumer surfaces;
+the [terminology catalog](terminology/index.md) defines their vocabulary. Run
+`just check-docs` after editing either catalog. This target requires `okf` 0.9.0.0
+or later and Mori with `capabilities validate` and `terms validate`; it checks the
+manifest, pinned profiles, catalog metadata, local term relations, and anchors.
+These authoring tools are separate from the managed Haskell build environment;
+run this gate alongside `just check` when changing the catalogs. Keep the terminology
+index grouped by topic rather than replacing it with the default type-grouped OKF index.
+
 From the repository root, with Nix installed:
 
 ```bash

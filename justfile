@@ -33,6 +33,14 @@ workflow-check:
 workflow-smoke:
     python3 scripts/workflow-env smoke --manifest integration/workflow.json
 
+# Requires okf >= 0.9.0.0 and Mori with local capability/terminology validation.
+check-docs:
+    mori validate
+    okf validate docs/capabilities --profile docs/capabilities/profile.dhall --profile-enforce --log-enforce
+    okf validate docs/terminology --strict --profile docs/terminology/profile.dhall --profile-enforce --log-enforce
+    mori capabilities validate --path .
+    mori terms validate --path .
+
 check: build test test-adapters test-event-stores test-cli test-workflow-contract
     python3 scripts/check-result-schema.py
     nix flake check

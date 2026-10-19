@@ -23,14 +23,16 @@ in  Schema.Project::{
         , type = Schema.PackageType.Library
         , language = Schema.Language.Haskell
         , path = Some "shoko-core"
-        , description = Some "Public core library and bounded verification runner"
+        , description = Some
+            "Public core library and bounded verification runner"
         , dependencies =
           [ Schema.Dependency.ByName "haskell/text:text"
           , Schema.Dependency.ByName "haskell/containers:containers"
           , Schema.Dependency.ByName "effectful/effectful:effectful-core"
           , Schema.Dependency.ByName "haskell/aeson:aeson"
           , Schema.Dependency.ByName "simonmar/async:async"
-          , Schema.Dependency.ByName "haskell-hvr/cryptohash-sha256:cryptohash-sha256"
+          , Schema.Dependency.ByName
+              "haskell-hvr/cryptohash-sha256:cryptohash-sha256"
           , Schema.Dependency.ByName "haskell/bytestring:bytestring"
           , Schema.Dependency.ByName "haskell/time:time"
           , Schema.Dependency.ByName "UnkindPartition/tasty:tasty"
@@ -43,7 +45,8 @@ in  Schema.Project::{
         , type = Schema.PackageType.Library
         , language = Schema.Language.Haskell
         , path = Some "shoko-adapters"
-        , description = Some "Scoped SQL, HTTP, Kiroku, and Message DB evidence adapters"
+        , description = Some
+            "Scoped SQL, HTTP, Kiroku, and Message DB evidence adapters"
         , dependencies =
           [ Schema.Dependency.ByName "shinzui/shoko:shoko-core"
           , Schema.Dependency.ByName "haskell/aeson:aeson"
@@ -63,14 +66,17 @@ in  Schema.Project::{
         , type = Schema.PackageType.Library
         , language = Schema.Language.Haskell
         , path = Some "shoko-cli"
-        , description = Some "Reusable compiled scenario CLI host and labelled demo executable"
+        , description = Some
+            "Reusable compiled scenario CLI host and labelled demo executable"
         , dependencies =
           [ Schema.Dependency.ByName "shinzui/shoko:shoko-core"
           , Schema.Dependency.ByName "shinzui/settei:settei"
           , Schema.Dependency.ByName "shinzui/settei:settei-yaml"
           , Schema.Dependency.ByName "shinzui/settei:settei-env"
-          , Schema.Dependency.ByName "shinzui/settei:settei-optparse-applicative"
-          , Schema.Dependency.ByName "pcapriotti/optparse-applicative:optparse-applicative"
+          , Schema.Dependency.ByName
+              "shinzui/settei:settei-optparse-applicative"
+          , Schema.Dependency.ByName
+              "pcapriotti/optparse-applicative:optparse-applicative"
           , Schema.Dependency.ByName "snoyberg/githash:githash"
           , Schema.Dependency.ByName "haskell/directory:directory"
           , Schema.Dependency.ByName "haskell/filepath:filepath"
@@ -151,33 +157,79 @@ in  Schema.Project::{
         , key = "scenario-hosts"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module
-        , description = Some "Compiled domain hosts, strict configuration, process exits, and atomic reports"
+        , description = Some
+            "Compiled domain hosts, strict configuration, process exits, and atomic reports"
         , location = Schema.DocLocation.LocalFile "docs/scenario-hosts.md"
         }
       , Schema.DocRef::{
         , key = "adapters"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module
-        , description = Some "Scoped SQL/HTTP and finite Kiroku/Message DB evidence readers"
+        , description = Some
+            "Scoped SQL/HTTP and finite Kiroku/Message DB evidence readers"
         , location = Schema.DocLocation.LocalFile "docs/adapters.md"
         }
       , Schema.DocRef::{
         , key = "core"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module
-        , description = Some "Typed descriptions, binding policy, bounded evidence, and result v1"
+        , description = Some
+            "Typed descriptions, binding policy, bounded evidence, and result v1"
         , location = Schema.DocLocation.LocalFile "docs/core.md"
         }
       , Schema.DocRef::{
         , key = "development"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.User
-        , description = Some "Build, test, format, and maintain the Shoko workspace"
+        , description = Some
+            "Build, test, format, and maintain the Shoko workspace"
         , location = Schema.DocLocation.LocalFile "docs/development.md"
         }
       ]
     , okfBundles =
       [ Schema.OkfBundle::{
+        , name = "capabilities"
+        , path = "docs/capabilities"
+        , profileBinding = Some
+            ( Schema.ProfileBinding.Published
+                Schema.PinnedImport::{
+                , publisher = "mori://shinzui/okf-profiles"
+                , publisherRef = Some Schema.MoriRef::{
+                  , namespace = "shinzui"
+                  , name = "okf-profiles"
+                  }
+                , export = Some "coordination.capabilities"
+                , version = Some "v0.21.0"
+                , pin = Some
+                    "sha256:4be32588d55c74282ceab54b06b22f552cdbf4215788e3eb5256ee8744cb92a2"
+                }
+            )
+        , okfVersion = "0.2"
+        , description = Some
+            "Implemented consumer capabilities with stable CAP handles, evidence, and limits"
+        }
+      , Schema.OkfBundle::{
+        , name = "terminology"
+        , path = "docs/terminology"
+        , profileBinding = Some
+            ( Schema.ProfileBinding.Published
+                Schema.PinnedImport::{
+                , publisher = "mori://shinzui/okf-profiles"
+                , publisherRef = Some Schema.MoriRef::{
+                  , namespace = "shinzui"
+                  , name = "okf-profiles"
+                  }
+                , export = Some "documentation.terminology"
+                , version = Some "v0.21.0"
+                , pin = Some
+                    "sha256:4be32588d55c74282ceab54b06b22f552cdbf4215788e3eb5256ee8744cb92a2"
+                }
+            )
+        , okfVersion = "0.2"
+        , description = Some
+            "Controlled Shoko vocabulary with stable TERM handles and source anchors"
+        }
+      , Schema.OkfBundle::{
         , name = "research"
         , path = "docs/research"
         , profile = Some "docs/research/profile.dhall"
