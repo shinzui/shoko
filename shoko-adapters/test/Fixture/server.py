@@ -56,6 +56,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
         elif self.path == "/large":
             self.send(200, b"x" * 8192)
+        elif self.path == "/execution":
+            self.send(200, self.headers.get("x-shoko-execution-id", "none").encode())
         elif self.path == "/headers":
             okay = (self.headers.get("traceparent") == "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
                     and self.headers.get("x-shoko-execution-id") == "adapter-run")

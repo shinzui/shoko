@@ -1,6 +1,7 @@
 module Main (main) where
 
 import ComposeSpec qualified
+import CorrelationSpec qualified
 import CoverageSpec qualified
 import FaultSpec qualified
 import HandlerSpec qualified
@@ -25,6 +26,7 @@ main =
               Shoko.version === "0.2.0.0",
         ScenarioSpec.tests,
         ComposeSpec.tests,
+        CorrelationSpec.tests,
         HandlerSpec.tests,
         TemporalSpec.tests,
         RuntimeSpec.tests,

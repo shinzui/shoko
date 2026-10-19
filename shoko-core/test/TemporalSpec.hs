@@ -53,7 +53,6 @@ tests =
     run clock binding selected = case resolveScenario
       ledgerEnvironment
       testOptions
-      (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key"))
       binding
       selected of
       Left errors -> fail (show errors)
@@ -70,7 +69,6 @@ runLedger initial copies temporal unavailable = do
   case resolveScenario
     ledgerEnvironment
     testOptions
-    (businessKeyFromResult (BusinessKeyName "deliveryId") "append")
     (ledgerBinding rows readCalls unavailable)
     (ledgerScenario copies temporal) of
     Left errors -> fail (show errors)

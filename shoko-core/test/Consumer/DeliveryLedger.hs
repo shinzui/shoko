@@ -20,10 +20,11 @@ instance Vocabulary Ledger where
 ledgerScenario :: Int -> Temporal -> Scenario Ledger
 ledgerScenario copies temporal = scenario "toy-delivery" "Count append-only deliveries" "v1" $ do
   receipt <- act "append" (accept ["appended"] (Append copies))
+  selected <- correlate (CorrelationAlias "delivery") (BusinessKeyName "deliveryId") (fromRef receipt)
   expect $ case temporal of
-    Eventually -> eventually "delivery-count" (observe "delivered" (Deliveries (fromRef receipt)) id)
-    Never -> never "delivery-count" (observe "delivered" (Deliveries (fromRef receipt)) id)
-    ExactlyOnce -> exactlyOnce "delivery-count" (observe "delivered" (Deliveries (fromRef receipt)) id)
+    Eventually -> eventually "delivery-count" (correlatedBy selected $ observe "delivered" (Deliveries (fromRef receipt)) id)
+    Never -> never "delivery-count" (correlatedBy selected $ observe "delivered" (Deliveries (fromRef receipt)) id)
+    ExactlyOnce -> exactlyOnce "delivery-count" (correlatedBy selected $ observe "delivered" (Deliveries (fromRef receipt)) id)
 
 ledgerEnvironment :: Environment
 ledgerEnvironment =

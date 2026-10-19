@@ -159,3 +159,18 @@ shared by independently acquired components even when their coverage agrees.
 Operation IDs with differing capability or substep inventories are definition
 errors; per-use input dependencies may differ. Context owners remain responsible
 for stable, meaningful operation IDs and shared reader identities.
+
+Correlation implementation revision, 2026-10-19: scenarios now own their typed
+correlation declarations. Each business declaration has a namespaced instance ID
+and a separate semantic `BusinessKeyName`; observations explicitly select an
+abstract `CorrelationRef`. There is no external correlation plan or implicit
+unique-key/first-match fallback. Missing, undeclared, or incompatible selections
+fail before acquisition. Shared sources retain one baseline while distinct
+instances resolve independently, including repeated semantic key names.
+
+The run-wide `execution-id` declaration is idempotent across namespaces and makes
+`executionId` available to action contexts separately from observation selection.
+Native handlers transport it explicitly; HTTP wrappers populate the payload label,
+reject conflicts, and honor endpoint opt-in. This mechanism establishes transport,
+not durable remote propagation or target-compatible ID formats. Those remain the
+context owner's responsibility.

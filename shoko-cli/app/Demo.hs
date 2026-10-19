@@ -30,11 +30,12 @@ registry =
     ]
 
 entry :: Text -> Text -> Bool -> Bool -> Bool -> Bool -> Entry
-entry name tag written unavailable fault synthetic = Entry description (businessKeyFromResult (BusinessKeyName "demo-key") "create") (LogicalInput "demo-v1" []) [("demo", factory)] (\_ -> pure (Right (Nothing, Nothing)))
+entry name tag written unavailable fault synthetic = Entry description (LogicalInput "demo-v1" []) [("demo", factory)] (\_ -> pure (Right (Nothing, Nothing)))
   where
     description = scenario name "Labelled in-memory verifier demo" "v1" $ do
       key <- act "create" (accept [tag] Create)
-      expect (eventually "demo-state" (observe "expected-state" (Exists (fromRef key)) (if tag == "invalid-input" then not else id)))
+      selected <- correlate (CorrelationAlias "demo") (BusinessKeyName "demo-key") (fromRef key)
+      expect (eventually "demo-state" (correlatedBy selected $ observe "expected-state" (Exists (fromRef key)) (if tag == "invalid-input" then not else id)))
     factory :: HostConfig -> Maybe Credentials -> SomeBinding Op
     factory _ _ =
       SomeBinding

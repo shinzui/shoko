@@ -58,12 +58,12 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Shoko.Action
 import Shoko.Clock
-import Shoko.Correlation
 import Shoko.Environment
 import Shoko.Expectation
 import Shoko.Identifier
 import Shoko.Internal.Binding
 import Shoko.Internal.Call
+import Shoko.Internal.Correlation
 import Shoko.Internal.Reference (InputResolutionError (..))
 import Shoko.Observation
 import Shoko.Prelude
@@ -183,7 +183,7 @@ guardCorrelation name input context action =
 
 data PolicyReport = PolicyReport
   { requiredCapabilities :: !(Set Capability),
-    selectedCorrelation :: !CorrelationStrategy
+    correlationStrategies :: !(Set CorrelationStrategy)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -195,8 +195,9 @@ data PreflightError
   | HandlerConstructionFailed !Text !HandlerBuildError
   | CapabilitiesDenied !(Set Capability)
   | SyntheticConsentRequired
-  | UnsupportedCorrelation !Text
-  | MissingCorrelationReference !Text
+  | UnselectedCorrelation !Text
+  | UndeclaredCorrelation !Text !CorrelationId
+  | IncompatibleCorrelation !Text !CorrelationId
   | ProductionUnsupported
   | InvalidBindingIdentifier
   | InvalidLogicalInput
@@ -211,7 +212,7 @@ data ResolvedScenario op resource
       !(Binding op resource)
       !Environment
       !RunOptions
-      !CorrelationPlan
+      ![CorrelationDeclaration]
       !PolicyReport
 
 resolveScenario ::
@@ -219,26 +220,23 @@ resolveScenario ::
   (Vocabulary op) =>
   Environment ->
   RunOptions ->
-  CorrelationPlan ->
   Binding op resource ->
   Scenario op ->
   Either [PreflightError] (ResolvedScenario op resource)
 resolveScenario
   environment@(Environment envName production allowed _)
   options@(RunOptions runKey synthetic build implementation target)
-  correlationPlan
   selectedBinding@(Binding name lifecycle _ _ lookupHandler)
   descriptionSource =
     case scenarioParts descriptionSource of
       Left errors -> Left [InvalidDefinition errors]
-      Right (description@(Description _ _ _ descriptions _), steps, expectations) ->
-        let results = map stepContract steps ++ map expectationContract expectations
+      Right (description@(Description _ _ _ _ _ correlationDescriptions), steps, expectations, declarations) ->
+        let results = map (stepContract correlationDescriptions) steps ++ map (expectationContract correlationDescriptions) expectations
             errors = concatMap (\(es, _, _) -> es) results
             sources = concatMap (\(_, _, ss) -> ss) results
             sourceErrors = [InconsistentSource label | (index, (label, strength, owner)) <- zip [0 :: Int ..] sources, (otherLabel, otherStrength, otherOwner) <- take index sources, label == otherLabel, strength /= otherStrength || owner /= otherOwner]
             required = Set.unions (lifecycle : map (\(_, caps, _) -> caps) results)
             denied = Set.difference required allowed
-            known = Set.fromList [key | NodeDescription key _ _ _ <- descriptions]
             allErrors =
               errors
                 ++ sourceErrors
@@ -247,7 +245,6 @@ resolveScenario
                 ++ [InvalidBindingIdentifier | implementation == Just "" || not (validTarget target)]
                 ++ [CapabilitiesDenied denied | not (Set.null denied)]
                 ++ [SyntheticConsentRequired | Set.member SyntheticResource required && not synthetic]
-                ++ [MissingCorrelationReference key | key <- correlationDependencies correlationPlan, Set.notMember key known]
          in if null allErrors
               then
                 Right
@@ -259,13 +256,13 @@ resolveScenario
                       selectedBinding
                       environment
                       options
-                      correlationPlan
-                      (PolicyReport required (correlationStrategy correlationPlan))
+                      declarations
+                      (PolicyReport required (Set.fromList [declarationStrategy d | d <- declarations]))
                   )
               else Left allErrors
     where
-      requirements :: forall a. OperationRole -> op a -> Bool -> ([PreflightError], Set Capability, [(SourceId, CoverageStrength, [Bool])])
-      requirements role op needsSource =
+      requirements :: forall a. [CorrelationDescription] -> OperationRole -> op a -> Bool -> Maybe CorrelationRef -> ([PreflightError], Set Capability, [(SourceId, CoverageStrength, [Bool])])
+      requirements correlationDescriptions role op needsSource selection =
         let OperationInfo key declared _ substeps = describeOperation op
             declaredCaps = Set.unions (declared : map snd substeps)
          in case lookupHandler role op of
@@ -275,29 +272,38 @@ resolveScenario
                 let requiredKind = if needsSource then ObservationHandlerKind else ActionHandlerKind
                     contract = handlerContract handler
                     required = Set.unions [declaredCaps, contractCapabilities contract, contractCleanup contract]
-                    support = case (handlerCorrelation handler, correlationPlan) of
-                      (Nothing, _) -> True
-                      (Just (RequiresBusinessKey name'), BusinessKeyFrom selected _) -> name' == selected
-                      (Just RequiresExecutionId, PropagatedExecutionId) -> True
-                      _ -> False
+                    correlationErrors = case (needsSource, handlerCorrelation handler) of
+                      (True, Just requirement) -> case selection of
+                        Nothing -> [UnselectedCorrelation key]
+                        Just selected ->
+                          let selectedId = correlationRefId selected
+                           in case [d | d@(CorrelationDescription identity _ _ _) <- correlationDescriptions, identity == selectedId] of
+                                [] -> [UndeclaredCorrelation key selectedId]
+                                CorrelationDescription _ semantic strategy _ : _ ->
+                                  let compatible = case (requirement, strategy) of
+                                        (RequiresBusinessKey wanted, BusinessKey) -> wanted == semantic
+                                        (RequiresExecutionId, ExecutionId) -> True
+                                        _ -> False
+                                   in [IncompatibleCorrelation key selectedId | not compatible]
+                      _ -> []
                     sources = case handlerSource handler of
                       Just (Source label strength _ owner) -> [(label, strength, owner)]
                       Nothing -> []
                  in ( [MissingHandler key | handlerKind handler /= requiredKind]
-                        ++ [UnsupportedCorrelation key | not support]
+                        ++ correlationErrors
                         ++ [MissingSource key | needsSource && (null sources || any (Text.null . sourceIdText . (\(label, _, _) -> label)) sources)],
                       required,
                       sources
                     )
-      stepContract (Step _ fixture action) = requirements (if fixture then FixtureOperation else ActionOperation) (actionOperation action) False
-      expectationContract (Expectation _ _ _ observation) = requirements ObservationOperation (observationOperation observation) True
+      stepContract declaredCorrelations (Step _ fixture action) = requirements declaredCorrelations (if fixture then FixtureOperation else ActionOperation) (actionOperation action) False Nothing
+      expectationContract declaredCorrelations (Expectation _ _ _ observation) = requirements declaredCorrelations ObservationOperation (observationOperation observation) True (observationCorrelation observation)
       validTarget Nothing = True
       validTarget (Just (TargetIdentity targetName targetNamespace revision)) = all (/= "") [targetName, targetNamespace, revision]
 
 -- | Used by the single runner interpreter; consumers should use inspection.
 resolvedParts ::
   ResolvedScenario op resource ->
-  (Description, [Step op], [Expectation op], Binding op resource, Environment, RunOptions, CorrelationPlan, PolicyReport)
+  (Description, [Step op], [Expectation op], Binding op resource, Environment, RunOptions, [CorrelationDeclaration], PolicyReport)
 resolvedParts (ResolvedScenario _ description steps expectations selectedBinding environment options plan report) =
   (description, steps, expectations, selectedBinding, environment, options, plan, report)
 

@@ -88,7 +88,9 @@ httpActionHandler config key build decode = do
       else
         build context >>= \case
           Left _ -> pure (ActionUnavailable "payload-unavailable")
-          Right payload -> httpAction resource context key payload decode
+          Right payload -> case propagatedPayload context payload of
+            Left _ -> pure (ActionUnavailable "payload-unavailable")
+            Right prepared -> httpAction resource context key prepared decode
 
 httpObservationHandler :: HttpConfig -> Text -> (CallContext -> IO (Either HttpPayloadError HttpPayload)) -> (Int -> ByteString -> Either HttpFailure a) -> Either HandlerBuildError (Handler Http a)
 httpObservationHandler config key build decode = do
@@ -102,7 +104,17 @@ httpObservationHandler config key build decode = do
       else
         build context >>= \case
           Left _ -> pure (ObservationUnavailable "payload-unavailable")
-          Right payload -> httpObservation resource context key payload decode
+          Right payload -> case propagatedPayload context payload of
+            Left _ -> pure (ObservationUnavailable "payload-unavailable")
+            Right prepared -> httpObservation resource context key prepared decode
+
+-- A declaration supplies the run ID independently of this observation's selection.
+-- Endpoint opt-in still controls whether the request transmits it.
+propagatedPayload :: CallContext -> HttpPayload -> Either HttpPayloadError HttpPayload
+propagatedPayload context payload@(HttpPayload body contentType authorization trace label) = case (executionId context, label) of
+  (Just expected, Just actual) | expected /= actual -> Left InvalidPayload
+  (Just expected, _) -> Right (HttpPayload body contentType authorization trace (Just expected))
+  _ -> Right payload
 
 methodBytes :: HttpMethod -> ByteString
 methodBytes Get = "GET"

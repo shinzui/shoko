@@ -223,6 +223,12 @@
         "predicateId": {
           "type": "string",
           "minLength": 1
+        },
+        "correlationId": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -230,7 +236,8 @@
         "temporal",
         "windowsMicros",
         "operation",
-        "predicateId"
+        "predicateId",
+        "correlationId"
       ],
       "additionalProperties": false
     },
@@ -261,6 +268,12 @@
             "$ref": "#/$defs/expectationDescription"
           },
           "minItems": 1
+        },
+        "correlations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/correlationDescription"
+          }
         }
       },
       "required": [
@@ -268,7 +281,8 @@
         "title",
         "revision",
         "nodes",
-        "expectations"
+        "expectations",
+        "correlations"
       ],
       "additionalProperties": false
     },
@@ -746,17 +760,21 @@
           },
           "uniqueItems": true
         },
-        "selectedCorrelation": {
-          "type": "string",
-          "enum": [
-            "business-key",
-            "execution-id"
-          ]
+        "correlationStrategies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "business-key",
+              "execution-id"
+            ]
+          },
+          "uniqueItems": true
         }
       },
       "required": [
         "requiredCapabilities",
-        "selectedCorrelation"
+        "correlationStrategies"
       ],
       "additionalProperties": false
     },
@@ -810,16 +828,6 @@
         "logicalInput": {
           "$ref": "#/$defs/logicalInput"
         },
-        "correlation": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/correlation"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "policy": {
           "$ref": "#/$defs/policy"
         },
@@ -871,6 +879,12 @@
               "timed-out"
             ]
           }
+        },
+        "correlations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resolvedCorrelation"
+          }
         }
       },
       "required": [
@@ -883,7 +897,6 @@
         "implementationIdentity",
         "targetIdentity",
         "logicalInput",
-        "correlation",
         "policy",
         "startedAt",
         "finishedAt",
@@ -892,7 +905,8 @@
         "verdict",
         "actions",
         "expectations",
-        "disposition"
+        "disposition",
+        "correlations"
       ],
       "additionalProperties": false
     },
@@ -935,38 +949,6 @@
           "properties": {
             "code": {
               "const": "synthetic-consent-required"
-            },
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "code",
-            "id"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "code": {
-              "const": "unsupported-correlation"
-            },
-            "id": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "code",
-            "id"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "code": {
-              "const": "missing-correlation-reference"
             },
             "id": {
               "type": "string"
@@ -1130,6 +1112,62 @@
             "cause"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "unselected-correlation"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "undeclared-correlation"
+            },
+            "id": {
+              "type": "string"
+            },
+            "correlationId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "id",
+            "correlationId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "incompatible-correlation"
+            },
+            "id": {
+              "type": "string"
+            },
+            "correlationId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "id",
+            "correlationId"
+          ],
+          "additionalProperties": false
         }
       ]
     },
@@ -1196,6 +1234,53 @@
           "additionalProperties": false
         }
       ]
+    },
+    "correlationDescription": {
+      "type": "object",
+      "properties": {
+        "correlationId": {
+          "type": "string"
+        },
+        "correlationKey": {
+          "type": "string"
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "business-key",
+            "execution-id"
+          ]
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "correlationId",
+        "correlationKey",
+        "strategy",
+        "dependencies"
+      ],
+      "additionalProperties": false
+    },
+    "resolvedCorrelation": {
+      "type": "object",
+      "properties": {
+        "correlationId": {
+          "type": "string"
+        },
+        "resolvedCorrelation": {
+          "$ref": "#/$defs/correlation"
+        }
+      },
+      "required": [
+        "correlationId",
+        "resolvedCorrelation"
+      ],
+      "additionalProperties": false
     }
   }
 }

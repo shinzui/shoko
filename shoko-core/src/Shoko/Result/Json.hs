@@ -57,7 +57,7 @@ parseResult = checked ["schemaVersion", "kind", "report", "reason", "errors"] "r
     _ -> fail "unknown result kind"
 
 reportValue :: VerificationResult -> Value
-reportValue (VerificationResult description digest run environment binding build implementation target logical correlation policy started finished start deadline verdict actions expectations disposition) =
+reportValue (VerificationResult description digest run environment binding build implementation target logical correlations policy started finished start deadline verdict actions expectations disposition) =
   object
     [ "description" .= descriptionValue description,
       "descriptionDigest" .= digest,
@@ -68,7 +68,7 @@ reportValue (VerificationResult description digest run environment binding build
       "implementationIdentity" .= implementation,
       "targetIdentity" .= fmap targetValue target,
       "logicalInput" .= logicalValue logical,
-      "correlation" .= fmap correlationValue correlation,
+      "correlations" .= map resolvedCorrelationValue correlations,
       "policy" .= policyValue policy,
       "startedAt" .= started,
       "finishedAt" .= finished,
@@ -91,7 +91,7 @@ parseReport = checked
     "implementationIdentity",
     "targetIdentity",
     "logicalInput",
-    "correlation",
+    "correlations",
     "policy",
     "startedAt",
     "finishedAt",
@@ -115,7 +115,7 @@ parseReport = checked
       <*> o .: "implementationIdentity"
       <*> nullable o "targetIdentity" parseTarget
       <*> (o .: "logicalInput" >>= parseLogical)
-      <*> nullable o "correlation" parseCorrelation
+      <*> list o "correlations" parseResolvedCorrelation
       <*> (o .: "policy" >>= parsePolicy)
       <*> o .: "startedAt"
       <*> o .: "finishedAt"
@@ -127,23 +127,25 @@ parseReport = checked
       <*> list o "disposition" (parseTag dispositions)
 
 descriptionValue :: Description -> Value
-descriptionValue (Description key title revision nodes expectations) =
+descriptionValue (Description key title revision nodes expectations correlations) =
   object
     [ "scenarioId" .= key,
       "title" .= title,
       "revision" .= revision,
       "nodes" .= map nodeValue nodes,
-      "expectations" .= map expectationDescriptionValue expectations
+      "expectations" .= map expectationDescriptionValue expectations,
+      "correlations" .= map correlationDescriptionValue correlations
     ]
 
 parseDescription :: Value -> Parser Description
-parseDescription = checked ["scenarioId", "title", "revision", "nodes", "expectations"] "description" $ \o ->
+parseDescription = checked ["scenarioId", "title", "revision", "nodes", "expectations", "correlations"] "description" $ \o ->
   Description
     <$> o .: "scenarioId"
     <*> o .: "title"
     <*> o .: "revision"
     <*> list o "nodes" parseNode
     <*> list o "expectations" parseExpectationDescription
+    <*> list o "correlations" parseCorrelationDescription
 
 nodeValue :: NodeDescription -> Value
 nodeValue (NodeDescription key fixture operation outcomes) =
@@ -159,23 +161,25 @@ parseNode = checked ["nodeId", "fixture", "operation", "acceptedOutcomes"] "node
     <*> (Set.fromList <$> o .: "acceptedOutcomes")
 
 expectationDescriptionValue :: ExpectationDescription -> Value
-expectationDescriptionValue (ExpectationDescription key temporal windows operation predicate) =
+expectationDescriptionValue (ExpectationDescription key temporal windows operation predicate selected) =
   object
     [ "expectationId" .= key,
       "temporal" .= tag temporals temporal,
       "windowsMicros" .= map durationMicros windows,
       "operation" .= operationValue operation,
-      "predicateId" .= predicate
+      "predicateId" .= predicate,
+      "correlationId" .= fmap correlationIdText selected
     ]
 
 parseExpectationDescription :: Value -> Parser ExpectationDescription
-parseExpectationDescription = checked ["expectationId", "temporal", "windowsMicros", "operation", "predicateId"] "expectation-description" $ \o ->
+parseExpectationDescription = checked ["expectationId", "temporal", "windowsMicros", "operation", "predicateId", "correlationId"] "expectation-description" $ \o ->
   ExpectationDescription
     <$> o .: "expectationId"
     <*> enumField o "temporal" temporals
     <*> list o "windowsMicros" parseDuration
     <*> (o .: "operation" >>= parseOperation)
     <*> o .: "predicateId"
+    <*> (fmap (fmap CorrelationId) (o .: "correlationId"))
 
 operationValue :: OperationInfo -> Value
 operationValue (OperationInfo key required dependencies substeps) =
@@ -340,11 +344,11 @@ parseTarget = checked ["target", "namespaceUid", "deploymentRevision"] "target" 
 policyValue :: PolicyReport -> Value
 policyValue (PolicyReport required strategy) =
   object
-    ["requiredCapabilities" .= map (tag capabilityTags) (Set.toAscList required), "selectedCorrelation" .= tag strategies strategy]
+    ["requiredCapabilities" .= map (tag capabilityTags) (Set.toAscList required), "correlationStrategies" .= map (tag strategies) (Set.toAscList strategy)]
 
 parsePolicy :: Value -> Parser PolicyReport
-parsePolicy = checked ["requiredCapabilities", "selectedCorrelation"] "policy" $ \o ->
-  PolicyReport <$> (Set.fromList <$> list o "requiredCapabilities" (parseTag capabilityTags)) <*> enumField o "selectedCorrelation" strategies
+parsePolicy = checked ["requiredCapabilities", "correlationStrategies"] "policy" $ \o ->
+  PolicyReport <$> (Set.fromList <$> list o "requiredCapabilities" (parseTag capabilityTags)) <*> (Set.fromList <$> list o "correlationStrategies" (parseTag strategies))
 
 parseDuration :: Value -> Parser Duration
 parseDuration value = do
@@ -425,8 +429,9 @@ preflightValue errors = object ["schemaVersion" .= (2 :: Int), "kind" .= ("prefl
       HandlerConstructionFailed key cause -> object ["code" .= ("handler-construction-failed" :: Text), "id" .= key, "cause" .= handlerErrorValue cause]
       CapabilitiesDenied caps -> object ["code" .= ("capabilities-denied" :: Text), "capabilities" .= map (tag capabilityTags) (Set.toAscList caps)]
       SyntheticConsentRequired -> identified "synthetic-consent-required" ""
-      UnsupportedCorrelation key -> identified "unsupported-correlation" key
-      MissingCorrelationReference key -> identified "missing-correlation-reference" key
+      UnselectedCorrelation key -> identified "unselected-correlation" key
+      UndeclaredCorrelation key selected -> selectedError "undeclared-correlation" key selected
+      IncompatibleCorrelation key selected -> selectedError "incompatible-correlation" key selected
       ProductionUnsupported -> identified "production-unsupported" ""
       InvalidBindingIdentifier -> identified "invalid-binding-identifier" ""
       InvalidLogicalInput -> identified "invalid-logical-input" ""
@@ -445,7 +450,7 @@ definitionValue problem = case problem of
   EmptyExpectations -> identified "empty-expectations" ""
 
 parsePreflight :: Value -> Parser PreflightError
-parsePreflight = checked ["code", "id", "details", "capabilities", "cause"] "preflight-error" $ \o -> do
+parsePreflight = checked ["code", "id", "details", "capabilities", "cause", "correlationId"] "preflight-error" $ \o -> do
   code <- o .: "code" :: Parser Text
   case code of
     "invalid-definition" -> InvalidDefinition <$> list o "details" parseDefinition
@@ -455,8 +460,9 @@ parsePreflight = checked ["code", "id", "details", "capabilities", "cause"] "pre
     "handler-construction-failed" -> HandlerConstructionFailed <$> o .: "id" <*> (o .: "cause" >>= parseHandlerError)
     "capabilities-denied" -> CapabilitiesDenied . Set.fromList <$> list o "capabilities" (parseTag capabilityTags)
     "synthetic-consent-required" -> pure SyntheticConsentRequired
-    "unsupported-correlation" -> UnsupportedCorrelation <$> o .: "id"
-    "missing-correlation-reference" -> MissingCorrelationReference <$> o .: "id"
+    "unselected-correlation" -> UnselectedCorrelation <$> o .: "id"
+    "undeclared-correlation" -> UndeclaredCorrelation <$> o .: "id" <*> (CorrelationId <$> o .: "correlationId")
+    "incompatible-correlation" -> IncompatibleCorrelation <$> o .: "id" <*> (CorrelationId <$> o .: "correlationId")
     "production-unsupported" -> pure ProductionUnsupported
     "invalid-binding-identifier" -> pure InvalidBindingIdentifier
     "invalid-logical-input" -> pure InvalidLogicalInput
@@ -495,3 +501,26 @@ parseHandlerError = withObject "handler-error" $ \o -> do
       unless (KeyMap.keys o == ["code"]) (fail "unknown field")
       pure ExecutionMetadataUnsupported
     _ -> fail "unknown handler cause"
+
+selectedError :: Text -> Text -> CorrelationId -> Value
+selectedError code key selected = object ["code" .= code, "id" .= key, "correlationId" .= correlationIdText selected]
+
+correlationDescriptionValue :: CorrelationDescription -> Value
+correlationDescriptionValue (CorrelationDescription identity key strategy deps) =
+  object
+    [ "correlationId" .= correlationIdText identity,
+      "correlationKey" .= businessKeyNameText key,
+      "strategy" .= tag strategies strategy,
+      "dependencies" .= deps
+    ]
+
+parseCorrelationDescription :: Value -> Parser CorrelationDescription
+parseCorrelationDescription = checked ["correlationId", "correlationKey", "strategy", "dependencies"] "correlation-description" $ \o ->
+  CorrelationDescription <$> (CorrelationId <$> o .: "correlationId") <*> (BusinessKeyName <$> o .: "correlationKey") <*> enumField o "strategy" strategies <*> o .: "dependencies"
+
+resolvedCorrelationValue :: ResolvedCorrelation -> Value
+resolvedCorrelationValue (ResolvedCorrelation identity value) = object ["correlationId" .= correlationIdText identity, "resolvedCorrelation" .= correlationValue value]
+
+parseResolvedCorrelation :: Value -> Parser ResolvedCorrelation
+parseResolvedCorrelation = checked ["correlationId", "resolvedCorrelation"] "resolved-correlation" $ \o ->
+  ResolvedCorrelation <$> (CorrelationId <$> o .: "correlationId") <*> (o .: "resolvedCorrelation" >>= parseCorrelation)

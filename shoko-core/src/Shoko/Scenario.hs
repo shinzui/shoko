@@ -10,6 +10,9 @@ module Shoko.Scenario
     namespace,
     expectAfterActions,
     hoistScenarioBuilder,
+    correlate,
+    propagateExecutionId,
+    CorrelationDescription (..),
     Description (..),
     NodeDescription (..),
     ExpectationDescription (..),
@@ -27,6 +30,8 @@ import Data.Text qualified as Text
 import Shoko.Action
 import Shoko.Environment
 import Shoko.Expectation
+import Shoko.Identifier
+import Shoko.Internal.Correlation
 import Shoko.Internal.Reference (Ref (..))
 import Shoko.Observation
 import Shoko.Prelude
@@ -40,6 +45,8 @@ data ScenarioBuilder op a where
   AddStep :: (Typeable a) => Text -> Bool -> Action op a -> ScenarioBuilder op (Ref a)
   AddExpectations :: Expectations op () -> ScenarioBuilder op ()
   AddDeferred :: Expectations op () -> ScenarioBuilder op ()
+  AddCorrelation :: CorrelationAlias -> BusinessKeyName -> Input Text -> ScenarioBuilder op CorrelationRef
+  AddExecution :: ScenarioBuilder op CorrelationRef
   Namespace :: Text -> ScenarioBuilder op a -> ScenarioBuilder op a
 
 instance Functor (ScenarioBuilder op) where
@@ -75,6 +82,20 @@ namespace = Namespace
 expectAfterActions :: Expectations op () -> ScenarioBuilder op ()
 expectAfterActions = AddDeferred
 
+correlate :: CorrelationAlias -> BusinessKeyName -> Input Text -> ScenarioBuilder op CorrelationRef
+correlate = AddCorrelation
+
+propagateExecutionId :: ScenarioBuilder op CorrelationRef
+propagateExecutionId = AddExecution
+
+data CorrelationDescription = CorrelationDescription
+  { correlationId :: !CorrelationId,
+    correlationKey :: !BusinessKeyName,
+    strategy :: !CorrelationStrategy,
+    dependencies :: ![Text]
+  }
+  deriving stock (Eq, Show, Generic)
+
 data NodeDescription = NodeDescription
   { nodeId :: !Text,
     fixture :: !Bool,
@@ -88,7 +109,8 @@ data ExpectationDescription = ExpectationDescription
     temporal :: !Temporal,
     windows :: ![Duration],
     operation :: !OperationInfo,
-    predicate :: !Text
+    predicate :: !Text,
+    correlationId :: !(Maybe CorrelationId)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -97,7 +119,8 @@ data Description = Description
     title :: !Text,
     revision :: !Text,
     nodes :: ![NodeDescription],
-    expectations :: ![ExpectationDescription]
+    expectations :: ![ExpectationDescription],
+    correlations :: ![CorrelationDescription]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -112,7 +135,7 @@ data DefinitionError
   deriving stock (Eq, Show, Generic)
 
 -- Internal traversal assigns only symbolic references. It never invokes IO.
-data Entry op = StepEntry (Step op) | ExpectEntry Bool (Expectation op) | InvalidNamespace
+data Entry op = StepEntry (Step op) | ExpectEntry Bool (Expectation op) | DeclarationEntry CorrelationDeclaration | InvalidNamespace
 
 collect :: [Text] -> ScenarioBuilder op a -> (a, [Entry op])
 collect _ (Pure a) = (a, [])
@@ -128,6 +151,20 @@ collect prefix (AddDeferred es) = ((), invalidExpectationNames es ++ map (Expect
 collect prefix (Namespace label program) =
   let (a, entries) = collect (prefix ++ [label]) program
    in (a, [InvalidNamespace | any Text.null (Text.splitOn "." label)] ++ entries)
+collect prefix (AddCorrelation alias key input) =
+  let local = correlationAliasText alias
+      qualified = CorrelationId (Text.intercalate "." (prefix ++ [local]))
+      invalid = local == "execution-id" || any Text.null (Text.splitOn "." local) || Text.null (businessKeyNameText key)
+   in (CorrelationRef qualified, [InvalidNamespace | invalid] ++ [DeclarationEntry (BusinessDeclaration qualified key input)])
+collect _ AddExecution = (CorrelationRef (CorrelationId "execution-id"), [DeclarationEntry ExecutionDeclaration])
+
+uniqueExecution :: [Entry op] -> [Entry op]
+uniqueExecution = go False
+  where
+    go _ [] = []
+    go seen (DeclarationEntry ExecutionDeclaration : rest) =
+      [DeclarationEntry ExecutionDeclaration | not seen] ++ go True rest
+    go seen (entry : rest) = entry : go seen rest
 
 invalidExpectationNames :: Expectations op a -> [Entry op]
 invalidExpectationNames es = [InvalidNamespace | Expectation key _ _ _ <- expectationList es, Text.null key]
@@ -136,9 +173,12 @@ qualifyExpectation :: [Text] -> Expectation op -> Expectation op
 qualifyExpectation prefix (Expectation key t windows observation) =
   Expectation (Text.intercalate "." (prefix ++ [key])) t windows observation
 
-scenarioParts :: (Vocabulary op) => Scenario op -> Either [DefinitionError] (Description, [Step op], [Expectation op])
+scenarioParts :: (Vocabulary op) => Scenario op -> Either [DefinitionError] (Description, [Step op], [Expectation op], [CorrelationDeclaration])
 scenarioParts (Scenario key title revision program) =
-  let (_, entries) = collect [] program
+  let (_, collected) = collect [] program
+      entries = uniqueExecution collected
+      declarations = [declaration | DeclarationEntry declaration <- entries]
+      correlationDescriptions = [CorrelationDescription (declarationId d) (declarationKey d) (declarationStrategy d) (declarationDependencies d) | d <- declarations]
       steps = [step | StepEntry step <- entries]
       expectations = [e | ExpectEntry _ e <- entries]
       nodeDescriptions = map describeStep steps
@@ -146,16 +186,17 @@ scenarioParts (Scenario key title revision program) =
       identifiers = key : map nodeKey nodeDescriptions ++ map expectationKey expectationDescriptions
       errors =
         validateEntries (Set.fromList (map nodeKey nodeDescriptions)) Set.empty False entries
-          ++ conflictingOperations (map (\(NodeDescription _ _ info _) -> info) nodeDescriptions ++ map (\(ExpectationDescription _ _ _ info _) -> info) expectationDescriptions)
+          ++ conflictingOperations (map (\(NodeDescription _ _ info _) -> info) nodeDescriptions ++ map (\(ExpectationDescription _ _ _ info _ _) -> info) expectationDescriptions)
           ++ duplicateErrors identifiers
+          ++ duplicateErrors (map (correlationIdText . declarationId) declarations)
           ++ [InvalidIdentifier | any Text.null (title : revision : identifiers)]
           ++ [EmptyExpectations | null expectations]
    in if null errors
-        then Right (Description key title revision nodeDescriptions expectationDescriptions, steps, expectations)
+        then Right (Description key title revision nodeDescriptions expectationDescriptions correlationDescriptions, steps, expectations, declarations)
         else Left errors
   where
     nodeKey (NodeDescription k _ _ _) = k
-    expectationKey (ExpectationDescription k _ _ _ _) = k
+    expectationKey (ExpectationDescription k _ _ _ _ _) = k
     describeStep (Step k fixture action) =
       NodeDescription
         k
@@ -169,6 +210,7 @@ scenarioParts (Scenario key title revision program) =
         windows
         (describeOperation (observationOperation observation))
         (predicateId observation)
+        (correlationRefId <$> observationCorrelation observation)
     validateEntries _ _ _ [] = []
     validateEntries final known afterExpect (entry : rest) = case entry of
       StepEntry (Step k _ action) ->
@@ -185,6 +227,9 @@ scenarioParts (Scenario key title revision program) =
               ++ [InvalidIdentifier | not (validPredicate observation)]
               ++ [UnresolvedReference dep | dep <- deps, Set.notMember dep (if strict then known else final)]
               ++ validateEntries final known (afterExpect || strict) rest
+      DeclarationEntry declaration ->
+        [UnresolvedReference dep | dep <- declarationDependencies declaration, Set.notMember dep known]
+          ++ validateEntries final known afterExpect rest
       InvalidNamespace -> InvalidIdentifier : validateEntries final known afterExpect rest
     validateOperation (OperationInfo opKey _ _ substeps) =
       [InvalidIdentifier | any Text.null (opKey : map fst substeps)] ++ duplicateErrors (map fst substeps)
@@ -196,7 +241,7 @@ scenarioParts (Scenario key title revision program) =
 inspectScenario :: (Vocabulary op) => Scenario op -> Either [DefinitionError] Description
 inspectScenario descriptionSource = case scenarioParts descriptionSource of
   Left errors -> Left errors
-  Right (description, _, _) -> Right description
+  Right (description, _, _, _) -> Right description
 
 -- Dependency nodes vary per use; only operation-level contracts must agree.
 conflictingOperations :: [OperationInfo] -> [DefinitionError]
@@ -213,3 +258,5 @@ hoistScenarioBuilder transform (AddStep key fixture action) = AddStep key fixtur
 hoistScenarioBuilder transform (AddExpectations es) = AddExpectations (hoistExpectations transform es)
 hoistScenarioBuilder transform (AddDeferred es) = AddDeferred (hoistExpectations transform es)
 hoistScenarioBuilder transform (Namespace label program) = Namespace label (hoistScenarioBuilder transform program)
+hoistScenarioBuilder _ (AddCorrelation alias key input) = AddCorrelation alias key input
+hoistScenarioBuilder _ AddExecution = AddExecution

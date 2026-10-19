@@ -13,6 +13,8 @@ module Shoko.Observation
     validPredicate,
     observationOperation,
     hoistObservation,
+    correlatedBy,
+    observationCorrelation,
     predicateId,
     matches,
     CoverageStrength (..),
@@ -27,22 +29,23 @@ where
 import Data.Char (isAlphaNum, isAscii)
 import Data.Text qualified as Text
 import Shoko.Clock (MonotonicTime)
+import Shoko.Correlation (CorrelationRef)
 import Shoko.Identifier (SourceId)
 import Shoko.Prelude
 
-data Observation op a = Observation !Text !(op a) (a -> Bool) ![Text]
+data Observation op a = Observation !Text !(op a) (a -> Bool) ![Text] !(Maybe CorrelationRef)
 
 observe :: Text -> op a -> (a -> Bool) -> Observation op a
-observe key op test = Observation key op test []
+observe key op test = Observation key op test [] Nothing
 
 observationOperation :: Observation op a -> op a
-observationOperation (Observation _ op _ _) = op
+observationOperation (Observation _ op _ _ _) = op
 
 predicateId :: Observation op a -> Text
-predicateId (Observation key _ _ _) = key
+predicateId (Observation key _ _ _ _) = key
 
 matches :: Observation op a -> a -> Bool
-matches (Observation _ _ test _) = test
+matches (Observation _ _ test _ _) = test
 
 data Predicate a = Predicate ![Text] !Text (a -> Bool)
 
@@ -64,10 +67,10 @@ onPart :: Text -> (b -> a) -> Predicate a -> Predicate b
 onPart label project (Predicate leaves key test) = Predicate (label : leaves) (label <> ":(" <> key <> ")") (test . project)
 
 observeThat :: op a -> Predicate a -> Observation op a
-observeThat op (Predicate leaves key test) = Observation key op test leaves
+observeThat op (Predicate leaves key test) = Observation key op test leaves Nothing
 
 validPredicate :: Observation op a -> Bool
-validPredicate (Observation key _ _ leaves) = not (Text.null key) && all valid leaves
+validPredicate (Observation key _ _ leaves _) = not (Text.null key) && all valid leaves
   where
     valid label = not (Text.null label) && Text.all (\c -> isAscii c && (isAlphaNum c || c `elem` ['_', '-', '.'])) label
 
@@ -105,4 +108,10 @@ data PublicValue = PublicChoice !Text | PublicCount !Integer | PublicFlag !Bool
   deriving stock (Eq, Show, Generic)
 
 hoistObservation :: (forall x. f x -> g x) -> Observation f a -> Observation g a
-hoistObservation transform (Observation key op test leaves) = Observation key (transform op) test leaves
+hoistObservation transform (Observation key op test leaves selected) = Observation key (transform op) test leaves selected
+
+correlatedBy :: CorrelationRef -> Observation op a -> Observation op a
+correlatedBy selected (Observation key op test leaves _) = Observation key op test leaves (Just selected)
+
+observationCorrelation :: Observation op a -> Maybe CorrelationRef
+observationCorrelation (Observation _ _ _ _ selected) = selected

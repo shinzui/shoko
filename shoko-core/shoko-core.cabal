@@ -64,6 +64,7 @@ library
   other-modules:
     Shoko.Internal.Binding
     Shoko.Internal.Call
+    Shoko.Internal.Correlation
     Shoko.Internal.Digest
     Shoko.Internal.Reference
 
@@ -87,6 +88,7 @@ test-suite shoko-core-test
     Consumer.Composed
     Consumer.DeliveryLedger
     Consumer.Hooks
+    CorrelationSpec
     CoverageSpec
     FaultSpec
     GoldenFixtures

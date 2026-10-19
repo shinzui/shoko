@@ -87,7 +87,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA fixture TO shoko_reader;
             run_tests(["cabal", "test", "postgres-adapter-test", "http-adapter-test", "adapter-roundtrip-test", "--test-show-details=direct"], env)
         with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(env["SHOKO_TEST_HTTP"] + "/metrics", timeout=2) as response:
             metrics = json.load(response)
-        if metrics.get("/slow") != 1 or metrics.get("/redirect") != 1:
+        if metrics.get("/slow") != 1 or metrics.get("/redirect") != 1 or metrics.get("/execution") != 2:
             raise RuntimeError("mutation timeout/redirect was retried or not exercised")
         print("Real PostgreSQL/HTTP suites passed; timeout mutation sent once.")
     finally:

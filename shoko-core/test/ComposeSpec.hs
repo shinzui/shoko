@@ -48,16 +48,15 @@ normal :: String -> Log -> Binding Leaf ()
 normal name events = leaf name events (\_ -> modifyIORef' events (++ ["acquire:" ++ name])) (pure Cleaned)
 
 pairScenario :: SourceId -> SourceId -> Scenario (Leaf :+: Leaf)
-pairScenario left right = scenario "pair" "Two readers" "1" $ expect $ do
-  eventually "left" (observe "yes" (InL (ReadLeaf left [])) id)
-  eventually "right" (observe "yes" (InR (ReadLeaf right [])) id)
-
-plan :: CorrelationPlan
-plan = BusinessKeyFrom (BusinessKeyName "probe") (pure "one")
+pairScenario left right = scenario "pair" "Two readers" "1" $ do
+  selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+  expect $ do
+    eventually "left" (correlatedBy selectedCorrelation $ observe "yes" (InL (ReadLeaf left [])) id)
+    eventually "right" (correlatedBy selectedCorrelation $ observe "yes" (InR (ReadLeaf right [])) id)
 
 run :: (Vocabulary op) => Binding op r -> Scenario op -> IO RunResult
 run selected source = do
-  resolved <- either (fail . show) pure (resolveScenario ledgerEnvironment testOptions plan selected source)
+  resolved <- either (fail . show) pure (resolveScenario ledgerEnvironment testOptions selected source)
   runScenario realClock (LogicalInput "compose" []) resolved
 
 expectPass :: RunResult -> PropertyT IO ()
@@ -71,7 +70,7 @@ tests =
     [ check "concrete workflow lifts, returns typed references, and runs across two contexts" $ do
         events <- evalIO (newIORef [])
         (clock, _) <- evalIO (newMicroClock (UTCTime (fromGregorian 2026 10 18) 0))
-        resolved <- either (fail . show) pure (resolveScenario testEnvironment testOptions (BusinessKeyFrom (BusinessKeyName "registrationId") (pure "registration")) (C.combinedBinding events) C.combinedScenario)
+        resolved <- either (fail . show) pure (resolveScenario testEnvironment testOptions (C.combinedBinding events) C.combinedScenario)
         evalIO (runScenario clock (LogicalInput "combined" []) resolved) >>= expectPass,
       check "hoisting identity and composition preserve descriptions and builder results" $ do
         let block = C.registrationWorkflow
@@ -86,7 +85,7 @@ tests =
         let verify :: (Vocabulary op) => Binding op r -> Scenario op -> PropertyT IO ()
             verify selected source = do
               evalIO (writeIORef events [])
-              resolved <- either (fail . show) pure (resolveScenario testEnvironment testOptions (BusinessKeyFrom (BusinessKeyName "registrationId") (pure "registration")) selected source)
+              resolved <- either (fail . show) pure (resolveScenario testEnvironment testOptions selected source)
               evalIO (runScenario realClock (LogicalInput "hoist-law" []) resolved) >>= expectPass
             unused :: Binding Ledger ()
             unused = Shoko.binding "unused" (const (pure ())) (const (pure Cleaned)) (\_ _ -> Right Nothing)
@@ -105,8 +104,9 @@ tests =
         duration <- either (fail . show) pure (milliseconds 20)
         let block = do
               key <- C.registrationWorkflow
-              expect $ within duration $ eventually "strict" (observeThat (C.Registered (fromRef key)) (onPart "flag" id (predicate "yes" id)))
-              expectAfterActions $ within duration $ never "deferred" (observeThat (C.Registered (fromRef key)) (predicate "no" not))
+              selectedCorrelation <- correlate (CorrelationAlias "caller") (BusinessKeyName "registrationId") (fromRef key)
+              expect $ within duration $ eventually "strict" (correlatedBy selectedCorrelation $ observeThat (C.Registered (fromRef key)) (onPart "flag" id (predicate "yes" id)))
+              expectAfterActions $ within duration $ never "deferred" (correlatedBy selectedCorrelation $ observeThat (C.Registered (fromRef key)) (predicate "no" not))
             wrap program = scenario "metadata" "Hoisted metadata" "1" $ namespace "nested" program
             lifted = wrap (hoistScenarioBuilder InL block) :: Scenario (C.Registration :+: C.Accounts)
             invalid = scenario "invalid" "Preserved invalid predicate metadata" "1" $ expect $ eventually "check" (observeThat (C.Registered (pure "registration")) (onPart "bad:label" id (predicate "yes" id)))
@@ -124,21 +124,25 @@ tests =
         case result of Verification VerificationResult {disposition = ds} -> ds === [Cleaned, Cleaned]; _ -> fail "verification",
       check "equal-coverage labels across components reject before allocation" $ do
         events <- evalIO (newIORef [])
-        case resolveScenario testEnvironment testOptions plan (combineBindings "pair" (normal "a" events) (normal "b" events)) (pairScenario (SourceId "same") (SourceId "same")) of
+        case resolveScenario testEnvironment testOptions (combineBindings "pair" (normal "a" events) (normal "b" events)) (pairScenario (SourceId "same") (SourceId "same")) of
           Left errors -> errors === [InconsistentSource (SourceId "same")]
           Right _ -> fail "source collision accepted"
         evalIO (readIORef events) >>= (=== []),
       check "unused component lifecycle requirements prevent all allocation" $ do
         events <- evalIO (newIORef [])
         let selected = combineBindings "pair" (normal "a" events) (requiringLifecycle [ExternalSideEffect] (normal "b" events))
-            source = scenario "only-left" "Unused lifecycle" "1" $ expect $ eventually "left" (observe "yes" (InL (ReadLeaf (SourceId "a") [])) id)
+            source = scenario "only-left" "Unused lifecycle" "1" $ do
+              selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+              expect $ eventually "left" (correlatedBy selectedCorrelation $ observe "yes" (InL (ReadLeaf (SourceId "a") [])) id)
             Environment name production allowed policy = testEnvironment
-        assert (isLeft (resolveScenario (Environment name production (Set.delete ExternalSideEffect allowed) policy) testOptions plan selected source))
+        assert (isLeft (resolveScenario (Environment name production (Set.delete ExternalSideEffect allowed) policy) testOptions selected source))
         evalIO (readIORef events) >>= (=== []),
       check "operation conflicts compare capabilities and ignore per-use dependencies" $ do
-        let source = scenario "conflict" "Conflicting inventories" "1" $ expect $ do
-              eventually "left" (observe "yes" (InL (ReadLeaf (SourceId "a") [ReadState])) id)
-              eventually "right" (observe "yes" (InR (ReadLeaf (SourceId "b") [ReadEvents])) id)
+        let source = scenario "conflict" "Conflicting inventories" "1" $ do
+              selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+              expect $ do
+                eventually "left" (correlatedBy selectedCorrelation $ observe "yes" (InL (ReadLeaf (SourceId "a") [ReadState])) id)
+                eventually "right" (correlatedBy selectedCorrelation $ observe "yes" (InR (ReadLeaf (SourceId "b") [ReadEvents])) id)
         case inspectScenario source of Left errors -> errors === [ConflictingOperation "leaf.read"]; Right _ -> fail "conflict accepted",
       check "failed or timed out right acquisition cleans the completed left resource" $ do
         mapM_
@@ -189,14 +193,18 @@ tests =
                   c = if failThird then leaf "c" events (\_ -> fail "third") (pure Cleaned) else normal "c" events
                   left = combineBindings "left-nested" (combineBindings "ab" a b) c
                   right = combineBindings "right-nested" a (combineBindings "bc" b c)
-                  ls = scenario "nested" "Nested leaves" "1" $ expect $ do
-                    eventually "a" (observe "yes" (InL (InL (ReadLeaf (SourceId "a") []))) id)
-                    eventually "b" (observe "yes" (InL (InR (ReadLeaf (SourceId "b") []))) id)
-                    eventually "c" (observe "yes" (InR (ReadLeaf (SourceId "c") [])) id)
-                  rs = scenario "nested" "Nested leaves" "1" $ expect $ do
-                    eventually "a" (observe "yes" (InL (ReadLeaf (SourceId "a") [])) id)
-                    eventually "b" (observe "yes" (InR (InL (ReadLeaf (SourceId "b") []))) id)
-                    eventually "c" (observe "yes" (InR (InR (ReadLeaf (SourceId "c") []))) id)
+                  ls = scenario "nested" "Nested leaves" "1" $ do
+                    selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+                    expect $ do
+                      eventually "a" (correlatedBy selectedCorrelation $ observe "yes" (InL (InL (ReadLeaf (SourceId "a") []))) id)
+                      eventually "b" (correlatedBy selectedCorrelation $ observe "yes" (InL (InR (ReadLeaf (SourceId "b") []))) id)
+                      eventually "c" (correlatedBy selectedCorrelation $ observe "yes" (InR (ReadLeaf (SourceId "c") [])) id)
+                  rs = scenario "nested" "Nested leaves" "1" $ do
+                    selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+                    expect $ do
+                      eventually "a" (correlatedBy selectedCorrelation $ observe "yes" (InL (ReadLeaf (SourceId "a") [])) id)
+                      eventually "b" (correlatedBy selectedCorrelation $ observe "yes" (InR (InL (ReadLeaf (SourceId "b") []))) id)
+                      eventually "c" (correlatedBy selectedCorrelation $ observe "yes" (InR (InR (ReadLeaf (SourceId "c") []))) id)
                   expected = if failThird then ["acquire:a", "acquire:b", "release:b", "release:a"] else ["acquire:a", "acquire:b", "acquire:c", "release:c", "release:b", "release:a"]
               _ <- evalIO (run left ls)
               evalIO (readIORef events) >>= (=== expected)

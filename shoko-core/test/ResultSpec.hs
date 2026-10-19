@@ -28,6 +28,7 @@ tests =
   testGroup
     "versioned result contract"
     [ testPropertyNamed "public consumers round trip with stable goldens and no fixture secrets" "resultGoldens" $ withTests 1 $ property $ do
+        assert (isLeft (decodeRunResult "{\"schemaVersion\":1,\"kind\":\"preflight-error\",\"errors\":[{\"code\":\"invalid-binding-identifier\",\"id\":\"\"}]}"))
         reports <- evalIO resultFixtures
         mapM_ (\(_, result) -> decodeRunResult (encodeRunResult result) === Right result) reports
         values <- evalIO valueFixtures
@@ -39,6 +40,7 @@ tests =
           )
           values,
       testPropertyNamed "decoder rejects unknown versions, fields, and digest tampering" "strictResultDecoder" $ withTests 1 $ property $ do
+        assert (isLeft (decodeRunResult "{\"schemaVersion\":1,\"kind\":\"preflight-error\",\"errors\":[{\"code\":\"invalid-binding-identifier\",\"id\":\"\"}]}"))
         reports <- evalIO resultFixtures
         case reports of
           (_, result) : _ -> case resultValue result of
@@ -71,8 +73,11 @@ tests =
                 MissingHandler "handler",
                 MissingSource "source",
                 SyntheticConsentRequired,
-                UnsupportedCorrelation "op",
-                MissingCorrelationReference "ref",
+                UnselectedCorrelation "op",
+                UndeclaredCorrelation "op" (CorrelationId "ref"),
+                IncompatibleCorrelation "op" (CorrelationId "other"),
+                InconsistentSource (SourceId "source"),
+                HandlerConstructionFailed "op" ExecutionMetadataUnsupported,
                 ProductionUnsupported,
                 InvalidBindingIdentifier,
                 InvalidLogicalInput
@@ -95,7 +100,6 @@ tests =
         result <- evalIO $ case resolveScenario
           ledgerEnvironment
           testOptions
-          (businessKeyFromResult (BusinessKeyName "deliveryId") "append")
           (ledgerBinding rows readCalls False)
           (ledgerScenario copies ExactlyOnce) of
           Left errors -> fail (show errors)

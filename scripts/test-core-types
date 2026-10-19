@@ -19,6 +19,18 @@ CASES = [
         'value = detachedCallContext realClock duration (MonotonicTime 1000) Nothing Nothing\nduration = either (error . show) id (milliseconds 1)\n',
         ('Duration', 'MonotonicTime'),
     ),
+    (
+        'alias-key',
+        'value :: ScenarioBuilder Maybe CorrelationRef\nvalue = correlate (CorrelationAlias "entity") (BusinessKeyName "entityId") (pure "one")\n',
+        'value :: ScenarioBuilder Maybe CorrelationRef\nvalue = correlate (BusinessKeyName "entity") (BusinessKeyName "entityId") (pure "one")\n',
+        ('CorrelationAlias', 'BusinessKeyName'),
+    ),
+    (
+        'id-handle',
+        'value :: CorrelationRef -> Observation Maybe Bool\nvalue handle = correlatedBy handle (observe "yes" (Just True) id)\n',
+        'value :: CorrelationId -> Observation Maybe Bool\nvalue handle = correlatedBy handle (observe "yes" (Just True) id)\n',
+        ('CorrelationId', 'CorrelationRef'),
+    ),
 ]
 
 with tempfile.TemporaryDirectory(prefix='shoko-core-types-') as directory:
@@ -39,3 +51,82 @@ with tempfile.TemporaryDirectory(prefix='shoko-core-types-') as directory:
         if refused.returncode == 0 or not all(kind in diagnostic for kind in types):
             raise SystemExit(f'{name}: expected rejection mentioning {types}\n{diagnostic}')
         print(f'{name}: positive compiles; swapped types rejected')
+
+    internal = Path(directory) / 'InternalBoundary.hs'
+    internal.write_text(r'''module Main where
+import Data.Dynamic (toDyn)
+import Data.Map.Strict qualified as Map
+import Shoko.Action
+import Shoko.Binding
+import Shoko.Identifier
+import Shoko.Internal.Correlation qualified as C
+import Shoko.Internal.Reference qualified as R
+import Shoko.Internal.Digest qualified as Digest
+import Shoko.Observation
+import Shoko.Scenario
+import Shoko.Environment
+import Shoko.Expectation
+import Shoko.Prelude (Text)
+import Data.Set qualified as Set
+
+check :: Bool -> IO ()
+check True = pure ()
+check False = fail "internal boundary assertion failed"
+
+data Op a where
+  Seed :: Op Text
+  Read :: Op Bool
+instance Vocabulary Op where
+  describeOperation Seed = declareOperation "seed" []
+  describeOperation Read = declareOperation "read" []
+
+main :: IO ()
+main = do
+  check (R.evaluateInput Map.empty (R.Reference (R.Ref "missing") :: Input Text) == Left (InputReferenceMissing "missing"))
+  check (R.evaluateInput (Map.singleton "node" (toDyn True)) (R.Reference (R.Ref "node") :: Input Text) == Left (InputReferenceTypeMismatch "node"))
+  let key = BusinessKeyName "entityId"
+      handlers :: OperationRole -> Op a -> Either HandlerBuildError (Maybe (Handler () a))
+      handlers ObservationOperation Read = Right $ Just $ observationHandler noRequirements (RequiresBusinessKey key) (sampledSource (SourceId "probe")) (\_ _ -> pure (ObservationUnavailable "unreachable"))
+      handlers _ _ = Right Nothing
+      selectedBinding = binding "probe" (\_ -> fail "must not acquire") (const (pure Cleaned)) handlers
+      dangling = scenario "dangling" "Defensive selection check" "1" $ expect $ eventually "check" (correlatedBy (C.CorrelationRef (CorrelationId "missing")) (observe "yes" Read id))
+      env = Environment "local" False Set.empty defaultPolicy
+      options = RunOptions "run" False "fixture" Nothing Nothing
+  case resolveScenario env options selectedBinding dangling of
+    Left errors -> check (errors == [UndeclaredCorrelation "read" (CorrelationId "missing")])
+    Right _ -> fail "dangling handle accepted"
+  let forward = scenario "forward" "Declarations use earlier nodes" "1" $ do
+        selected <- correlate (CorrelationAlias "entity") key (R.Reference (R.Ref "later"))
+        _ <- given "later" (accept ["ready"] Seed)
+        expect $ eventually "check" (correlatedBy selected (observe "yes" Read id))
+  case inspectScenario forward of
+    Left errors -> check (errors == [UnresolvedReference "later"])
+    Right _ -> fail "forward declaration dependency accepted"
+  let valid = scenario "digest" "Digest fields" "1" $ do
+        node <- given "node" (accept ["ready"] Seed)
+        selected <- correlate (CorrelationAlias "entity") key (fromRef node)
+        expect $ eventually "check" (correlatedBy selected (observe "yes" Read id))
+  description <- either (fail . show) pure (inspectScenario valid)
+  let Description scenarioKey title revision nodes expectations declarations = description
+      digest = Digest.descriptionDigest description
+      replace ds es = Digest.descriptionDigest (Description scenarioKey title revision nodes es ds)
+      variants = case declarations of
+        [CorrelationDescription identity semantic strategy deps] ->
+          [[CorrelationDescription (CorrelationId "changed") semantic strategy deps],
+           [CorrelationDescription identity (BusinessKeyName "changed") strategy deps],
+           [CorrelationDescription identity semantic C.ExecutionId deps],
+           [CorrelationDescription identity semantic strategy ["changed"]]]
+        _ -> error "expected one declaration"
+      changedSelection = [ExpectationDescription a b c d e (Just (CorrelationId "changed")) | ExpectationDescription a b c d e _ <- expectations]
+  mapM_ (\ds -> check (replace ds expectations /= digest)) variants
+  check (replace declarations changedSelection /= digest)
+  putStrLn "internal correlation/reference boundaries passed"
+''')
+    probe = subprocess.run(
+        ['cabal', 'exec', '--', 'runghc', '-XGHC2024', '-XDuplicateRecordFields',
+         '-XOverloadedStrings', '-ishoko-core/src', str(internal)],
+        cwd=ROOT, capture_output=True, text=True, timeout=60,
+    )
+    if probe.returncode:
+        raise SystemExit(f'internal boundary probe failed\n{probe.stdout}{probe.stderr}')
+    print(probe.stdout.strip())

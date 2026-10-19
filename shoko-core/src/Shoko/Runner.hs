@@ -19,13 +19,13 @@ import Effectful.Dispatch.Dynamic (interpret, send)
 import Shoko.Action
 import Shoko.Binding hiding (binding, bindingName)
 import Shoko.Clock
-import Shoko.Correlation
 import Shoko.Environment
 import Shoko.Evidence
 import Shoko.Expectation
 import Shoko.Identifier
 import Shoko.Internal.Binding (Binding (..), Handler (..), Source (..))
 import Shoko.Internal.Call (CallContext (..))
+import Shoko.Internal.Correlation
 import Shoko.Internal.Digest qualified as Digest
 import Shoko.Internal.Reference (evaluateInput)
 import Shoko.Observation
@@ -86,7 +86,7 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
         binding@(Binding bindingName _ acquire release _),
         Environment envName _ _ (Policy budget _ _ grace),
         (RunOptions runKey _ build implementation target),
-        correlationPlan,
+        declarations,
         policyReport
         ) = resolvedParts resolved
       runEnd = addDuration start budget
@@ -122,7 +122,7 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
             else Verification report
       unavailable why = do
         tick <- now
-        pure ([], map (unexecuted tick why Map.empty) expectations, Nothing, Unknown)
+        pure ([], map (unexecuted tick why Map.empty) expectations, [], Unknown)
       execute resource = do
         let sources =
               foldl
@@ -147,37 +147,37 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
           then do
             tick <- now
             let why = if UnexpectedRunnerFault `elem` failures then UnexpectedRunnerFault else case failures of first : _ -> first; [] -> SourceUnavailable
-            pure ([], map (unexecuted tick why baselines) expectations, Nothing, Unknown)
+            pure ([], map (unexecuted tick why baselines) expectations, [], Unknown)
           else do
-            (values, actionResults, terminal) <- runSteps approved binding resource runClock runEnd steps
+            let propagated = if any ((== ExecutionId) . declarationStrategy) declarations then Just runKey else Nothing
+            (values, actionResults, terminal) <- runSteps approved binding resource runClock runEnd propagated steps
             activation <- now
-            case resolveCorrelation runKey values correlationPlan of
-              Left why ->
+            let attempts = [(declarationId declaration, resolveDeclaration runKey values declaration) | declaration <- declarations]
+                selected = [ResolvedCorrelation identity value | (identity, Right value) <- attempts]
+                resolvedCorrelations = Map.fromList [(identity, value) | (identity, Right value) <- attempts]
+            case terminal of
+              Just why ->
                 pure
                   ( actionResults,
                     map (unexecuted activation why baselines) expectations,
-                    Nothing,
+                    selected,
                     aggregateVerdicts (map actionVerdict actionResults ++ [Unknown])
                   )
-              Right selected -> case terminal of
-                Just why ->
-                  pure
-                    ( actionResults,
-                      map (unexecuted activation why baselines) expectations,
-                      Just selected,
-                      aggregateVerdicts (map actionVerdict actionResults ++ [Unknown])
+              Nothing -> do
+                results <-
+                  mapConcurrently
+                    ( \expectation@(Expectation _ _ _ observation) ->
+                        case observationCorrelation observation >>= (\handle -> Map.lookup (correlationRefId handle) resolvedCorrelations) of
+                          Nothing -> pure (unexecuted activation CorrelationLost baselines expectation)
+                          Just value -> runExpectation approved binding resource runClock runEnd activation values value propagated baselines resolved expectation
                     )
-                Nothing -> do
-                  results <-
-                    mapConcurrently
-                      (runExpectation approved binding resource runClock runEnd activation values selected baselines resolved)
-                      expectations
-                  pure
-                    ( actionResults,
-                      results,
-                      Just selected,
-                      aggregateVerdicts (map actionVerdict actionResults ++ map expectationVerdict results)
-                    )
+                    expectations
+                pure
+                  ( actionResults,
+                    results,
+                    selected,
+                    aggregateVerdicts (map actionVerdict actionResults ++ map expectationVerdict results)
+                  )
       sourceFor :: forall a. OperationRole -> op a -> Maybe SourceId
       sourceFor role op = case bindingHandler binding role op of
         Right (Just handler) -> sourceId <$> handlerSource handler
@@ -252,9 +252,9 @@ expectationOperation :: (Vocabulary op) => Expectation op -> Text
 expectationOperation (Expectation _ _ _ observation) = case describeOperation (observationOperation observation) of
   OperationInfo key _ _ _ -> key
 
-resolveCorrelation :: Text -> Map Text Dynamic.Dynamic -> CorrelationPlan -> Either Reason Correlation
-resolveCorrelation runKey _ PropagatedExecutionId = Right (ByExecutionId runKey)
-resolveCorrelation _ values (BusinessKeyFrom key input) = case evaluateInput values input of
+resolveDeclaration :: Text -> Map Text Dynamic.Dynamic -> CorrelationDeclaration -> Either Reason Correlation
+resolveDeclaration runKey _ ExecutionDeclaration = Right (ByExecutionId runKey)
+resolveDeclaration _ values (BusinessDeclaration _ key input) = case evaluateInput values input of
   Right value | businessKeyNameText key /= "" && value /= "" -> Right (ByBusinessKey key value)
   _ -> Left CorrelationLost
 
@@ -272,9 +272,10 @@ runSteps ::
   resource ->
   Clock ->
   MonotonicTime ->
+  Maybe Text ->
   [Step op] ->
   IO (Map Text Dynamic.Dynamic, [ActionEvidence], Maybe Reason)
-runSteps approved binding resource runClock@(Clock now _ _ _) end = go Map.empty []
+runSteps approved binding resource runClock@(Clock now _ _ _) end propagated = go Map.empty []
   where
     go values results [] = pure (values, results, Nothing)
     go values results (Step key fixture action : rest) = do
@@ -284,7 +285,7 @@ runSteps approved binding resource runClock@(Clock now _ _ _) end = go Map.empty
       started <- now
       substeps <- newIORef []
       denied <- newIORef Nothing
-      let context = makeContext runClock end end values info Nothing Nothing substeps denied
+      let context = makeContext runClock end end values info Nothing Nothing propagated substeps denied
       outcome <- attempt runClock end $ runBinding approved binding resource (send (ExecuteAction (if fixture then FixtureOperation else ActionOperation) context op))
       finished <- now
       deniedAccess <- readIORef denied
@@ -316,11 +317,12 @@ makeContext ::
   OperationInfo ->
   Maybe Baseline ->
   Maybe Correlation ->
+  Maybe Text ->
   IORef [SubstepEvidence] ->
   IORef (Maybe Text) ->
   CallContext
-makeContext runClock@(Clock now _ _ _) end cutoff values (OperationInfo _ _ declared inventory) base selected records denied =
-  CallContext resolve end base selected substepRunner cutoff runClock Nothing
+makeContext runClock@(Clock now _ _ _) end cutoff values (OperationInfo _ _ declared inventory) base selected propagated records denied =
+  CallContext resolve end base selected substepRunner cutoff runClock propagated
   where
     resolve :: forall a. Input a -> IO (Either InputResolutionError a)
     resolve input = case filter (`notElem` declared) (inputDependencies input) of
@@ -350,6 +352,7 @@ runExpectation ::
   MonotonicTime ->
   Map Text Dynamic.Dynamic ->
   Correlation ->
+  Maybe Text ->
   Map SourceId Baseline ->
   ResolvedScenario op resource ->
   Expectation op ->
@@ -363,6 +366,7 @@ runExpectation
   activation
   values
   selected
+  propagated
   baselines
   resolved
   (Expectation key temporal windows observation) = do
@@ -422,7 +426,7 @@ runExpectation
               records <- newIORef []
               denied <- newIORef Nothing
               let requestEnd = if temporal == Eventually && advertised /= DurableHistory then cutoff else runEnd
-                  context = makeContext runClock requestEnd cutoff values info base (Just selected) records denied
+                  context = makeContext runClock requestEnd cutoff values info base (Just selected) propagated records denied
                   query = do
                     observed <- runBinding approved binding resource (send (ExecuteObservation context op))
                     case observationBatch observed of

@@ -89,14 +89,15 @@ captureForTest handler clock label
           handlers ObservationOperation Events = Right (Just handler)
           handlers _ _ = Right Nothing
           selectedBinding = Shoko.binding "capture-probe" (const (pure ())) (const (pure Retained)) handlers
-          selectedScenario = scenario "capture-probe" "Capture public baseline" "1" $ expect $ within (duration 1) $ never "probe" (Observation.observe "false" Events (const False))
+          selectedScenario = scenario "capture-probe" "Capture public baseline" "1" $ do
+            selectedCorrelation <- case handlerCorrelation handler of
+              Just (RequiresBusinessKey key) -> correlate (CorrelationAlias "probe") key (pure "one")
+              _ -> propagateExecutionId
+            expect $ within (duration 1) $ never "probe" (correlatedBy selectedCorrelation $ Observation.observe "false" Events (const False))
           duration n = either (error . Text.unpack) id (milliseconds n)
           environment = Environment "local" False (Set.singleton ReadEvents) (Policy (duration 2000) (duration 1) (duration 1) (duration 100))
-          plan = case handlerCorrelation handler of
-            Just (RequiresBusinessKey key) -> BusinessKeyFrom key (pure "one")
-            _ -> PropagatedExecutionId
           options = RunOptions "00000000-0000-0000-0000-000000000001" False "fixture" Nothing Nothing
-      resolved <- either (fail . show) pure (resolveScenario environment options plan selectedBinding selectedScenario)
+      resolved <- either (fail . show) pure (resolveScenario environment options selectedBinding selectedScenario)
       result <- runScenario clock (LogicalInput "capture" []) resolved
       pure $ case result of
         Verification VerificationResult {expectations = ExpectationResult {evidence = Evidence {baseline = Just base}} : _} -> Right base
@@ -167,7 +168,8 @@ run backend selected emit assertion = do
       handlers _ _ = Right Nothing
       scenarioValue = scenario "event-store-contract" "Real store evidence" "1" $ do
         _ <- act "produce" (accept ["appended"] Produce)
-        let observation = Observation.observe "event-matches" Events (\(EventEvidence _ _ _ value) -> value)
+        selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (pure selected)
+        let observation = correlatedBy selectedCorrelation $ Observation.observe "event-matches" Events (\(EventEvidence _ _ _ value) -> value)
         expect $ within window $ case assertion of
           "never" -> never "absent" observation
           "eventually" -> eventually "present" observation
@@ -177,7 +179,7 @@ run backend selected emit assertion = do
     either
       (const (fail "fixture preflight failed"))
       pure
-      (resolveScenario environment (RunOptions "event-run" True "fixture-build" Nothing Nothing) (BusinessKeyFrom (BusinessKeyName "accountId") (pure selected)) binding scenarioValue)
+      (resolveScenario environment (RunOptions "event-run" True "fixture-build" Nothing Nothing) binding scenarioValue)
   result <- runScenario realClock (LogicalInput "fixture-v1" []) resolved
   count <- readIORef polls
   check (decodeRunResult (encodeRunResult result) == Right result)
@@ -201,9 +203,11 @@ deniedBeforeAllocation handler allocate = do
       handlers ObservationOperation Events = Right (Just handler)
       handlers _ _ = Right Nothing
       selectedBinding = Shoko.binding "pure-event-contract" (\_ -> modifyIORef' allocations (+ 1) >> allocate) (const (pure Retained)) handlers
-      selected = scenario "policy-only" "Reader contract preflight" "1" $ expect (eventually "event" (Observation.observe "matches" Events (\(EventEvidence _ _ _ value) -> value)))
+      selected = scenario "policy-only" "Reader contract preflight" "1" $ do
+        selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (pure "one")
+        expect (eventually "event" (correlatedBy selectedCorrelation $ Observation.observe "matches" Events (\(EventEvidence _ _ _ value) -> value)))
       environment = Environment "denied" False Set.empty defaultPolicy
-  case resolveScenario environment (RunOptions "denied-run" False "fixture-build" Nothing Nothing) (BusinessKeyFrom (BusinessKeyName "accountId") (pure "one")) selectedBinding selected of
+  case resolveScenario environment (RunOptions "denied-run" False "fixture-build" Nothing Nothing) selectedBinding selected of
     Left errors -> check (errors == [CapabilitiesDenied (Set.singleton ReadEvents)])
     Right _ -> fail "event-reader policy unexpectedly permitted allocation"
   readIORef allocations >>= check . (== 0)
@@ -218,9 +222,10 @@ assertDescriptorMismatch handler allocate = do
       selectedBinding = Shoko.binding "descriptor-mismatch" (const allocate) (const (pure Retained)) handlers
       selected = scenario "descriptor-mismatch" "Reader descriptor must match" "1" $ do
         _ <- act "produce" (accept ["ready"] Produce)
-        expect $ eventually "check" (Observation.observe "yes" Events (const True))
+        selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (pure "one")
+        expect $ eventually "check" (correlatedBy selectedCorrelation $ Observation.observe "yes" Events (const True))
       environment = Environment "local" False (Set.fromList [ReadEvents, WriteState, SyntheticResource]) defaultPolicy
-  resolved <- either (fail . show) pure (resolveScenario environment (RunOptions "mismatch" True "fixture" Nothing Nothing) (BusinessKeyFrom (BusinessKeyName "accountId") (pure "one")) selectedBinding selected)
+  resolved <- either (fail . show) pure (resolveScenario environment (RunOptions "mismatch" True "fixture" Nothing Nothing) selectedBinding selected)
   result <- runScenario realClock (LogicalInput "descriptor" []) resolved
   readIORef mutations >>= check . (== 0)
   case result of

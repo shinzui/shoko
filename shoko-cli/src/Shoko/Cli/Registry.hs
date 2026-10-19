@@ -12,7 +12,6 @@ data SomeBinding op = forall resource. SomeBinding !(Binding op resource)
 data Entry
   = forall op. (Vocabulary op) => Entry
       !(Scenario op)
-      !CorrelationPlan
       !LogicalInput
       ![(Text, HostConfig -> Maybe Credentials -> SomeBinding op)]
       !(HostConfig -> IO (Either Text (Maybe Text, Maybe TargetIdentity)))

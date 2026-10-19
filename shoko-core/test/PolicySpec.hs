@@ -23,20 +23,14 @@ tests =
         let binding = requiringLifecycle [SendHttp] $ adjustHandlers (\_ _ -> fmap (adjustContract (cleanupRequiring [ExternalSideEffect]))) (memoryBinding calls)
             Environment envName prod allowed policy = testEnvironment
             environment = Environment envName prod (Set.delete ExternalSideEffect (Set.delete SendHttp allowed)) policy
-        assert (isLeft (resolveScenario environment testOptions (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key")) binding accountScenario))
+        assert (isLeft (resolveScenario environment testOptions binding accountScenario))
         evalIO (readIORef calls) >>= (=== 0),
-      testPropertyNamed "unresolved correlation node fails before any effects" "correlationPreflight" $ withTests 1 $ property $ do
+      testPropertyNamed "missing observation selection fails before any effects" "correlationPreflight" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
-        assert
-          ( isLeft
-              ( resolveScenario
-                  testEnvironment
-                  testOptions
-                  (businessKeyFromResult (BusinessKeyName "id") "missing-node")
-                  (memoryBinding calls)
-                  accountScenario
-              )
-          )
+        let unselected = scenario "unselected" "Explicit selection required" "1" $ expect $ eventually "check" (observe "yes" (Created (pure "toy-key")) id)
+        case resolveScenario testEnvironment testOptions (memoryBinding calls) unselected of
+          Left errors -> errors === [UnselectedCorrelation "account-created"]
+          Right _ -> fail "missing selection accepted"
         evalIO (readIORef calls) >>= (=== 0),
       testPropertyNamed "missing business key never dispatches an uncorrelated observation" "correlationLost" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
@@ -46,7 +40,7 @@ tests =
             counted :: AccountStore -> CallContext -> Account a -> IO (ObservationOutcome a)
             counted resource context op = modifyIORef' queries (+ 1) >> observation resource context op
             binding = accountBindingWith (Hooks acquire release baseline action counted)
-        result <- evalIO $ case resolveScenario ledgerEnvironment testOptions (BusinessKeyFrom (BusinessKeyName "accountId") (pure "")) binding accountScenario of
+        result <- evalIO $ case resolveScenario ledgerEnvironment testOptions binding (accountScenarioWith (const (pure ""))) of
           Left errors -> fail (show errors)
           Right resolved -> runScenario clock (LogicalInput "correlation-v1" []) resolved
         evalIO (readIORef queries) >>= (=== 0)
@@ -61,7 +55,6 @@ tests =
         result <- case resolveScenario
           testEnvironment
           testOptions
-          (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key"))
           (memoryBinding calls)
           accountScenario of
           Left errors -> fail (show errors)
@@ -71,14 +64,14 @@ tests =
       testPropertyNamed "unsupported operation role fails before acquisition" "operationRole" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
         let wrongRole = scenario "wrong-role" "Observation used as an unsupported action" "v1" $ do
+              selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (pure "toy-key")
               _ <- act "read-as-action" (accept ["observed"] (Created (pure "toy-key")))
-              expect $ eventually "exists" (observe "exists" (Created (pure "toy-key")) id)
+              expect $ eventually "exists" (correlatedBy selectedCorrelation $ observe "exists" (Created (pure "toy-key")) id)
         assert
           ( isLeft
               ( resolveScenario
                   testEnvironment
                   testOptions
-                  (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key"))
                   (memoryBinding calls)
                   wrongRole
               )

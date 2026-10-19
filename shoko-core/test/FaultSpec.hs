@@ -55,9 +55,8 @@ tests =
         result <- evalIO $ case resolveScenario
           ledgerEnvironment
           testOptions
-          (BusinessKeyFrom (BusinessKeyName "accountId") (pure "another-key"))
           (memoryBinding calls)
-          accountScenario of
+          (accountScenarioWith (const (pure "another-key"))) of
           Left errors -> fail (show errors)
           Right resolved -> runScenario clock (LogicalInput "correlation-v1" []) resolved
         case result of
@@ -67,6 +66,6 @@ tests =
   where
     run binding = do
       (clock, _) <- newMicroClock (UTCTime (fromGregorian 2026 10 18) 0)
-      case resolveScenario ledgerEnvironment testOptions (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key")) binding accountScenario of
+      case resolveScenario ledgerEnvironment testOptions binding accountScenario of
         Left errors -> fail (show errors)
         Right resolved -> runScenario clock (LogicalInput "fault-v1" []) resolved

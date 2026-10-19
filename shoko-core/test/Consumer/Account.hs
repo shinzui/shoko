@@ -1,4 +1,4 @@
-module Consumer.Account (Account (..), AccountStore, accountScenario, rejectionScenario, memoryBinding, alternateBinding, testEnvironment, testOptions, accountHooks, accountBindingWith) where
+module Consumer.Account (Account (..), AccountStore, accountScenario, rejectionScenario, memoryBinding, alternateBinding, testEnvironment, testOptions, accountHooks, accountBindingWith, accountScenarioWith) where
 
 import Consumer.Hooks
 import Data.IORef
@@ -25,16 +25,21 @@ instance Vocabulary Account where
   describeOperation Missing = OperationInfo "missing" Set.empty [] []
 
 accountScenario :: Scenario Account
-accountScenario = scenario "toy-account" "Provision a toy account" "v2" $ do
+accountScenario = accountScenarioWith fromRef
+
+accountScenarioWith :: (Ref Text -> Input Text) -> Scenario Account
+accountScenarioWith select = scenario "toy-account" "Provision a toy account" "v2" $ do
   qualified <- given "agent" (accept ["ready"] Qualified)
   created <- act "create" (accept ["created"] (Create (fromRef qualified) True))
-  expect $ eventually "account-exists" (observe "is-created" (Created (fromRef created)) id)
+  selected <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (select created)
+  expect $ eventually "account-exists" (correlatedBy selected $ observe "is-created" (Created (fromRef created)) id)
 
 rejectionScenario :: Scenario Account
 rejectionScenario = scenario "toy-rejection" "Reject invalid toy input" "v2" $ do
   qualified <- given "agent" (accept ["ready"] Qualified)
   rejected <- act "reject" (accept ["invalid-input"] (Create (fromRef qualified) False))
-  expect $ eventually "no-account-created" (observe "absent" (Created (fromRef rejected)) not)
+  selected <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (fromRef rejected)
+  expect $ eventually "no-account-created" (correlatedBy selected $ observe "absent" (Created (fromRef rejected)) not)
 
 testEnvironment :: Environment
 testEnvironment = Environment "local" False (Set.fromList [minBound .. maxBound]) defaultPolicy

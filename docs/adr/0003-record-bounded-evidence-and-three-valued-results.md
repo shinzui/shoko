@@ -124,3 +124,13 @@ accepts v2 only. Source consistency and typed handler-construction failures have
 closed preflight encodings with public identifiers and no transport diagnostics.
 Timestamp and identifier wrappers retain integer-microsecond and string encodings.
 Workflow manifests and identity artifacts retain their independent versions.
+
+Correlation implementation revision, 2026-10-19: the v2 description digest includes
+ordered declarations (instance ID, semantic key, strategy, dependencies) and each
+expectation's selected ID. Typed declaration inputs remain private. Reports retain
+successful `correlationId`/`resolvedCorrelation` pairs in declaration order and
+descriptions retain every declaration. An empty/unresolved instance produces
+`Unknown/CorrelationLost` only for its selected expectations; resolved siblings
+continue even when they share a semantic key. Terminal action failures retain
+`PrerequisiteUnavailable` for all expectations. Policy strategies include unused
+declarations.

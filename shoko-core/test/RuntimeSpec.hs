@@ -29,7 +29,7 @@ tests =
     [ testPropertyNamed "deferred observation waits for the final action" "deferredOrder" $ withTests 1 $ property $ do
         events <- evalIO (newIORef [])
         (clock, _) <- evalIO (newMicroClock epoch)
-        case resolveScenario testEnvironment testOptions (BusinessKeyFrom (BusinessKeyName "registrationId") (pure "registration")) (Composed.composedBinding events) Composed.composedScenario of
+        case resolveScenario testEnvironment testOptions (Composed.composedBinding events) Composed.composedScenario of
           Left errors -> fail (show errors)
           Right resolved -> do
             result <- evalIO (runScenario clock (LogicalInput "blocks" []) resolved)
@@ -43,7 +43,7 @@ tests =
               returned <- namespace "outer" $ namespace "inner" $ Composed.completeRegistration outside
               _ <- act "finish" (accept ["finished"] (Composed.Finish (fromRef returned)))
               pure ()
-        case resolveScenario testEnvironment testOptions (BusinessKeyFrom (BusinessKeyName "registrationId") (pure "registration")) (Composed.composedBinding events) selected of
+        case resolveScenario testEnvironment testOptions (Composed.composedBinding events) selected of
           Left errors -> fail (show errors)
           Right resolved -> evalIO (runScenario clock (LogicalInput "nested" []) resolved) >>= (\result -> resultVerdict result === Just Pass),
       testPropertyNamed "inclusive observation deadline" "deadlineBoundary" $ withTests 1 $ property $ do
@@ -65,10 +65,11 @@ tests =
               override resource context op = action resource context op
               binding = accountBindingWith (Hooks acquire release baseline override observation)
               selected = scenario "terminal" "Stop after uncertain or mismatched action" "v1" $ do
+                selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (pure "toy-key")
                 agent <- given "agent" (accept ["ready"] Qualified)
                 _ <- act "first" (accept ["invalid-input"] (Create (fromRef agent) False))
                 later <- act "later" (accept ["created"] (Create (fromRef agent) True))
-                expect $ eventually "later-exists" (observe "created" (Created (fromRef later)) id)
+                expect $ eventually "later-exists" (correlatedBy selectedCorrelation $ observe "created" (Created (fromRef later)) id)
           result <- evalIO (runAccount clock binding selected)
           resultVerdict result === Just (if transport then Unknown else Fail)
           evalIO (readIORef calls) >>= (=== 1)
@@ -93,9 +94,10 @@ tests =
         result <- evalIO (runAccount clock binding accountScenario)
         resultVerdict result === Just Unknown
         let wrongContract = scenario "wrong-contract" "Unexpected rejection remains Fail" "v1" $ do
+              selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (pure "toy-key")
               agent <- given "agent" (accept ["ready"] Qualified)
               rejected <- act "create" (accept ["created"] (Create (fromRef agent) False))
-              expect $ eventually "exists" (observe "exists" (Created (fromRef rejected)) id)
+              expect $ eventually "exists" (correlatedBy selectedCorrelation $ observe "exists" (Created (fromRef rejected)) id)
         failed <- evalIO (runAccount clock binding wrongContract)
         resultVerdict failed === Just Fail,
       testPropertyNamed "blocked cleanup cannot extend its grace budget" "cleanupBudget" $ withTests 1 $ property $ do
@@ -150,9 +152,11 @@ tests =
                 _ -> observation resource context op
             readBoth resource context op = observation resource context op
             binding = accountBindingWith (Hooks acquire release baseline action readBoth)
-            selected = scenario "siblings" "Independent sibling windows" "v1" $ expect $ do
-              eventually "slow" (observe "yes" (Created (pure "slow")) id)
-              eventually "fast" (observe "absent" (Created (pure "toy-key")) not)
+            selected = scenario "siblings" "Independent sibling windows" "v1" $ do
+              selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (pure "toy-key")
+              expect $ do
+                eventually "slow" (correlatedBy selectedCorrelation $ observe "yes" (Created (pure "slow")) id)
+                eventually "fast" (correlatedBy selectedCorrelation $ observe "absent" (Created (pure "toy-key")) not)
         result <- evalIO (runAccount realClock binding selected)
         case result of
           Verification VerificationResult {expectations = children} -> do
@@ -171,7 +175,6 @@ runAccount :: Clock -> Binding Account AccountStore -> Scenario Account -> IO Ru
 runAccount clock binding selected = case resolveScenario
   ledgerEnvironment
   testOptions
-  (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key"))
   binding
   selected of
   Left errors -> fail (show errors)

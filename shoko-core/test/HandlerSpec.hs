@@ -31,7 +31,10 @@ instance Vocabulary Probe where
   describeOperation (Broken _) = declareOperation "broken" []
 
 probeBinding :: IORef Int -> Binding Probe ()
-probeBinding calls = binding "probe" (\_ -> modifyIORef' calls (+ 1)) (const (pure Cleaned)) handlers
+probeBinding calls = probeBindingRecording (const (pure ())) calls
+
+probeBindingRecording :: (InputResolutionError -> IO ()) -> IORef Int -> Binding Probe ()
+probeBindingRecording record calls = binding "probe" (\_ -> modifyIORef' calls (+ 1)) (const (pure Cleaned)) handlers
   where
     handlers :: OperationRole -> Probe a -> Either HandlerBuildError (Maybe (Handler () a))
     handlers FixtureOperation Seed = Right (Just (actionHandler noRequirements (\_ _ -> pure (ActionObserved "ready" True))))
@@ -41,7 +44,8 @@ probeBinding calls = binding "probe" (\_ -> modifyIORef' calls (+ 1)) (const (pu
             ( actionHandler
                 noRequirements
                 ( \_ call -> do
-                    _ <- resolveInput call input
+                    answer <- resolveInput call input
+                    case answer of Left failure -> record failure; Right _ -> pure ()
                     pure (ActionObserved "ready" True)
                 )
             )
@@ -77,13 +81,10 @@ probeBinding calls = binding "probe" (\_ -> modifyIORef' calls (+ 1)) (const (pu
         tick <- monotonic (callClock call)
         pure (Observed [Occurrence (Just "one") value] (Coverage strength tick tick True))
 
-selectedPlan :: CorrelationPlan
-selectedPlan = BusinessKeyFrom (BusinessKeyName "probe") (pure "one")
-
 runProbe :: Binding Probe () -> Scenario Probe -> IO RunResult
 runProbe selected source = do
   (clock, _) <- newMicroClock (UTCTime (fromGregorian 2026 10 18) 0)
-  resolved <- either (fail . show) pure (resolveScenario testEnvironment testOptions selectedPlan selected source)
+  resolved <- either (fail . show) pure (resolveScenario testEnvironment testOptions selected source)
   runScenario clock (LogicalInput "probe" []) resolved
 
 tests :: TestTree
@@ -93,39 +94,56 @@ tests =
     [ check "ignored undeclared action input cannot pass or dispatch later steps" $ do
         calls <- evalIO (newIORef 0)
         let source = scenario "denied-action" "Sticky input diagnostics" "1" $ do
+              selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
               seed <- given "fixture" (accept ["ready"] Seed)
               _ <- act "blind" (accept ["ready"] (BlindAction (fromRef seed)))
               _ <- act "later" (accept ["ready"] (BlindAction (pure True)))
-              expect $ eventually "check" (observe "yes" (ReadSource (SourceId "probe") SampledState) id)
+              expect $ eventually "check" (correlatedBy selectedCorrelation $ observe "yes" (ReadSource (SourceId "probe") SampledState) id)
         result <- evalIO (runProbe (probeBinding calls) source)
         case result of
           Verification VerificationResult {actions = actions, verdict = v} -> do
             v === Unknown
             map (\ActionEvidence {reason = why} -> why) actions === [Satisfied, UndeclaredOperation]
           _ -> fail "expected verification",
+      check "undeclared input errors retain the first denied dependency in input order" $ do
+        calls <- evalIO (newIORef 0)
+        failures <- evalIO (newIORef [])
+        let source = scenario "input-order" "Typed denied references" "1" $ do
+              first <- given "first" (accept ["ready"] Seed)
+              second <- given "second" (accept ["ready"] Seed)
+              handle <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+              _ <- act "blind" (accept ["ready"] (BlindAction ((&&) <$> fromRef first <*> fromRef second)))
+              expect $ eventually "check" (correlatedBy handle $ observe "yes" (ReadSource (SourceId "probe") SampledState) id)
+        _ <- evalIO (runProbe (probeBindingRecording (\failure -> modifyIORef' failures (++ [failure])) calls) source)
+        evalIO (readIORef failures) >>= (=== [UndeclaredInputReference "first"]),
       check "ignored undeclared observation input is Unknown" $ do
         calls <- evalIO (newIORef 0)
         let source = scenario "denied-read" "Sticky observation diagnostic" "1" $ do
+              selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
               seed <- given "fixture" (accept ["ready"] Seed)
-              expect $ eventually "check" (observe "yes" (BlindRead (fromRef seed)) id)
+              expect $ eventually "check" (correlatedBy selectedCorrelation $ observe "yes" (BlindRead (fromRef seed)) id)
         result <- evalIO (runProbe (probeBinding calls) source)
         case result of
           Verification VerificationResult {expectations = children} -> map (\ExpectationResult {reason = why} -> why) children === [UndeclaredOperation]
           _ -> fail "expected verification",
       check "inconsistent source strength fails before allocation" $ do
         calls <- evalIO (newIORef 0)
-        let source = scenario "sources" "Source consistency" "1" $ expect $ do
-              eventually "sampled" (observe "yes" (ReadSource (SourceId "same") SampledState) id)
-              eventually "durable" (observe "yes" (ReadSource (SourceId "same") DurableHistory) id)
-        resolveScenario testEnvironment testOptions selectedPlan (probeBinding calls) source `isErrors` [InconsistentSource (SourceId "same")]
+        let source = scenario "sources" "Source consistency" "1" $ do
+              selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+              expect $ do
+                eventually "sampled" (correlatedBy selectedCorrelation $ observe "yes" (ReadSource (SourceId "same") SampledState) id)
+                eventually "durable" (correlatedBy selectedCorrelation $ observe "yes" (ReadSource (SourceId "same") DurableHistory) id)
+        resolveScenario testEnvironment testOptions (probeBinding calls) source `isErrors` [InconsistentSource (SourceId "same")]
         evalIO (readIORef calls) >>= (=== 0),
       check "typed construction causes survive preflight and closed JSON" $ do
         calls <- evalIO (newIORef 0)
         mapM_
           ( \cause -> do
-              let source = scenario "broken-scenario" "Invalid handler" "1" $ expect $ eventually "check" (observe "yes" (Broken cause) id)
+              let source = scenario "broken-scenario" "Invalid handler" "1" $ do
+                    selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+                    expect $ eventually "check" (correlatedBy selectedCorrelation $ observe "yes" (Broken cause) id)
                   expected = [HandlerConstructionFailed "broken" cause]
-              resolveScenario testEnvironment testOptions selectedPlan (adjustHandlers (\_ _ -> id) (probeBinding calls)) source `isErrors` expected
+              resolveScenario testEnvironment testOptions (adjustHandlers (\_ _ -> id) (probeBinding calls)) source `isErrors` expected
               decodeRunResult (encodeRunResult (PreflightFailure expected)) === Right (PreflightFailure expected)
           )
           [EndpointNotAllowlisted "public-endpoint", ObservationMethodNotGet "write", ObservationScopeMissing "unscoped", ExecutionMetadataUnsupported]
@@ -155,9 +173,11 @@ tests =
             handlers ObservationOperation (ReadSource _ _) = Right (Just (focus snd inner))
             handlers _ _ = Right Nothing
             selected = binding "focused" (const (pure ((), captured))) (const (pure Cleaned)) handlers
-            source = scenario "focus" "Focused source" "1" $ expect $ eventually "check" (observe "yes" (ReadSource (SourceId "ignored") SampledState) id)
+            source = scenario "focus" "Focused source" "1" $ do
+              selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+              expect $ eventually "check" (correlatedBy selectedCorrelation $ observe "yes" (ReadSource (SourceId "ignored") SampledState) id)
         (clock, _) <- evalIO (newMicroClock (UTCTime (fromGregorian 2026 10 18) 0))
-        resolved <- either (fail . show) pure (resolveScenario testEnvironment testOptions selectedPlan selected source)
+        resolved <- either (fail . show) pure (resolveScenario testEnvironment testOptions selected source)
         result <- evalIO (runScenario clock (LogicalInput "focus" []) resolved)
         case result of Verification VerificationResult {verdict = v} -> v === Pass; _ -> fail "expected verification",
       check "detached inputs and substeps are refused and fake time advances by Duration" $ do

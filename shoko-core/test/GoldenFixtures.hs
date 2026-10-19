@@ -45,7 +45,7 @@ accountRun selected includeIdentity = do
           "toy-binary-v1"
           (if includeIdentity then Just "toy-implementation-v1" else Nothing)
           (if includeIdentity then Just (TargetIdentity "toy-fixture" "toy-namespace-uid" "toy-build-v1") else Nothing)
-  case resolveScenario testEnvironment options (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key")) (memoryBinding calls) selected of
+  case resolveScenario testEnvironment options (memoryBinding calls) selected of
     Left errors -> fail (show errors)
     Right resolved ->
       runScenario
@@ -64,7 +64,6 @@ ledgerRun copies unavailable = do
   case resolveScenario
     ledgerEnvironment
     testOptions
-    (businessKeyFromResult (BusinessKeyName "deliveryId") "append")
     (ledgerBinding rows readCalls unavailable)
     (ledgerScenario copies (if unavailable then Eventually else ExactlyOnce)) of
     Left errors -> fail (show errors)

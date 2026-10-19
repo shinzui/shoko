@@ -76,9 +76,9 @@ dispatch (Registry environments entries) (Invocation command path overrides synt
               | not (validTarget target) -> pure (failure 2 "Expected target identity must be complete and nonempty")
               | otherwise -> executeEntry command config provenance synthetic outputPath entry
   where
-    entryId (Entry source _ _ _ _) = case inspectScenario source of
+    entryId (Entry source _ _ _) = case inspectScenario source of
       Left _ -> Left "Invalid compiled scenario definition"
-      Right (Description name _ _ _ _) -> Right name
+      Right (Description name _ _ _ _ _) -> Right name
     commandId (Explain name) = name
     commandId (Check name) = name
     commandId (Run name) = name
@@ -87,7 +87,7 @@ dispatch (Registry environments entries) (Invocation command path overrides synt
     validTarget (Just (TargetIdentity name targetNamespace revision)) = all (/= "") [name, targetNamespace, revision]
 
 executeEntry :: Command -> HostConfig -> Text -> Bool -> Maybe FilePath -> Entry -> IO CliRun
-executeEntry command config@(HostConfig environment implementation format grants policy expected access redactions) provenance synthetic outputPath (Entry source correlation logical factories metadata) =
+executeEntry command config@(HostConfig environment implementation format grants policy expected access redactions) provenance synthetic outputPath (Entry source logical factories metadata) =
   case lookup implementation factories of
     Nothing -> pure (failure 2 "Unsupported implementation binding")
     Just factory -> do
@@ -95,13 +95,13 @@ executeEntry command config@(HostConfig environment implementation format grants
       let runId = "run-" <> Text.pack (show tick)
           options = RunOptions runId synthetic Version.buildIdentity Nothing Nothing
           targetEnvironment = Environment environment False (Set.fromList grants) policy
-          inspectBinding (SomeBinding binding) = case resolveScenario targetEnvironment options correlation binding source of
+          inspectBinding (SomeBinding binding) = case resolveScenario targetEnvironment options binding source of
             Left errors -> Left errors
             Right resolved ->
               let report = resolvedPolicyReport resolved
                   sources = case scenarioParts source of
                     Left _ -> []
-                    Right (_, _, expectations) ->
+                    Right (_, _, expectations, _) ->
                       [ (operationId, sourceName, strength)
                       | Expectation _ _ _ observation <- expectations,
                         let operation = observationOperation observation,
@@ -133,7 +133,7 @@ executeEntry command config@(HostConfig environment implementation format grants
                               ]
                           )
                           <> "\n"
-                      else textBytes ("Scenario " <> scenarioName description <> "\nBinding " <> implementation <> "\n" <> Text.pack (show policy) <> "\n" <> provenance <> "\n" <> either (Text.pack . show) (\report -> Text.pack (show report) <> "\nPolicy supported; live readiness unchecked") checked <> "\n")
+                      else textBytes (renderDescription description <> "\nBinding " <> implementation <> "\n" <> Text.pack (show policy) <> "\n" <> provenance <> "\n" <> either (Text.pack . show) (\report -> Text.pack (show report) <> "\nPolicy supported; live readiness unchecked") checked <> "\n")
                   )
                   ""
               )
@@ -152,7 +152,7 @@ executeEntry command config@(HostConfig environment implementation format grants
                   Left _ -> pure (failure 2 "Host target metadata preflight failed")
                   Right (_, targetIdentity) | maybe False (\expectedIdentity -> Just expectedIdentity /= targetIdentity) expected -> pure (failure 2 "Observed host target does not match the configured expectation")
                   Right (implementationIdentity, targetIdentity) -> case factory config (Just credentials) of
-                    SomeBinding binding -> case resolveScenario targetEnvironment (RunOptions runId synthetic Version.buildIdentity implementationIdentity targetIdentity) correlation binding source of
+                    SomeBinding binding -> case resolveScenario targetEnvironment (RunOptions runId synthetic Version.buildIdentity implementationIdentity targetIdentity) binding source of
                       Left errors -> pure (resultRun format (PreflightFailure errors))
                       Right resolved -> do
                         result <- redactResult redactions <$> runScenario realClock logical resolved
@@ -162,8 +162,6 @@ executeEntry command config@(HostConfig environment implementation format grants
                           Right () -> rendered
                           Left _ -> CliRun 4 stdout "Could not persist evidence; result preserved on stdout and existing output left intact\n"
         _ -> pure (failure 2 "Unsupported command")
-  where
-    scenarioName (Description name _ _ _ _) = name
 
 resultRun :: Text -> RunResult -> CliRun
 resultRun format result = CliRun (resultExit result) (if format == "json" then encodeRunResult result <> "\n" else textBytes (renderText result)) ""

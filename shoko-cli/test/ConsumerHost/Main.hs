@@ -26,9 +26,9 @@ registry = Registry ["local"] [entry "consumer-approved" True, entry "consumer-r
       Entry
         ( scenario name "Independent host decision" "v1" $ do
             result <- act "decide" (accept [if approved then "approved" else "denied"] (Decide approved))
-            expect (eventually "decision-evidence" (observe "correct-decision" (ObservedDecision (fromRef result) approved) id))
+            selected <- correlate (CorrelationAlias "decision") (BusinessKeyName "case") (pure "consumer-case")
+            expect (eventually "decision-evidence" (correlatedBy selected $ observe "correct-decision" (ObservedDecision (fromRef result) approved) id))
         )
-        (BusinessKeyFrom (BusinessKeyName "case") (pure "consumer-case"))
         (LogicalInput "consumer-v1" [])
         [("demo", \_ _ -> SomeBinding consumerBinding)]
         (\_ -> pure (Right (Nothing, Nothing)))

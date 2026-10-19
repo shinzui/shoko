@@ -1,13 +1,16 @@
-module Shoko.Cli.Report (resultExit, renderText, persistResult, redactResult) where
+module Shoko.Cli.Report (resultExit, renderText, renderDescription, persistResult, redactResult) where
 
 import Control.Exception (IOException, bracketOnError, catch, onException)
 import Data.ByteString.Lazy qualified as BL
 import Data.Text qualified as Text
+import Shoko.Action (OperationInfo (..))
+import Shoko.Correlation
 import Shoko.Evidence
-import Shoko.Identifier (sourceIdText)
+import Shoko.Identifier
 import Shoko.Prelude
 import Shoko.Result
 import Shoko.Result.Json
+import Shoko.Scenario (CorrelationDescription (..), Description (..), ExpectationDescription (..), NodeDescription (..))
 import System.Directory (removeFile)
 import System.FilePath (takeDirectory)
 import System.IO (hClose, hFlush, openBinaryTempFile)
@@ -21,19 +24,23 @@ resultExit (Verification (VerificationResult _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ verdi
 renderText :: RunResult -> Text
 renderText (PreflightFailure errors) = "Preflight error\n" <> Text.pack (show errors) <> "\n"
 renderText (RunnerFault reason partial) = "Runner fault: " <> Text.pack (show reason) <> "\n" <> maybe "" (renderText . Verification) partial
-renderText (Verification (VerificationResult _ _ runId environment binding _ _ _ _ correlation _ _ _ _ _ verdict actions expectations cleanup)) =
+renderText (Verification (VerificationResult description _ runId environment binding _ _ _ _ correlations _ _ _ _ _ verdict actions expectations cleanup)) =
   Text.unlines
     ( [ Text.pack (show verdict),
         "run: " <> runId,
         "environment: " <> environment,
-        "binding: " <> binding,
-        "correlation: " <> Text.pack (show correlation)
+        "binding: " <> binding
       ]
+        ++ map resolvedLine correlations
         ++ map actionLine actions
         ++ map expectationLine expectations
         ++ ["disposition: " <> Text.pack (show cleanup)]
     )
   where
+    resolvedLine (ResolvedCorrelation identity value) =
+      "correlation: " <> correlationIdText identity <> case value of
+        ByBusinessKey key selected -> "; key=" <> businessKeyNameText key <> "; value=" <> selected
+        ByExecutionId selected -> "; strategy=execution-id; value=" <> selected
     actionLine (ActionEvidence node operation expected observed _ _ reason _ _) =
       node
         <> ": "
@@ -50,6 +57,8 @@ renderText (Verification (VerificationResult _ _ runId environment binding _ _ _
         <> Text.pack (show outcome)
         <> " "
         <> Text.pack (show reason)
+        <> "; correlation="
+        <> selectedFor description name
         <> "; source="
         <> sourceIdText source
         <> "; activation="
@@ -97,3 +106,17 @@ redactResult fields result = case result of
     redactAction (ActionEvidence node operation outcomes observed start end reason substeps details) = ActionEvidence node operation outcomes observed start end reason substeps (keep details)
     redactExpectation (ExpectationResult name verdict reason (Evidence source operation baseline activation finished coverage identities count gaps cutoff details)) =
       ExpectationResult name verdict reason (Evidence source operation baseline activation finished coverage identities count gaps cutoff (keep details))
+
+selectedFor :: Description -> Text -> Text
+selectedFor (Description _ _ _ _ expectations _) key = case [selected | ExpectationDescription identity _ _ _ _ selected <- expectations, identity == key] of
+  Just selected : _ -> correlationIdText selected
+  _ -> "unselected"
+
+renderDescription :: Description -> Text
+renderDescription description@(Description key title revision nodes expectations correlations) =
+  Text.unlines
+    ( ["Scenario " <> key <> " (" <> revision <> ")", title]
+        ++ ["node " <> identity <> ": " <> operation | NodeDescription identity _ (OperationInfo operation _ _ _) _ <- nodes]
+        ++ ["correlation " <> correlationIdText identity <> ": key=" <> businessKeyNameText semantic <> "; strategy=" <> Text.pack (show strategy) | CorrelationDescription identity semantic strategy _ <- correlations]
+        ++ ["expectation " <> identity <> ": correlation=" <> selectedFor description identity | ExpectationDescription identity _ _ _ _ _ <- expectations]
+    )

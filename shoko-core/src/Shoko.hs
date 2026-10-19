@@ -22,6 +22,8 @@ module Shoko
     namespace,
     expectAfterActions,
     hoistScenarioBuilder,
+    correlate,
+    propagateExecutionId,
     inspectScenario,
     runScenario,
   )
@@ -38,7 +40,7 @@ import Shoko.Identifier
 import Shoko.Observation
 import Shoko.Prelude
 import Shoko.Runner (runScenario)
-import Shoko.Scenario (Scenario, ScenarioBuilder, act, expect, expectAfterActions, given, hoistScenarioBuilder, inspectScenario, namespace, scenario)
+import Shoko.Scenario (Scenario, ScenarioBuilder, act, correlate, expect, expectAfterActions, given, hoistScenarioBuilder, inspectScenario, namespace, propagateExecutionId, scenario)
 
 -- | Version of the public core package.
 version :: Text

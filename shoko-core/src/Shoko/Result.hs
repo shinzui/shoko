@@ -53,7 +53,7 @@ data VerificationResult = VerificationResult
     implementationIdentity :: !(Maybe Text),
     targetIdentity :: !(Maybe TargetIdentity),
     logicalInput :: !LogicalInput,
-    correlation :: !(Maybe Correlation),
+    correlations :: ![ResolvedCorrelation],
     policyReport :: !PolicyReport,
     startedAt :: !UTCTime,
     finishedAt :: !UTCTime,

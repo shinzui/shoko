@@ -125,7 +125,11 @@ httpTests :: TestTree
 httpTests =
   testGroup
     "real HTTP"
-    [ test "bounded body and redirect classification" $ do
+    [ test "scenario execution ID reaches opted-in HTTP endpoints and conflicting labels fail" $ do
+        executionRoundtrip "on" False "adapter-run" >>= expectVerdict Pass
+        executionRoundtrip "off" False "none" >>= expectVerdict Pass
+        executionRoundtrip "on" True "adapter-run" >>= expectVerdict Unknown,
+      test "bounded body and redirect classification" $ do
         resource <- config >>= Http.newHttp
         call <- context "transport-check" 2000000
         answer <- Http.httpAction resource call "large" (payload "large-key") (\_ _ -> Right ("okay", ()))
@@ -148,6 +152,49 @@ httpTests =
         denied <- Http.httpAction resource call "unapproved" (payload "key") (\_ _ -> Right ("okay", ()))
         check (case denied of ActionUnavailable _ -> True; _ -> False)
     ]
+
+data Execution a where
+  SendExecution :: Text.Text -> Bool -> Execution Text.Text
+  ReadExecution :: Input Text.Text -> Text.Text -> Execution Bool
+
+instance Vocabulary Execution where
+  describeOperation (SendExecution _ _) = declareOperation "execution-send" []
+  describeOperation (ReadExecution input _) = dependsOn input (declareOperation "execution-observed" [ReadState])
+
+executionRoundtrip :: Text.Text -> Bool -> Text.Text -> IO RunResult
+executionRoundtrip endpointName conflict expected = do
+  base <- Text.pack <$> getEnv "SHOKO_TEST_HTTP"
+  endpoints <-
+    traverse
+      (either (fail . Text.unpack) pure)
+      [ Http.endpoint "on" (base <> "/execution") Http.Post 1024 Set.empty True Nothing,
+        Http.endpoint "off" (base <> "/execution") Http.Post 1024 Set.empty False Nothing
+      ]
+  httpConfig <- either (fail . Text.unpack) pure (Http.httpConfig endpoints)
+  let handlers :: OperationRole -> Execution a -> Either HandlerBuildError (Maybe (Handler Http.Http a))
+      handlers ActionOperation (SendExecution route conflicting) =
+        Just
+          <$> Http.httpActionHandler
+            httpConfig
+            route
+            (\_ -> pure (Right (Http.HttpPayload "" "text/plain" Nothing Nothing (if conflicting then Just "conflict" else Nothing))))
+            (\status bytes -> if status == 200 then Right ("sent", Text.decodeUtf8 bytes) else Left Http.ResponseUndecodable)
+      handlers ObservationOperation (ReadExecution input wanted) = Right $ Just $ observationHandler noRequirements RequiresExecutionId (sampledSource (SourceId "execution.echo")) $ \_ call -> do
+        answer <- resolveInput call input
+        let found = case (answer, correlation call, executionId call) of
+              (Right value, Just (ByExecutionId selected), Just propagated) -> value == wanted && selected == propagated
+              _ -> False
+        tick <- monotonic (callClock call)
+        pure (Observed [Occurrence Nothing found] (Coverage SampledState tick tick True))
+      handlers _ _ = Right Nothing
+      selectedBinding = binding "http-execution" (const (Http.newHttp httpConfig)) (const (pure Cleaned)) handlers
+      source = scenario "execution-http" "Explicit transport opt-in" "1" $ do
+        handle <- propagateExecutionId
+        answer <- act "send" (accept ["sent"] (SendExecution endpointName conflict))
+        expect $ eventually "received" (correlatedBy handle (observe "expected-header" (ReadExecution (fromRef answer) expected) id))
+      environment = Environment "local" False (Set.fromList [SendHttp, WriteState, ReadState]) defaultPolicy
+  resolved <- either (fail . show) pure (resolveScenario environment (RunOptions "adapter-run" False "fixture" Nothing Nothing) selectedBinding source)
+  runScenario realClock (LogicalInput "execution" []) resolved
 
 data Op a where
   Command :: Text.Text -> Text.Text -> Op Text.Text
@@ -218,10 +265,11 @@ run route key tags absent settings = do
   let environment = Environment "local-fixture" False (Set.fromList [ReadState, WriteState, SendHttp]) (Policy budget window poll budget)
       scenarioValue = scenario "adapter-roundtrip" "HTTP then SQL" "1" $ do
         result <- act "command" (accept tags (Command route key))
-        expect (eventually "persisted-state" (observe "matches" (State (fromRef result) absent) id))
-        when (route == "create") $ expect (eventually "rest-state" (observe "matches" (Rest (fromRef result)) id))
+        selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (fromRef result)
+        expect (eventually "persisted-state" (correlatedBy selectedCorrelation $ observe "matches" (State (fromRef result) absent) id))
+        when (route == "create") $ expect (eventually "rest-state" (correlatedBy selectedCorrelation $ observe "matches" (Rest (fromRef result)) id))
       options = RunOptions "adapter-run" False "test-build" Nothing Nothing
-  resolved <- either (fail . show) pure (resolveScenario environment options (businessKeyFromResult (BusinessKeyName "accountId") "command") (localBinding httpConfig settings) scenarioValue)
+  resolved <- either (fail . show) pure (resolveScenario environment options (localBinding httpConfig settings) scenarioValue)
   runScenario realClock (LogicalInput "adapter-recipe-v1" []) resolved
 
 verdictIs :: Verdict -> RunResult -> Bool
@@ -243,9 +291,10 @@ roundtripTests =
         acquired <- either (fail . Text.unpack) pure (Http.httpConfig [different])
         let source = scenario "mismatch" "Descriptor ownership" "1" $ do
               key <- act "command" (accept ["created"] (Command "create" "descriptor-mismatch"))
-              expect $ eventually "state" (observe "yes" (State (fromRef key) False) id)
+              selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (fromRef key)
+              expect $ eventually "state" (correlatedBy selectedCorrelation $ observe "yes" (State (fromRef key) False) id)
             environment = Environment "local" False (Set.fromList [ReadState, WriteState, SendHttp]) defaultPolicy
-        resolved <- either (fail . show) pure (resolveScenario environment (RunOptions "mismatch" False "fixture" Nothing Nothing) (BusinessKeyFrom (BusinessKeyName "accountId") (pure "descriptor-mismatch")) (localBindingUsing declared acquired settings) source)
+        resolved <- either (fail . show) pure (resolveScenario environment (RunOptions "mismatch" False "fixture" Nothing Nothing) (localBindingUsing declared acquired settings) source)
         result <- runScenario realClock (LogicalInput "mismatch" []) resolved
         check (verdictIs Unknown result)
         query "descriptor-mismatch" (Pg.rowAbsent table scope Nothing) >>= check . valueIs True,
@@ -256,7 +305,7 @@ roundtripTests =
             handlers ObservationOperation (Rest _) = Just . focus (const (error "must not execute")) <$> Http.httpObservationHandler declared "create" (const (pure (Right Http.emptyPayload))) (\_ _ -> Right True)
             handlers _ _ = Right Nothing
             selected = binding "invalid" (\_ -> fail "must not acquire") (const (pure Cleaned)) handlers
-        case resolveScenario (Environment "local" False (Set.fromList [ReadState, SendHttp]) defaultPolicy) (RunOptions "invalid" False "fixture" Nothing Nothing) (BusinessKeyFrom (BusinessKeyName "accountId") (pure "key")) selected source of
+        case resolveScenario (Environment "local" False (Set.fromList [ReadState, SendHttp]) defaultPolicy) (RunOptions "invalid" False "fixture" Nothing Nothing) selected source of
           Left errors -> check (errors == [HandlerConstructionFailed "rest" (ObservationMethodNotGet "create")])
           Right _ -> fail "invalid handler accepted",
       test "real committed write yields Pass and decodable safe evidence" $ do
@@ -292,7 +341,8 @@ roundtripTests =
             forbidden = Environment "denied" False Set.empty defaultPolicy
             scenarioValue = scenario "denied" "denied" "1" $ do
               _ <- act "command" (accept ["created"] (Command "noop" "never"))
-              expect (eventually "state" (observe "yes" (State (pure "never") False) id))
-        check (either (const True) (const False) (resolveScenario forbidden (RunOptions "denied" False "test" Nothing Nothing) (BusinessKeyFrom (BusinessKeyName "accountId") (pure "never")) guarded scenarioValue))
+              selectedCorrelation <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (pure "never")
+              expect (eventually "state" (correlatedBy selectedCorrelation $ observe "yes" (State (pure "never") False) id))
+        check (either (const True) (const False) (resolveScenario forbidden (RunOptions "denied" False "test" Nothing Nothing) guarded scenarioValue))
         readIORef calls >>= check . (== 0)
     ]
