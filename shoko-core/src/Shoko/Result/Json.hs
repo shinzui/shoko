@@ -43,10 +43,15 @@ resultValue (RunnerFault why partial) =
 resultValue (PreflightFailure errors) = preflightValue errors
 
 parseResult :: Value -> Parser RunResult
-parseResult = checked ["schemaVersion", "kind", "report", "reason", "errors"] "run-result" $ \o -> do
+parseResult = withObject "run-result" $ \o -> do
   version <- o .: "schemaVersion" :: Parser Int
   unless (version == 2) (fail "unsupported version")
   kind <- o .: "kind" :: Parser Text
+  exactFields o $ case kind of
+    "verification" -> ["schemaVersion", "kind", "report"]
+    "runner-fault" -> ["schemaVersion", "kind", "reason", "report"]
+    "preflight-error" -> ["schemaVersion", "kind", "errors"]
+    _ -> ["schemaVersion", "kind"]
   case kind of
     "verification" -> Verification <$> (o .: "report" >>= parseReport)
     "runner-fault" -> RunnerFault <$> enumField o "reason" reasons <*> nullable o "report" parseReport
@@ -327,8 +332,9 @@ correlationValue (ByBusinessKey key value) = object ["kind" .= ("business-key" :
 correlationValue (ByExecutionId value) = object ["kind" .= ("execution-id" :: Text), "value" .= value]
 
 parseCorrelation :: Value -> Parser Correlation
-parseCorrelation = checked ["kind", "key", "value"] "correlation" $ \o -> do
+parseCorrelation = withObject "correlation" $ \o -> do
   kind <- o .: "kind" :: Parser Text
+  exactFields o (if kind == "business-key" then ["kind", "key", "value"] else ["kind", "value"])
   case kind of
     "business-key" -> ByBusinessKey <$> (BusinessKeyName <$> o .: "key") <*> o .: "value"
     "execution-id" -> ByExecutionId <$> o .: "value"
@@ -450,8 +456,17 @@ definitionValue problem = case problem of
   EmptyExpectations -> identified "empty-expectations" ""
 
 parsePreflight :: Value -> Parser PreflightError
-parsePreflight = checked ["code", "id", "details", "capabilities", "cause", "correlationId"] "preflight-error" $ \o -> do
+parsePreflight = withObject "preflight-error" $ \o -> do
   code <- o .: "code" :: Parser Text
+  let fields = case code of
+        "invalid-definition" -> ["code", "details"]
+        "capabilities-denied" -> ["code", "capabilities"]
+        "handler-construction-failed" -> ["code", "id", "cause"]
+        "undeclared-correlation" -> ["code", "id", "correlationId"]
+        "incompatible-correlation" -> ["code", "id", "correlationId"]
+        _ -> ["code", "id"]
+  exactFields o fields
+  if "id" `elem` fields then (o .: "id" :: Parser Text) >> pure () else pure ()
   case code of
     "invalid-definition" -> InvalidDefinition <$> list o "details" parseDefinition
     "missing-handler" -> MissingHandler <$> o .: "id"
@@ -471,6 +486,7 @@ parsePreflight = checked ["code", "id", "details", "capabilities", "cause", "cor
 parseDefinition :: Value -> Parser DefinitionError
 parseDefinition = checked ["code", "id"] "definition-error" $ \o -> do
   code <- o .: "code" :: Parser Text
+  _ <- o .: "id" :: Parser Text
   case code of
     "invalid-identifier" -> pure InvalidIdentifier
     "duplicate-identifier" -> DuplicateIdentifier <$> o .: "id"
@@ -524,3 +540,8 @@ resolvedCorrelationValue (ResolvedCorrelation identity value) = object ["correla
 parseResolvedCorrelation :: Value -> Parser ResolvedCorrelation
 parseResolvedCorrelation = checked ["correlationId", "resolvedCorrelation"] "resolved-correlation" $ \o ->
   ResolvedCorrelation <$> (CorrelationId <$> o .: "correlationId") <*> (o .: "resolvedCorrelation" >>= parseCorrelation)
+
+-- Tagged alternatives have their own closed field inventories, not their union.
+exactFields :: Object -> [Key] -> Parser ()
+exactFields fields expected =
+  unless (all (`elem` expected) (KeyMap.keys fields) && all (`KeyMap.member` fields) expected) (fail "unexpected fields")

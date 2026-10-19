@@ -19,6 +19,7 @@ import Shoko
 import Shoko.Adapter.Http qualified as Http
 import Shoko.Adapter.Postgres qualified as Pg
 import Shoko.Clock
+import Shoko.Evidence (ActionEvidence (..), Reason (..))
 import Shoko.Result hiding (binding)
 import Shoko.Result.Json
 import System.Environment (getEnv)
@@ -128,7 +129,14 @@ httpTests =
     [ test "scenario execution ID reaches opted-in HTTP endpoints and conflicting labels fail" $ do
         executionRoundtrip "on" False "adapter-run" >>= expectVerdict Pass
         executionRoundtrip "off" False "none" >>= expectVerdict Pass
-        executionRoundtrip "on" True "adapter-run" >>= expectVerdict Unknown,
+        executionRoundtrip "on" True "adapter-run" >>= expectVerdict Unknown
+        denied <- executionRoundtrip "denied" False "adapter-run"
+        case denied of
+          Verification VerificationResult {actions = actions, verdict = v} -> do
+            check (v == Unknown)
+            check (map (\ActionEvidence {reason = why} -> why) actions == [Satisfied, UndeclaredOperation])
+          _ -> fail "payload resolver error lost its runtime diagnostic"
+        check (not ("PRIVATE-PAYLOAD-SENTINEL" `BS.isInfixOf` BL.toStrict (encodeRunResult denied))),
       test "bounded body and redirect classification" $ do
         resource <- config >>= Http.newHttp
         call <- context "transport-check" 2000000
@@ -154,10 +162,14 @@ httpTests =
     ]
 
 data Execution a where
+  SeedExecution :: Execution Text.Text
+  DeniedExecution :: Input Text.Text -> Execution Text.Text
   SendExecution :: Text.Text -> Bool -> Execution Text.Text
   ReadExecution :: Input Text.Text -> Text.Text -> Execution Bool
 
 instance Vocabulary Execution where
+  describeOperation SeedExecution = declareOperation "execution-seed" []
+  describeOperation (DeniedExecution _) = declareOperation "denied-execution-input" []
   describeOperation (SendExecution _ _) = declareOperation "execution-send" []
   describeOperation (ReadExecution input _) = dependsOn input (declareOperation "execution-observed" [ReadState])
 
@@ -172,6 +184,18 @@ executionRoundtrip endpointName conflict expected = do
       ]
   httpConfig <- either (fail . Text.unpack) pure (Http.httpConfig endpoints)
   let handlers :: OperationRole -> Execution a -> Either HandlerBuildError (Maybe (Handler Http.Http a))
+      handlers FixtureOperation SeedExecution = Right $ Just $ actionHandler noRequirements (\_ _ -> pure (ActionObserved "ready" "PRIVATE-PAYLOAD-SENTINEL"))
+      handlers ActionOperation (DeniedExecution input) =
+        Just
+          <$> Http.httpActionHandler
+            httpConfig
+            "on"
+            ( \call ->
+                resolveInput call input >>= \case
+                  Left failure -> pure (Left (Http.PayloadInputError failure))
+                  Right _ -> pure (Right Http.emptyPayload)
+            )
+            (\_ bytes -> Right ("sent", Text.decodeUtf8 bytes))
       handlers ActionOperation (SendExecution route conflicting) =
         Just
           <$> Http.httpActionHandler
@@ -190,7 +214,12 @@ executionRoundtrip endpointName conflict expected = do
       selectedBinding = binding "http-execution" (const (Http.newHttp httpConfig)) (const (pure Cleaned)) handlers
       source = scenario "execution-http" "Explicit transport opt-in" "1" $ do
         handle <- propagateExecutionId
-        answer <- act "send" (accept ["sent"] (SendExecution endpointName conflict))
+        answer <-
+          if endpointName == "denied"
+            then do
+              seed <- given "seed" (accept ["ready"] SeedExecution)
+              act "send" (accept ["sent"] (DeniedExecution (fromRef seed)))
+            else act "send" (accept ["sent"] (SendExecution endpointName conflict))
         expect $ eventually "received" (correlatedBy handle (observe "expected-header" (ReadExecution (fromRef answer) expected) id))
       environment = Environment "local" False (Set.fromList [SendHttp, WriteState, ReadState]) defaultPolicy
   resolved <- either (fail . show) pure (resolveScenario environment (RunOptions "adapter-run" False "fixture" Nothing Nothing) selectedBinding source)

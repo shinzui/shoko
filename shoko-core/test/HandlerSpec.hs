@@ -135,6 +135,28 @@ tests =
                 eventually "durable" (correlatedBy selectedCorrelation $ observe "yes" (ReadSource (SourceId "same") DurableHistory) id)
         resolveScenario testEnvironment testOptions (probeBinding calls) source `isErrors` [InconsistentSource (SourceId "same")]
         evalIO (readIORef calls) >>= (=== 0),
+      check "empty source and wrong handler kind reject before acquisition" $ do
+        calls <- evalIO (newIORef 0)
+        let source label = scenario "source-kind" "Owned source validation" "1" $ do
+              handle <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+              expect $ eventually "check" (correlatedBy handle $ observe "yes" (ReadSource label SampledState) id)
+            replace :: OperationRole -> Probe a -> Maybe (Handler () a) -> Maybe (Handler () a)
+            replace ObservationOperation (ReadSource _ _) _ = Just (actionHandler noRequirements (\_ _ -> pure (ActionObserved "observed" True)))
+            replace _ _ original = original
+        resolveScenario testEnvironment testOptions (probeBinding calls) (source (SourceId "")) `isErrors` [MissingSource "read-source"]
+        resolveScenario testEnvironment testOptions (adjustHandlers replace (probeBinding calls)) (source (SourceId "valid")) `isErrors` [MissingHandler "read-source"]
+        evalIO (readIORef calls) >>= (=== 0),
+      check "combined bindings preserve every typed construction cause before acquisition" $ do
+        calls <- evalIO (newIORef 0)
+        mapM_
+          ( \cause -> do
+              let source = scenario "combined-cause" "Construction errors survive sums" "1" $ do
+                    handle <- correlate (CorrelationAlias "probe") (BusinessKeyName "probe") (pure "one")
+                    expect $ eventually "check" (correlatedBy handle $ observe "yes" (InR (Broken cause)) id)
+              resolveScenario testEnvironment testOptions (combineBindings "combined" (probeBinding calls) (probeBinding calls)) source `isErrors` [HandlerConstructionFailed "broken" cause]
+          )
+          [EndpointNotAllowlisted "public", ObservationMethodNotGet "write", ObservationScopeMissing "scope", ExecutionMetadataUnsupported]
+        evalIO (readIORef calls) >>= (=== 0),
       check "typed construction causes survive preflight and closed JSON" $ do
         calls <- evalIO (newIORef 0)
         mapM_

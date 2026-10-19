@@ -2,7 +2,7 @@
 
 Shōko is a Haskell DSL for specifying and verifying observable behavior across distributed systems. A scenario describes the evidence that establishes correct behavior; adapters determine how to obtain that evidence from a particular implementation and environment.
 
-**Status:** experimental. `shoko-core` provides typed descriptions and bounded Pass/Fail/Unknown evidence on GHC 9.12.4. `shoko-adapters` supplies SQL/HTTP transport and bounded Kiroku/Message DB readers with real local IO checks. `shoko-cli` supplies compiled registries, strict configuration, inspection, execution, and atomic reports. Real registration staging acceptance remains outstanding. See the [core](docs/core.md), [adapters](docs/adapters.md), and [scenario-host guide](docs/scenario-hosts.md).
+**Status:** experimental. `shoko-core` provides reusable typed workflow blocks, composed vocabularies/bindings, explicit correlation instances, and bounded Pass/Fail/Unknown evidence on GHC 9.12.4. `shoko-adapters` supplies SQL/HTTP transport and bounded Kiroku/Message DB readers with real local IO checks. `shoko-cli` supplies compiled registries, strict configuration, inspection, execution, and atomic reports. Real registration staging acceptance remains outstanding. See the [core](docs/core.md), [adapters](docs/adapters.md), and [scenario-host guide](docs/scenario-hosts.md).
 
 Build and check the foundation from the repository root:
 
@@ -42,26 +42,34 @@ The first application is the [TAN platform](mori://tan/tan-platform) rewrite ont
 
 ## A scenario in outline
 
-The following illustrates the planned TAN domain vocabulary. The core construction API is implemented; these context-owned registration operations remain planned. Compiling examples are linked from the [core guide](docs/core.md).
+The compiling [in-memory registration consumer](shoko-cli/test/ConsumerHost/Registration.hs)
+exports a reusable workflow definition and thin scenario wrappers. Real staging
+operations remain owned by their bounded context.
 
 ```haskell
-registrationCompletion :: Scenario
-registrationCompletion =
-  scenario "registration-completion-staging" "Complete registration" "v1" $ do
-    agent <- given "agent" $ accept ["qualified"] qualifiedAgent
-    registration <- act "complete" $ accept ["completed"] $
-      completeQualifiedAgentRegistration (fromRef agent)
+registrationBlock :: ScenarioBuilder Registration (Ref Text, CorrelationRef)
+registrationBlock = do
+  qualified <- given "qualified" (accept ["ready"] Qualified)
+  registered <- act "complete" (accept ["completed"] (Complete (fromRef qualified)))
+  selected <- correlate (CorrelationAlias "registration")
+    (BusinessKeyName "registrationId") (fromRef registered)
+  expectAfterActions $ eventually "registered" $ correlatedBy selected $
+    observeThat (Registered (fromRef registered)) (predicate "exists" id)
+  pure (registered, selected)
 
-    expect $ do
-      eventually "registration-completed" $
-        observe "completed" (registrationCompleted (fromRef registration)) id
-      eventually "account-exists" $
-        observe "exists" (accountExists (fromRef registration)) id
-      eventually "user-exists" $
-        observe "exists" (userExists (fromRef registration)) id
+composedRegistration :: Scenario (Registration :+: Accounts)
+composedRegistration =
+  scenario "composed-registration" "Register two entities and check an account" "v1" $ do
+    _ <- namespace "inviter" (hoistScenarioBuilder InL registrationBlock)
+    (invitee, _) <- namespace "invitee" (hoistScenarioBuilder InL registrationBlock)
+    hoistScenarioBuilder InR (accountBlock invitee)
 ```
 
-This reference slice starts from an already-qualified agent and exercises the one-time-password and completion steps through a declared composite action. Qualification/approval is a precondition of this slice. An executable scenario must use supported test identities and the approved staging delivery path; the outline omits that setup. The [requirement validation](docs/research/initial-specification-requirement-validation.md) explains the actual flow and the gaps in the specification's earlier examples.
+The two registrations use separate namespaced correlation handles with the same
+semantic key; the account block selects its own `accountId`. All expectations run
+after the last action. The same concrete block also backs `registration-alone`
+and `registration-reused`, each with its own scenario identity and fresh resources.
+Try `nix develop --command cabal run shoko-consumer-host -- run composed-registration --format json`.
 
 Parity scenarios use domain observations such as `qualificationVerified`. Each implementation can satisfy them through its own events, state, and APIs. The bounded context owns this vocabulary in an application package beside the domain. Assertions about specific event names or internal causal chains belong in scenarios for that implementation.
 
@@ -116,7 +124,7 @@ Results are intended to distinguish three outcomes:
 | Fail | Verification establishes that an expectation was violated. |
 | Unknown | Verification cannot establish the outcome, for example because an evidence source is unavailable. |
 
-Reports should retain collected evidence even when verification fails: source identifiers, timestamps, correlation and causation details, and the expectation that could not be satisfied. This should help locate a broken projection, missing event, or failed interaction. Planned exit codes are 0 Pass, 1 Fail, 2 invalid invocation/configuration/policy, 3 Unknown, and 4 unexpected runner faults. CI preserves those outcomes.
+Reports should retain collected evidence even when verification fails: source identifiers, timestamps, correlation and causation details, and the expectation that could not be satisfied. This should help locate a broken projection, missing event, or failed interaction. Exit codes are 0 Pass, 1 Fail, 2 invalid invocation/configuration/policy, 3 Unknown, and 4 unexpected runner faults. CI preserves those outcomes.
 
 ## Initial scope and milestones
 
@@ -151,3 +159,6 @@ Shōko's scope is application behavior across services. Existing unit tests, pro
 - [Research index](docs/research/index.md) — the repository's research records.
 
 The specification describes the broader direction and the validation records the surveyed evidence. The MasterPlan and bootstrap ADRs resolve implementation decisions and carry the user’s later staging-first scope correction.
+
+Revision 2026-10-19: add reusable, namespaced workflow composition and explicit
+correlation selection to the public API outline.

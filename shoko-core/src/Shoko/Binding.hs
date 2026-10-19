@@ -93,10 +93,6 @@ runSubstep context key action = callSubstep context key action
 callClock :: CallContext -> Clock
 callClock = callTime
 
-detachedCallContext :: Clock -> MonotonicTime -> MonotonicTime -> Maybe Baseline -> Maybe Correlation -> CallContext
-detachedCallContext clock end cutoff base selected =
-  CallContext (const (pure (Left DetachedInputContext))) end base selected (\_ _ -> pure (Left "detached-substep")) cutoff clock Nothing
-
 noRequirements :: BindingContract
 noRequirements = BindingContract Set.empty Set.empty
 
@@ -291,7 +287,7 @@ resolveScenario
                       Nothing -> []
                  in ( [MissingHandler key | handlerKind handler /= requiredKind]
                         ++ correlationErrors
-                        ++ [MissingSource key | needsSource && (null sources || any (Text.null . sourceIdText . (\(label, _, _) -> label)) sources)],
+                        ++ [MissingSource key | needsSource && handlerKind handler == ObservationHandlerKind && (null sources || any (Text.null . sourceIdText . (\(label, _, _) -> label)) sources)],
                       required,
                       sources
                     )

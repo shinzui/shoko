@@ -134,3 +134,11 @@ descriptions retain every declaration. An empty/unresolved instance produces
 continue even when they share a semantic key. Terminal action failures retain
 `PrerequisiteUnavailable` for all expectations. Policy strategies include unused
 declarations.
+
+Completion revision, 2026-10-19: each tagged v2 decoder alternative has its own
+closed field inventory, including construction causes and correlation values.
+Fields valid under another tag are rejected rather than silently discarded.
+Public type probes and internal malformed-reference/handle/digest probes preserve
+the typed and private-value boundaries without exposing internal constructors.
+The independent host emits schema-valid v2 reports for standalone and composed
+workflows; its successful resolutions retain entity-instance attribution.

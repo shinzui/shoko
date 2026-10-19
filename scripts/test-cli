@@ -62,12 +62,43 @@ assert "0.2.0.0" in version and any(word in version for word in ("clean", "dirty
 assert "demo-account-created" in call(cli, ["list"]).stdout
 assert "consumer-rejected" in call(host, ["list"]).stdout
 
+# One concrete public workflow backs independent wrappers and repeated blocks.
+explanation = call(host, ["explain", "composed-registration"]).stdout
+for identity in ("inviter.qualified", "invitee.qualified", "inviter.registration", "invitee.registration", "account"):
+    assert identity in explanation, identity
+for key in ("registrationId", "accountId"):
+    assert key in explanation, key
+for expectation, selected in (("inviter.registered", "inviter.registration"), ("invitee.registered", "invitee.registration"), ("account-exists", "account")):
+    assert f"expectation {expectation}: correlation={selected}" in explanation
+explained = json.loads(call(host, ["explain", "composed-registration", "--format", "json"]).stdout)["description"]
+assert [entry["correlationId"] for entry in explained["correlations"]] == ["inviter.registration", "invitee.registration", "account"]
+assert [entry["correlationId"] for entry in explained["expectations"]] == ["inviter.registration", "invitee.registration", "account"]
+composed = json.loads(call(host, ["run", "composed-registration", "--format", "json"], result=True).stdout)
+assert composed["schemaVersion"] == 2
+report = composed["report"]
+assert report["verdict"] == "pass"
+assert [entry["correlationId"] for entry in report["correlations"]] == ["inviter.registration", "invitee.registration", "account"]
+assert [entry["resolvedCorrelation"]["key"] for entry in report["correlations"]] == ["registrationId", "registrationId", "accountId"]
+assert [entry["resolvedCorrelation"]["value"] for entry in report["correlations"]] == ["registration-agent-1", "registration-agent-2", "account-registration-agent-2"]
+assert [action["supportingData"][0]["value"] for action in report["actions"] if action["operationId"] == "registration.qualify"] == [1, 2]
+assert call(host, ["run", "composed-registration"]).stdout.startswith("Pass\n")
+standalone = []
+for name in ("registration-alone", "registration-reused"):
+    result = json.loads(call(host, ["run", name, "--format", "json"], result=True).stdout)["report"]
+    assert result["verdict"] == "pass" and result["description"]["scenarioId"] == name
+    assert len(result["correlations"]) == 1
+    assert [action["supportingData"][0]["value"] for action in result["actions"] if action["operationId"] == "registration.qualify"] == [1]
+    standalone.append(result)
+assert standalone[0]["runId"] != standalone[1]["runId"]
+assert standalone[0]["description"]["scenarioId"] != standalone[1]["description"]["scenarioId"]
+
 with tempfile.TemporaryDirectory(prefix="shoko-cli-") as temporary:
     owned = Path(temporary)
     counter = owned / "counter"
     counting = {"SHOKO_TEST_COUNTER": str(counter)}
     for command in ("explain", "check"):
         call(host, [command, "consumer-approved", "--config", demo, "--format", "json"], extra=counting)
+        call(host, [command, "composed-registration", "--config", demo, "--format", "json"], extra=counting)
     assert not counter.exists(), "inspection acquired resources"
     for name, code in (("demo-account-created", 0), ("demo-missing-evidence", 1),
                        ("demo-source-unavailable", 3), ("demo-expected-rejection", 0), ("demo-runner-fault", 4)):
@@ -133,4 +164,4 @@ validator.validate({})
 validator.validate({"policy": {"executionMs": 100, "capabilities": ["ReadState"]}})
 for invalid in ({"policy": {"executionMs": 0}}, {"allowSynthetic": True}, {"output": {"format": "xml"}}):
     assert not validator.is_valid(invalid)
-print(f"CLI process protocol passed {checks} invocations, all five exits, independent positive/negative host, schema keys, secrets, and atomic persistence.")
+print(f"CLI process protocol passed {checks} invocations, all five exits, independent positive/negative/composed hosts, fresh workflow instances, schema keys, secrets, and atomic persistence.")

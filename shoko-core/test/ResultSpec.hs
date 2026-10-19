@@ -3,7 +3,7 @@ module ResultSpec (tests) where
 import Consumer.Account (testOptions)
 import Consumer.DeliveryLedger
 import Consumer.Hooks (newMicroClock)
-import Data.Aeson (Value (..), eitherDecode, encode, toJSON)
+import Data.Aeson (Value (..), eitherDecode, encode, object, toJSON, (.=))
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy qualified as LBS
 import Data.Either (isLeft)
@@ -46,6 +46,7 @@ tests =
           (_, result) : _ -> case resultValue result of
             Object fields -> do
               assert (isLeft (decodeRunResult (encode (Object (KeyMap.insert "schemaVersion" (toJSON (999 :: Int)) fields)))))
+              assert (isLeft (decodeRunResult (encode (Object (KeyMap.insert "reason" (String "satisfied") fields)))))
               let bad = Object (KeyMap.insert "undeclared" (String "SECRET-PARSER-SENTINEL") fields)
               decodeRunResult (encode bad) === Left "invalid shoko result v2"
               let changedReport = case KeyMap.lookup "report" fields of
@@ -54,6 +55,19 @@ tests =
               assert (isLeft (decodeRunResult (encode (Object (KeyMap.insert "report" changedReport fields)))))
             _ -> fail "expected result object"
           _ -> fail "expected report fixtures",
+      testPropertyNamed "malformed typed causes and correlation selections are rejected" "malformedTypedTags" $ withTests 1 $ property $ do
+        let cause value = object ["schemaVersion" .= (2 :: Int), "kind" .= ("preflight-error" :: Text.Text), "errors" .= [object ["code" .= ("handler-construction-failed" :: Text.Text), "id" .= ("operation" :: Text.Text), "cause" .= value]]]
+        mapM_
+          (\value -> assert (isLeft (decodeRunResult (encode (cause value)))))
+          [ object ["code" .= ("endpoint-not-allowlisted" :: Text.Text)],
+            object ["code" .= ("endpoint-not-allowlisted" :: Text.Text), "id" .= ("endpoint" :: Text.Text), "unknown" .= True],
+            object ["code" .= ("execution-metadata-unsupported" :: Text.Text), "id" .= ("unexpected" :: Text.Text)],
+            object ["code" .= ("future-cause" :: Text.Text), "id" .= ("endpoint" :: Text.Text)]
+          ]
+        let malformed = object ["schemaVersion" .= (2 :: Int), "kind" .= ("preflight-error" :: Text.Text), "errors" .= [object ["code" .= ("incompatible-correlation" :: Text.Text), "id" .= ("operation" :: Text.Text), "correlationId" .= Null]]]
+        assert (isLeft (decodeRunResult (encode malformed)))
+        let foreignField = object ["schemaVersion" .= (2 :: Int), "kind" .= ("preflight-error" :: Text.Text), "errors" .= [object ["code" .= ("missing-handler" :: Text.Text), "id" .= ("operation" :: Text.Text), "cause" .= object ["code" .= ("execution-metadata-unsupported" :: Text.Text)]]]]
+        assert (isLeft (decodeRunResult (encode foreignField))),
       testPropertyNamed "all reason tags have an explicit wire encoding" "reasonTags" $
         withTests 1 $
           property $
@@ -68,7 +82,8 @@ tests =
                     UnresolvedReference "missing",
                     ActionAfterExpectations,
                     EmptyOutcomeContract "action",
-                    EmptyExpectations
+                    EmptyExpectations,
+                    ConflictingOperation "conflicting-operation"
                   ],
                 MissingHandler "handler",
                 MissingSource "source",

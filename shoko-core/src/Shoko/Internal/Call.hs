@@ -18,3 +18,7 @@ data CallContext = CallContext
     callTime :: !Clock,
     callExecutionId :: !(Maybe Text)
   }
+
+detachedCallContext :: Clock -> MonotonicTime -> MonotonicTime -> Maybe Baseline -> Maybe Correlation -> CallContext
+detachedCallContext clock end cutoff base selected =
+  CallContext (const (pure (Left DetachedInputContext))) end base selected (\_ _ -> pure (Left "detached-substep")) cutoff clock Nothing

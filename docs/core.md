@@ -1,73 +1,169 @@
-# Describing and running a scenario
+# Describing, composing, and running scenarios
 
-Core consumers define business operations as a GADT, a Haskell datatype whose
-constructors retain each operation's result type. They implement `Vocabulary` to
-describe public operation IDs, capabilities, reference dependencies, and any
-composite substeps. The compiling examples are
-[account provisioning](../shoko-core/test/Consumer/Account.hs) and
-[an append-only delivery ledger](../shoko-core/test/Consumer/DeliveryLedger.hs).
-The account scenario runs through both a set of accounts and a differently named
-creation log, checking their actual stored state through the same observation.
+A context defines business operations as a `Vocabulary` GADT: each constructor
+retains its operation's result type and describes its public ID, capabilities,
+input dependencies, and substeps. `declareOperation`, `dependsOn input`, and
+`withSubstep` build that description without reading input values. Compiling
+consumers cover [accounts](../shoko-core/test/Consumer/Account.hs),
+[durable deliveries](../shoko-core/test/Consumer/DeliveryLedger.hs), and
+[composed registration/accounts](../shoko-core/test/Consumer/Composed.hs).
 
-`scenario id title revision` builds a fixed sequence with `given` and `act`, then
-an `expect` group. Named steps return opaque `Ref a` values. `fromRef`, `pure`,
-`fmap`, and applicative composition form `Input a` values without reading runtime
-results. `accept [tags] operation` declares allowed domain outcomes, including a
-specific rejection when testing negative behavior. Expectations use `observe
-predicateId operation predicate`, wrapped in `eventually`, `never`, or
-`exactlyOnce`; `within` adds an enclosing window. The revision changes when
-predicates or recipes change.
+`given` and `act` return opaque `Ref a` values. `fromRef`, `pure`, `fmap`, and
+applicative composition produce `Input a` values without resolving runtime
+results. `accept [tags] operation` declares accepted domain outcomes, including
+documented rejections. An observation checks a typed result with `observe` or
+`observeThat`; `eventually`, `never`, and `exactlyOnce` add temporal meaning,
+and `within` bounds an expectation group.
 
-The supported entry points, all available from `Shoko`, are:
+A reusable workflow is an ordinary `ScenarioBuilder op a`, optionally taking
+inputs and returning references and correlation handles for its caller:
 
 ```haskell
-inspectScenario
-  :: Vocabulary op => Scenario op -> Either [DefinitionError] Description
+registrationBlock :: ScenarioBuilder Registration (Ref Text, CorrelationRef)
+registrationBlock = do
+  qualified <- given "qualified" (accept ["ready"] Qualified)
+  registered <- act "complete" (accept ["completed"] (Complete (fromRef qualified)))
+  selected <- correlate (CorrelationAlias "registration")
+    (BusinessKeyName "registrationId") (fromRef registered)
+  expectAfterActions $ eventually "registered" $ correlatedBy selected $
+    observeThat (Registered (fromRef registered)) (predicate "exists" id)
+  pure (registered, selected)
+```
 
-resolveScenario
-  :: Vocabulary op
-  => Environment -> RunOptions -> CorrelationPlan -> Binding op resource
-  -> Scenario op
+`namespace "inviter" registrationBlock` qualifies local node, expectation, and
+correlation instance IDs, for example `inviter.complete` and
+`inviter.registration`. Nested namespaces join with dots. Returned references and
+handles retain their fully qualified identity outside the block; external inputs
+and handles keep their original identity inside it. Operation IDs, predicate IDs,
+and semantic business-key names remain unchanged. Empty namespace components and
+colliding qualified identifiers fail inspection. Correlation aliases have their
+own namespace, separate from node/expectation IDs.
+
+Strict `expect` forbids later actions. `expectAfterActions` lets a block declare
+its consequences while allowing more actions to follow. Both run after the last
+action, with one shared activation time. Deferred declarations are never
+intermediate checkpoints. Their relative declaration order is preserved.
+
+`predicate name test` gives a named predicate. Compose it with `.&&.`, `.||.`,
+`negated`, or `onPart label project`; `observeThat` retains both the derived ID
+and leaf validation metadata. Names use ASCII letters, digits, `_`, `-`, and `.`.
+For example, `predicate "exists" id .&&. negated (predicate "absent" not)` renders
+as `(exists and not(absent))`.
+
+Combine context vocabularies with `(:+:)` and their bindings with
+`combineBindings`. Result-preserving vocabulary maps lift existing concrete
+producers without changing their definition:
+
+```haskell
+composedRegistration :: Scenario (Registration :+: Accounts)
+composedRegistration =
+  scenario "composed-registration" "Register two entities and check an account" "v1" $ do
+    _ <- namespace "inviter" (hoistScenarioBuilder InL registrationBlock)
+    (invitee, _) <- namespace "invitee" (hoistScenarioBuilder InL registrationBlock)
+    hoistScenarioBuilder InR (accountBlock invitee)
+```
+
+The accounts block creates its own account ID, declares `account` with semantic
+key `accountId`, and selects that handle on its observation. The returned
+registration reference connects the two contexts. `hoistAction`,
+`hoistObservation`, and `hoistExpectations` provide the same vocabulary mapping
+at smaller boundaries. Each accepts `forall x. f x -> g x`, preserving result
+types, predicates, windows, and correlation selections. Optional `Member`/`inject`
+support distinct vocabularies in right-nested sums. Explicit `InL`/`InR` chooses
+an occurrence in repeated vocabularies or other sum shapes. Conflicting operation
+IDs with different capabilities or substeps fail inspection; dependencies may
+vary across uses of one operation. Authors still choose stable context-qualified
+operation IDs.
+
+Finalize each independent verification with its own scenario ID and revision:
+
+```haskell
+registrationAlone = scenario "registration-alone" "Register one entity" "v1"
+  (registrationBlock >> pure ())
+registrationReused = scenario "registration-reused" "Reuse the workflow" "v1"
+  (registrationBlock >> pure ())
+```
+
+To reuse an existing scenario, move its builder definition into a named workflow
+and keep the original `scenario` call as a thin wrapper. There is no finalized
+scenario concatenation or extraction API. Every wrapper owns its revision, which
+must change when the shared predicates or recipe change. Runs acquire fresh
+resources and produce separate reports.
+
+Inspection and resolution are pure; execution uses the single bounded runner:
+
+```haskell
+inspectScenario :: Vocabulary op => Scenario op -> Either [DefinitionError] Description
+resolveScenario :: Vocabulary op
+  => Environment -> RunOptions -> Binding op resource -> Scenario op
   -> Either [PreflightError] (ResolvedScenario op resource)
-
-runScenario
-  :: Vocabulary op
+runScenario :: Vocabulary op
   => Clock -> LogicalInput -> ResolvedScenario op resource -> IO RunResult
 ```
 
-Import result constructors from `Shoko.Result`, clocks from `Shoko.Clock`, and
-wire functions from `Shoko.Result.Json`. Inspection and resolution perform no IO.
-Resolution checks the entire declared operation set, binding metadata, lifecycle
-and cleanup capabilities, correlation support, and per-run synthetic consent
-before acquisition. Production execution is unsupported. A missing handler or
-denied capability is a preflight error rather than a failed business assertion.
-The logical recipe revision and parameter names are also validated before
-acquisition; invalid metadata returns `PreflightFailure` without executing a run.
+Import construction functions from `Shoko`, descriptions from `Shoko.Scenario`,
+result constructors from `Shoko.Result`, clocks from `Shoko.Clock`, and wire
+functions from `Shoko.Result.Json`. Resolution checks handlers, roles, source
+consistency, all capability requirements, correlation compatibility, and synthetic
+consent before acquisition. Production execution remains unsupported.
 
-A `Binding op resource` supplies pure contracts for each operation and its
-`FixtureOperation`, `ActionOperation`, or `ObservationOperation` role, plus effectful
-acquisition, release, baseline, action, and observation handlers. Acquisition
-receives a finalizer registrar. Register partial resources before subsequent
-interruptible work; use normal masked allocation/registration patterns where
-needed. A resource can retain the registrar for fixtures that allocate later.
-Registered finalizers run in reverse registration order; the completed resource's
-release runs first. Avoid registering a second deletion for the same resource.
-`Retained` records a contracted disposition when deletion is not appropriate.
+`binding name acquire release handlers` constructs an abstract binding. Its
+lookup returns `Right Nothing` for unsupported operations, `Right (Just handler)`
+for supported ones, or `Left HandlerBuildError` for invalid construction. Those
+causes survive preflight as `HandlerConstructionFailed`; never collapse them into
+absence. `actionHandler` serves fixture/action roles. `observationHandler` owns its
+contract, `Source`, correlation requirement, and execution callback.
+`noRequirements`, `requiring`, and `cleanupRequiring` construct contracts;
+`requiringLifecycle` declares unconditional acquisition/release requirements.
+Read-only accessors expose metadata without running IO.
 
-Handlers resolve inputs through `CallContext.resolveInput`, which checks declared
-dependencies and uses checked `Dynamic` lookups. No unchecked cast is used.
-Composite actions call `CallContext.substep` with a declared substep ID; its
-request shares the remaining deadline and produces timing/reason evidence.
-Unknown substeps never execute. Bindings remain ordinary trusted Haskell code
-responsible for describing their complete operation inventory.
+`sampledSource (SourceId "accounts.state")` captures a host monotonic baseline.
+`newSource` supplies custom capture and coverage for a durable reader. `focus`
+projects both capture and execution into a larger resource. Reusing one source
+label inside a binding asserts the same acquired reader and capture semantics;
+equal coverage cannot establish closure identity. Distinct readers/scopes need
+distinct labels. `combineBindings` acquires both components, unions lifecycle
+requirements, and rejects cross-component source collisions before acquisition.
+Completed leaves register their releases under masking and clean up in reverse
+order under one shared grace deadline. Partial acquisitions register cleanup
+before further interruptible work; each resource is released once.
 
-`BusinessKeyFrom` can use a fixed non-secret input, while
-`businessKeyFromResult key nodeId` selects a named action's `Text` identity after
-that action completes. The latter is useful when a composite registration action
-returns its registration ID. Missing node IDs fail preflight. A missing runtime
-key yields `Unknown/CorrelationLost` without an uncorrelated observation.
-Execution-ID correlation requires explicit binding support; merely assigning a
-report run ID does not establish remote propagation.
+Contexts are abstract. `resolveInput context input` returns
+`IO (Either InputResolutionError a)`, distinguishing undeclared dependencies,
+missing references, type mismatch, and detached contexts. Denied accesses remain
+recorded even if a handler ignores `Left`; they cannot produce Pass.
+`runSubstep context name action` only executes declared substeps under the
+remaining request deadline. `requestDeadline`, `evidenceUntil`, `sourceBaseline`,
+`correlation`, `executionId`, and `callClock` are plain accessors.
+`detachedCallContext` supports direct adapter tests and refuses input resolution
+and substeps. Bindings remain trusted Haskell responsible for accurate contracts.
+
+`CorrelationAlias`, `BusinessKeyName`, `CorrelationId`, and `SourceId` are distinct
+newtypes with explicit constructors and text accessors. They have no `IsString`
+instances. `MonotonicTime` is an absolute microsecond timestamp; `Duration` is a
+relative budget. Use `addDuration`, `differenceMicros`, and `monotonicMicros`
+instead of numeric instances. The fake clock advances by `Duration`. These types
+retain scalar string/integer JSON representations.
+
+`correlate alias businessKey input` declares one correlation instance. Every
+observation selects its instance with `correlatedBy`; an outer selection replaces
+an inner one. A handler's `RequiresBusinessKey key` constrains compatibility and
+does not select an instance implicitly. Missing, undeclared, and incompatible
+selections are preflight errors. Two namespaced registrations may use the same
+`registrationId` key with distinct values. Declarations depend only on earlier
+nodes. After actions, an empty or unresolved value makes only that instance's
+observations `Unknown/CorrelationLost`; terminal action failure suppresses every
+expectation as `PrerequisiteUnavailable`. Native reads can use `guardCorrelation`
+to compare the operation's typed key input with its selected business key.
+
+`propagateExecutionId` declares one global `execution-id` handle. Repeated calls,
+including in namespaces, are idempotent; the alias is reserved for this strategy.
+Actions receive `executionId context == Just runId` only when it is declared.
+Observations separately receive their explicitly selected correlation. HTTP
+handler wrappers populate the run label, reject conflicting labels, and transmit
+it only to opted-in endpoints. Declaring or transmitting a run ID does not prove
+remote durable propagation; a context must establish that proof and use an ID
+format compatible with its target.
 
 The execution budget starts before acquisition and source baselines. Defaults
 are 30 seconds total, 10 seconds for `eventually`, 100 milliseconds between polls,
@@ -100,7 +196,7 @@ history before declaring a miss Fail. Its closing request may use remaining
 execution time after the evidence cutoff; a positive completed after that cutoff
 cannot Pass. A missing closing proof remains Unknown.
 
-`CallContext.evidenceUntil` is the fixed evidence cutoff; `deadline` is the
+`evidenceUntil context` is the fixed evidence cutoff; `requestDeadline context` is the
 remaining request bound. A negative/history check may need its final read after
 the cutoff while execution budget remains. Use a shorter `within` window when a
 real reader needs this closing read. That read cannot extend the evidence window
@@ -127,7 +223,7 @@ failure makes an otherwise passing result Unknown and preserves an existing Fail
 Real cancellation attempts finalization within the same finite grace and then
 remains cancellation.
 
-`encodeRunResult` and `decodeRunResult` own explicit v1 fields and tags. The decoder
+`encodeRunResult` and `decodeRunResult` own explicit v2 fields and tags. The decoder
 checks the version, known fields/tags, typed values, and description digest; decode
 errors omit input fragments. The digest is SHA-256 of a versioned fixed-order JSON
 array of public description fields, with counts delimiting variable sequences.
@@ -148,3 +244,6 @@ nix develop --command cabal exec -- runghc -XGHC2024 -XOverloadedStrings \
   -package=shoko-core -ishoko-core/test shoko-core/test/UpdateGoldens.hs
 git diff -- shoko-core/test/golden/
 ```
+
+Revision 2026-10-19: document composable builders, handler-owned sources, explicit
+correlation instances, vocabulary hoisting, typed boundaries, and result v2.

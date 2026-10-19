@@ -23,7 +23,7 @@ anchors:
 
 The rule that attributes observed evidence to the business activity being verified.
 
-Shoko selects a business key or explicitly supported propagated execution ID. A baseline alone cannot establish attribution. Missing or malformed correlation must leave evidence unavailable rather than broaden a query to unrelated activity.
+A scenario declares correlation instances and every observation explicitly selects a handle. An instance uses a semantic business key or explicitly supported execution ID; namespaced instances may share a business-key name while identifying different entities. A baseline alone cannot establish attribution. Missing or malformed correlation must leave evidence unavailable rather than broaden a query to unrelated activity.
 
 See the [implementation or guide](../../shoko-core/src/Shoko/Correlation.hs).
 

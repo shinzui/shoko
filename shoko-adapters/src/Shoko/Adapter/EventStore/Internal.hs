@@ -123,10 +123,11 @@ readerHandler :: SourceId -> EventQuery a -> Handler (Reader a) (EventEvidence a
 readerHandler label query = observationHandler (requiring [ReadEvents] noRequirements) (queryRequirement query) owned perform
   where
     compatible (Reader _ _ actual allocated _ _) = label == actual && sameQuery query allocated
+    declared (Reader settings schema source _ fetch state) = Reader settings schema source query fetch state
     owned = newSource label DurableHistory $ \reader clock ->
-      if compatible reader then capture reader clock label else pure (Left "event-descriptor-mismatch")
+      if compatible reader then capture (declared reader) clock label else pure (Left "event-descriptor-mismatch")
     perform reader context =
-      if compatible reader then observeEvents context reader else pure (ObservationUnavailable "event-descriptor-mismatch")
+      if compatible reader then observeEvents context (declared reader) else pure (ObservationUnavailable "event-descriptor-mismatch")
 
 -- | Re-scan the entire bounded scope in one repeatable-read snapshot. A global
 -- high-water mark cannot skip a delayed lower-position commit in another stream.

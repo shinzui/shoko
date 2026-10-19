@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-18T17:14:48Z
       mode: "update"
       note: "Define registration MVP acceptance, selected-reader prerequisites, and isolated requirement evidence."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-19T03:49:45Z
+      mode: "update"
+      note: "Record the implemented composition API and v2 result prerequisite for the future context-owned host."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -68,6 +73,10 @@ On 2026-10-01, the initial plan selected paired local migration verification. Th
 Read `docs/research/initial-specification-requirement-validation.md`, especially its real workflow, correlation, machine access, OTP, and evidence findings. Accepted outputs of `docs/plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md` are now `integration/workflow.json`, `docs/workflows/first-staging-workflow.md`, and `scripts/workflow-env`. They define the expected and observed Kubernetes target identity, actual deployment, controlled inputs, actions/read paths, credentials/access route, external-effect policy, and independently smoke-tested domain outcome. Missing access remains an unmet prerequisite rather than a skipped passing integration test.
 
 Complete `docs/plans/4-implement-postgresql-and-http-evidence-bindings.md` and `docs/plans/6-expose-scenario-inspection-execution-and-structured-reports.md` are also hard dependencies. For each event store in the accepted manifest’s `requiredAdapters`, additionally require the corresponding milestone of `docs/plans/5-implement-kiroku-and-message-db-evidence-bindings.md`: M1 and all M3 Kiroku checks for Kiroku, M2 and all M3 Message DB checks for Message DB. Neither unused reader blocks this child. A manifest needing only HTTP/PostgreSQL has no EP-5 hard dependency. Required interval coverage cannot be waived to avoid an event-reader dependency. The full MasterPlan still requires both readers eventually.
+
+The context host should consume the `0.2.0.0` public API implemented by [ExecPlan 8](8-compose-verifications-from-reusable-scenario-vocabulary-and-binding-blocks.md): reusable `ScenarioBuilder` blocks, per-operation handlers with owned sources, vocabulary hoisting/sums where needed, and scenario-owned `correlate`/`correlatedBy` handles. `Entry` and `resolveScenario` no longer accept an external correlation plan. Core reports use `schemas/run-result-v2.schema.json`, with ordered correlation-instance resolutions and expectation selections; the workflow-manifest and identity-artifact schema versions are unchanged. Keep the existing staging acceptance scope and early real action-to-evidence check.
+
+A read-only integration audit on 2026-10-19 found only `integration/examples/workflow.example.json` in this checkout, with no accepted `integration/workflow.json`. Mori lists no registered dependents of `mori://shinzui/shoko`. The current `mori://tan/registration-service-v2` checkout has no Shōko imports or verification package; `mori://tan/registration-service-v2/packages/registration-verification` remains the intended host artifact named by the example. There is no active downstream host to migrate in this change. Resolve current context state again when starting M1.
 
 [ADR 0004](../adr/0004-gate-parity-on-real-workflows-and-context-owned-vocabulary.md) sets staging acceptance and domain ownership. [ADR 0002](../adr/0002-keep-scenarios-inspectable-and-bindings-explicit.md) defines scenario/binding/policy boundaries; [ADR 0003](../adr/0003-record-bounded-evidence-and-three-valued-results.md) defines evidence semantics; [ADR 0001](../adr/0001-use-jitsurei-standards-and-the-seihou-haskell-flake.md) defines build practices. The [platform rewrite-gates ADR](mori://tan/tan-platform/docs/adr-0002-track-infrastructure-and-observability-as-rewrite-gates) means a workflow pass does not establish migration parity, infrastructure readiness, or cutover approval.
 
@@ -151,3 +160,5 @@ Hard dependencies: Complete `docs/plans/2-establish-the-first-workflow-contract-
 Revision 2026-10-01: replace local paired acceptance with verification of the existing Kubernetes staging system, following the user's confirmed goal. Keep CI as an optional launcher and parity as a later use case.
 
 Revision 2026-10-18: make registration acceptance the first-use MVP gate, condition event-reader prerequisites on required evidence, specify context-host packaging, isolate and seal scenario artifacts, and retain rewrite requirement coverage without claiming automatic parity.
+
+Revision 2026-10-19: record ExecPlan 8's implemented public composition/correlation API and v2 core result contract as context for host implementation, without changing staging acceptance or the independent manifest/identity formats.

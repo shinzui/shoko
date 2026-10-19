@@ -29,6 +29,29 @@ def main():
             raise SystemExit("Schema accepted an unsupported version")
         if validator.is_valid(dict(value, undeclaredField=True)):
             raise SystemExit("Schema accepted an undeclared field")
+    def preflight(error):
+        return {"schemaVersion": 2, "kind": "preflight-error", "errors": [error]}
+
+    def construction(cause):
+        return preflight({"code": "handler-construction-failed", "id": "operation", "cause": cause})
+
+    for code in ("endpoint-not-allowlisted", "observation-method-not-get", "observation-scope-missing"):
+        valid = {"code": code, "id": "endpoint"}
+        validator.validate(construction(valid))
+        for malformed in ({"code": code}, valid | {"unknown": True}):
+            if validator.is_valid(construction(malformed)):
+                raise SystemExit("Schema accepted a malformed handler construction cause")
+    validator.validate(construction({"code": "execution-metadata-unsupported"}))
+    for malformed in ({"code": "execution-metadata-unsupported", "id": "unexpected"},
+                      {"code": "future-cause", "id": "endpoint"}):
+        if validator.is_valid(construction(malformed)):
+            raise SystemExit("Schema accepted an unknown or open construction cause")
+    validator.validate(preflight({"code": "inconsistent-source", "id": "source"}))
+    validator.validate(preflight({"code": "invalid-definition", "details": [{"code": "conflicting-operation", "id": "operation"}]}))
+    for code in ("undeclared-correlation", "incompatible-correlation"):
+        validator.validate(preflight({"code": code, "id": "operation", "correlationId": "entity"}))
+        if validator.is_valid(preflight({"code": code, "id": "operation", "correlationId": None})):
+            raise SystemExit("Schema accepted a malformed correlation ID")
     print(f"Validated {len(files)} run-result examples against schema v2")
 
 

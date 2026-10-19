@@ -1,17 +1,23 @@
 # SQL, HTTP, and durable event adapters
 
-`shoko-adapters` supplies IO helpers for context-owned `Binding` handlers. It
+`shoko-adapters` supplies ready-made handlers and IO helpers for context-owned bindings. It
 does not define business operations or infer domain outcomes from status codes.
 See the compiling consumer in `shoko-adapters/test/AdapterTests.hs` for the full
 inspection → resolution → HTTP command → SQL/REST observation → result path.
 
 PostgreSQL queries use validated `identifier` values, a qualified `Table`, a
-mandatory `Scope` naming the selected business key and its text column, and an
+mandatory `Scope (BusinessKeyName "accountId") column` naming the selected business key and its text column, and an
 optional typed predicate. `equals` supports text, bigint, and Boolean parameters;
 `andAlso` combines them. `rowExists`, `rowAbsent`, `rowCount`, and `columnValue`
 construct descriptors without IO. There is no raw SQL fragment or unscoped query
 constructor. Values containing quotes remain binary parameters. A scope/key-name
 mismatch or missing correlation fails before opening a connection.
+
+`postgresObservation (SourceId "accounts.sql") query` packages a sampled source,
+read contract, the semantic key from `queryScope`, and `observeQuery`.
+`postgresSource` exposes the sampled source separately. For example,
+`focus snd (postgresObservation (SourceId "accounts.sql") query)` projects its
+capture and observation into the second component of a resource pair.
 
 `columnValue` returns `NoRows`, `NullValue`, `OneValue a`, or `MultipleRows`.
 It reads at most two rows and verifies the PostgreSQL column type before
@@ -34,8 +40,9 @@ cannot establish continuous absence or exactly-once delivery.
 HTTP `endpoint` declarations fix the URL, method, response-byte limit, additional
 capabilities, optional execution-label support, and optional business-key query
 parameter. `httpConfig` rejects duplicate names; dispatch selects only from that
-allowlist. `httpContract` contributes `SendHttp`, mutation's `WriteState`, and
-the explicitly declared additional capabilities to core preflight. The host
+allowlist. `httpActionHandler` and `httpObservationHandler` own their contracts,
+sources, and callbacks. Their contracts contribute `SendHttp`, `ReadState` or
+`WriteState`, and the explicitly declared additional capabilities to preflight. The host
 must add `ExternalSideEffect` for an endpoint with that behavior. Environment
 names alone do not approve destinations.
 
@@ -51,15 +58,23 @@ have no `Generic` instance, so the adapter uses their public selectors and
 record-update API in this transport boundary.
 
 `httpAction` requires an explicit status/body decoder producing a typed value
-and domain tag. Only an exact documented rejection should receive its rejection
+and domain tag. `httpActionHandler config endpoint payloadBuilder decoder` packages
+that decoder with the same allowlisted descriptor used for policy. Only an exact documented rejection should receive its rejection
 tag. Unexpected tags fail the core action contract; transport or decoding
 uncertainty yields Unknown. A timeout never retries a mutation. `httpObservation`
 requires GET plus a declared business-key query parameter and injects the
-selected key using URL encoding. There is no broad-read fallback. Both helpers
-advertise sampled coverage. Binding metadata currently supports business-key
-correlation only. A validated W3C version-00 `traceparent` may be supplied.
-The optional `runLabel` sends `x-shoko-execution-id` only to an endpoint that
-explicitly supports it; this label does not prove downstream propagation.
+selected key using URL encoding. There is no broad-read fallback. `httpObservationHandler` rejects non-GET or unscoped descriptors during pure
+construction. Payload builders return `IO (Either HttpPayloadError HttpPayload)`;
+`PayloadInputError` retains typed input-resolution failures and `InvalidPayload`
+represents invalid construction. Both read helpers advertise sampled coverage and
+require their endpoint's `BusinessKeyName`. A validated W3C version-00 `traceparent` may be supplied.
+HTTP handler wrappers populate `runLabel` from `executionId context` when the
+scenario declares propagation and reject a conflicting explicit label. The header
+is sent only to an opted-in endpoint. The independent transport check verifies
+both matching IDs and disabled endpoints; this does not prove durable propagation.
+Before transport IO, handlers compare acquired endpoint method, target, limits,
+capabilities, propagation, and scope with the declared descriptor. Mismatches are
+unavailable evidence.
 
 Run the actual local IO checks from the workspace root:
 
@@ -94,7 +109,7 @@ description = do
   scope <- categoryScope "deliveries"
   bounded <- limits 64 16 2000
   eventQuery bounded scope AppendOnlyDuringRun
-    (BusinessKeyField "deliveryId") "Delivered" (const (Right True))
+    (BusinessKeyField (BusinessKeyName "deliveryId")) "Delivered" (const (Right True))
 ```
 
 `limits` supplies page size, page count, and the maximum request time in
@@ -108,16 +123,22 @@ Message DB requires business-key correlation: its server correlation option
 matches a category, so it cannot establish an exact execution ID. The bridge
 never enables `sql_condition`.
 
-The contract helpers take only the public source name and query: Kiroku returns
-a pure `BindingContract`, while Message DB returns `Nothing` for unsupported
-execution correlation. Resolve those contracts before IO; allocate readers in
-`Binding.acquire`. The compiled consumer verifies denied policy performs zero
-reader allocations.
+`kirokuObservation (SourceId "deliveries.events") query` returns a handler owning
+the durable source and its correlation requirement. `messageDbObservation` returns
+`Either HandlerBuildError (Handler ...)`, with `Left ExecutionMetadataUnsupported`
+for execution correlation. Preserve that cause in binding lookup with
+`Just <$> messageDbObservation source query`; unsupported vocabulary patterns use
+`Right Nothing`. Construction performs no reader allocation.
 
-Create one fresh reader per finite run, with a distinct public source identity
-for each scope/decoder. Wire its contract, baseline, and observation functions
-into the context's `Binding`; the compiling example is
+Create a fresh reader per finite run using the same query value and a distinct
+`SourceId` for each reader/scope/decoder. Use `focus` when it belongs inside a
+larger context resource. The handler checks its source ID, query limits, scope,
+history policy, correlation mode, and event type against the allocated reader
+before capture or observation IO. Decoder functions cannot be compared: reusing
+the same query for acquisition and handler construction remains the caller's
+obligation. The compiling example is
 [`EventStore/Contract.hs`](../shoko-adapters/test/EventStore/Contract.hs).
+
 Kiroku accepts credential text, a validated schema name, the public source ID,
 and query. Message DB fixes the server schema to `message_store`. Resources
 contain no persistent connections; each bounded read owns a connection and a
@@ -166,3 +187,7 @@ It compares application checkpoint rows before and after the shared suite and
 stops only its owned Unix-only PostgreSQL cluster. Both-store acceptance requires
 the default command; a single-store pass names only that store. Native Nix adapter
 checks run these same fixtures against compiled binaries.
+
+Revision 2026-10-19: replace separate contract/baseline wiring with handler
+constructors, typed source/business-key names, effectful payload builders, descriptor
+consistency checks, and scenario-owned execution-ID transport.

@@ -3,6 +3,7 @@ module Main (main) where
 import Data.Aeson (encode)
 import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.Set qualified as Set
+import Registration (registrationEntries)
 import Shoko
 import Shoko.Cli
 import Shoko.Cli.Config (configKeys)
@@ -20,7 +21,7 @@ instance Vocabulary Decision where
   describeOperation (ObservedDecision input _) = OperationInfo "consumer-decision-observation" (Set.singleton ReadState) (inputDependencies input) []
 
 registry :: Registry
-registry = Registry ["local"] [entry "consumer-approved" True, entry "consumer-rejected" False]
+registry = Registry ["local"] ([entry "consumer-approved" True, entry "consumer-rejected" False] ++ registrationEntries)
   where
     entry name approved =
       Entry

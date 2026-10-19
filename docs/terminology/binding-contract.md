@@ -1,7 +1,7 @@
 ---
 type: "Term"
 title: "binding contract"
-description: "The pure declaration of a handler's permissions, cleanup requirements, correlation support, source, and coverage strength."
+description: "The pure declaration of a handler's capability and cleanup requirements."
 generated:
   by: "openai/gpt-6"
   at: "2026-10-19T02:45:50Z"
@@ -22,9 +22,9 @@ anchors:
 
 # binding contract
 
-The pure declaration of a handler's permissions, cleanup requirements, correlation support, source, and coverage strength.
+The pure declaration of a handler's capability and cleanup requirements.
 
-Resolution looks up a contract for each operation and its role before acquisition. Contracts expose requirements for inspection and policy checks; they do not acquire resources or prove that the remote target is ready.
+Resolution looks up a handler for each operation and role before acquisition. Each handler owns its contract; observation handlers separately own their source, coverage strength, and correlation requirement. Contracts expose requirements for inspection and policy checks; they do not acquire resources or prove that the remote target is ready.
 
 See the [implementation or guide](../../shoko-core/src/Shoko/Binding.hs).
 

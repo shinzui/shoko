@@ -79,6 +79,12 @@ configuredEndpoint descriptor (Http (HttpConfig endpoints) _) =
   let (key, _, _, _, _, _, _) = endpointParts descriptor
    in maybe False (sameEndpoint descriptor) (Map.lookup key endpoints)
 
+-- Reuse the manager, but execute exactly the descriptor whose contract was checked.
+declaredEndpoint :: Endpoint -> Http -> Http
+declaredEndpoint descriptor (Http _ manager) =
+  let (key, _, _, _, _, _, _) = endpointParts descriptor
+   in Http (HttpConfig (Map.singleton key descriptor)) manager
+
 httpActionHandler :: HttpConfig -> Text -> (CallContext -> IO (Either HttpPayloadError HttpPayload)) -> (Int -> ByteString -> Either HttpFailure (Text, a)) -> Either HandlerBuildError (Handler Http a)
 httpActionHandler config key build decode = do
   descriptor <- lookupEndpoint config key
@@ -90,7 +96,7 @@ httpActionHandler config key build decode = do
           Left _ -> pure (ActionUnavailable "payload-unavailable")
           Right payload -> case propagatedPayload context payload of
             Left _ -> pure (ActionUnavailable "payload-unavailable")
-            Right prepared -> httpAction resource context key prepared decode
+            Right prepared -> httpAction (declaredEndpoint descriptor resource) context key prepared decode
 
 httpObservationHandler :: HttpConfig -> Text -> (CallContext -> IO (Either HttpPayloadError HttpPayload)) -> (Int -> ByteString -> Either HttpFailure a) -> Either HandlerBuildError (Handler Http a)
 httpObservationHandler config key build decode = do
@@ -106,7 +112,7 @@ httpObservationHandler config key build decode = do
           Left _ -> pure (ObservationUnavailable "payload-unavailable")
           Right payload -> case propagatedPayload context payload of
             Left _ -> pure (ObservationUnavailable "payload-unavailable")
-            Right prepared -> httpObservation resource context key prepared decode
+            Right prepared -> httpObservation (declaredEndpoint descriptor resource) context key prepared decode
 
 -- A declaration supplies the run ID independently of this observation's selection.
 -- Endpoint opt-in still controls whether the request transmits it.

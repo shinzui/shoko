@@ -6,11 +6,39 @@ application that imports `Shoko.Cli`. No runtime Haskell compilation is involved
 The independently compiled example is `shoko-cli/test/ConsumerHost/Main.hs`.
 
 The host exports a `Registry` of supported environment names and `Entry` values.
-Each entry packages a typed scenario, correlation plan, safe logical-input
+Each entry packages a typed scenario with its own correlation declarations, a safe logical-input
 summary, named binding factories, and a live metadata callback. `SomeBinding`
 hides each implementation's resource type while preserving its operation GADT.
 The application's `main` calls `runShokoCli registry`; embedders can instead use
 `executeCli registry arguments` to receive a captured `CliRun`.
+
+The independent host also registers `registration-alone`, `registration-reused`,
+and `composed-registration` from
+[`Registration.hs`](../shoko-cli/test/ConsumerHost/Registration.hs). One concrete
+`registrationBlock` backs both standalone scenarios and appears twice under
+namespaces in the composed scenario. `hoistScenarioBuilder` preserves its returned
+reference and correlation handle while lifting it into a registration/accounts
+vocabulary sum. `combineBindings` acquires fresh state for both contexts.
+
+```bash
+nix develop --command cabal run shoko-consumer-host -- explain composed-registration
+nix develop --command cabal run shoko-consumer-host -- run composed-registration --format json
+nix develop --command cabal run shoko-consumer-host -- run registration-alone --format json
+nix develop --command cabal run shoko-consumer-host -- run registration-reused --format json
+```
+
+Explanation shows `inviter.qualified`, `invitee.qualified`, the correlation IDs
+`inviter.registration`, `invitee.registration`, and `account`, their semantic keys,
+and each expectation's selection. Runs exit 0 with schema-valid v2 reports. The
+composed report resolves two distinct registrations and the invitee's account.
+Each standalone process starts its fixture allocation at one, with independent
+scenario and run IDs. These are in-memory verifier examples.
+
+To reuse a workflow from an existing scenario, extract the builder definition and
+retain an explicit `scenario id title revision (block >> pure ())` wrapper for
+each verification. Update each wrapper's revision when the shared recipe changes.
+A finalized scenario is not concatenated with another scenario. Deferred
+expectations all activate after the last action in the finished scenario.
 
 Factories are pure: they construct binding metadata without acquiring resources,
 reading credentials, or discovering targets. Inspection calls them with `Nothing`
@@ -82,7 +110,7 @@ Do not put secret values directly into YAML. Optional `target.name`,
 `redaction.extraFields` can remove additional logical-parameter/supporting-data
 fields by name; it cannot enable raw payload rendering or disable mandatory secrecy.
 
-JSON run output is exactly one core v1 document on stdout; diagnostics use stderr.
+JSON run output is exactly one core v2 document on stdout; diagnostics use stderr.
 Text output starts with the verdict and retains expectation reasons, source,
 correlation, searched intervals, and disposition. Exit codes are 0 Pass, 1 Fail,
 2 usage/configuration/policy/target preflight, 3 Unknown, and 4 runner/command fault.
@@ -95,3 +123,7 @@ Interrupted execution leaves no completed evidence file. Persistence failure kee
 the primary report on stdout and returns exit 4. Build identity includes package
 version and source revision with explicit dirty/unrecorded status; dirty local
 builds should not be treated as pinned release builds.
+
+Revision 2026-10-19: move correlation declarations into scenarios, use handler-based
+compiled bindings, and demonstrate shared concrete workflows in independent and
+combined hosts with v2 reports.

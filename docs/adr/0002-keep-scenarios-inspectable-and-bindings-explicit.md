@@ -174,3 +174,13 @@ Native handlers transport it explicitly; HTTP wrappers populate the payload labe
 reject conflicts, and honor endpoint opt-in. This mechanism establishes transport,
 not durable remote propagation or target-compatible ID formats. Those remain the
 context owner's responsibility.
+
+Completion revision, 2026-10-19: the `0.2.0.0` composition API is implemented and
+exercised by independent finalized scenarios and repeated blocks in one host.
+Composition occurs before finalization; it does not merge completed scenarios or
+introduce intermediate verification checkpoints. After descriptor compatibility
+checks, adapters execute the declared endpoint/query and retain the same acquired
+reader state for capture and observation. Decoder identity remains the author's
+query-sharing obligation. The former external correlation plan and separate
+adapter contract/baseline helpers have been removed without compatibility aliases.
+The public core, adapter, and scenario-host guides describe the current API.
