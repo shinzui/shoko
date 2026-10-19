@@ -69,3 +69,58 @@ inspect without credentials or resource allocation, then create a fresh reader
 inside `Binding.acquire`. Message DB's pure contract rejects unsupported
 execution metadata before acquisition. The actual adapter consumer checks denied
 policy leaves reader allocation at zero.
+
+Planned API refinement, 2026-10-19: [ExecPlan 8](../plans/8-compose-verifications-from-reusable-scenario-vocabulary-and-binding-blocks.md)
+adds namespaced fragments and deferred expectation declarations while retaining
+the fixed action sequence and common expectation activation. Abstract handlers
+own contract, source, and correlation metadata exposed through pure accessors.
+Runtime input resolution becomes explicitly effectful so an undeclared access
+is recorded even when its caller ignores the error; inspection remains pure.
+
+Source-label equality is an author assertion about the same acquired reader,
+not proof that capture functions or reader state are interchangeable. Composed
+bindings must use distinct source labels, checked before acquisition. Resource
+projection must also project source capture. Composition registers both children's
+completed cleanup before returning, preserving reverse acquisition order and the
+finite cleanup grace period without an extra composite disposition. Lifecycle
+capabilities include unconditional cleanup even for unused components.
+
+Scenario-owned business keys are global and have typed inputs; namespaces affect
+node identifiers, not key names. Reserve `execution-id` for the execution strategy.
+Its declaration makes the ID available to actions separately from an observation's
+selected correlation. Declaring or transmitting it does not prove durable
+propagation; that remains a tested binding/target contract. These refinements
+are planned, not implemented by this ADR revision.
+
+Composition refinement, 2026-10-19: the follow-up to ExecPlan 8 supersedes the
+one-global-declaration-per-business-key restriction above. A correlation instance
+has a namespaced ID and an abstract handle, separate from its unchanged semantic
+key name. Observations explicitly select the handle; preflight checks its presence
+and compatibility with the handler. Two reused registration blocks may therefore
+select distinct entities with the same `registrationId` key. The execution handle
+remains a single run-wide declaration, requested idempotently by reusable blocks.
+
+Result-preserving vocabulary maps let a concrete `ScenarioBuilder f a` become
+`ScenarioBuilder g a` without changing its producer or losing symbolic outputs.
+They preserve namespaces, predicates, temporal windows, and correlation selections.
+The reusable unit is the builder definition; finished scenarios retain separate
+identities, revisions, lifecycles, and reports. Export a block beside a thin scenario
+wrapper, then compose blocks before finalization. Finished-scenario concatenation
+and intermediate verification checkpoints remain outside this API. These are
+planned interfaces, with public consumer and process checks required by ExecPlan 8.
+
+Haskell API refinement, 2026-10-19: ExecPlan 8 now distinguishes correlation
+aliases, semantic business-key names, correlation IDs, source IDs, and absolute
+monotonic timestamps with newtypes. Existing `Duration` represents relative
+budgets. These are category distinctions, with explicit constructors and no
+implicit string/numeric instances; validation remains responsible for contents.
+Runtime reference failures have an `InputResolutionError` algebra, and pure
+adapter construction failures have a `HandlerBuildError` algebra. Binding lookup
+preserves both invalid construction (`Left`) and unsupported operations
+(`Right Nothing`), so preflight retains the actual construction cause.
+
+Vocabulary transformations are named `hoistAction`, `hoistObservation`,
+`hoistExpectations`, and `hoistScenarioBuilder`. They preserve result types while
+changing operations; ordinary `fmap` changes result values. Explicit sum injection
+remains the foundation, with `Member` as optional convenience. These refinements
+are planned and must pass the plan's public-consumer and type-boundary checks.

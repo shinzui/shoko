@@ -89,3 +89,32 @@ accepted exactly-once result. A page cap, missing correlation, decoding error,
 disappearing previously seen ID, or source outage cannot establish complete
 history. Store-read credentials do not grant application writes, subscription
 checkpoints, queue acknowledgements, or migration privileges.
+
+Planned result refinement, 2026-10-19: [ExecPlan 8](../plans/8-compose-verifications-from-reusable-scenario-vocabulary-and-binding-blocks.md)
+introduces run-result v2 and a versioned description digest containing public
+correlation declarations without their input values. After successful actions,
+an unresolved required key makes only dependent expectations
+`Unknown/CorrelationLost`; other keyed expectations continue. Terminal action
+failures still suppress all expectations. Reports list successfully resolved
+correlations in declaration order; descriptions retain every declaration.
+Workflow-manifest and identity-artifact schemas retain their independent versions.
+This records the planned contract; current v1 behavior remains until implementation.
+
+Correlation-instance refinement, 2026-10-19: the ExecPlan 8 follow-up requires
+both declarations and resolved report entries to identify their correlation
+instance, independently of the semantic business-key name. Each expectation's
+selected instance is part of inspection and the description digest. Two instances
+using the same key name may resolve differently; one instance's failure affects
+only its dependent expectations. Schema v2 records successful resolutions as
+`correlationId`/`resolvedCorrelation` pairs and retains failed declarations and
+selections in the description. Selection omission and incompatibility are preflight
+errors, never grounds for choosing another instance implicitly.
+
+Typed-boundary refinement, 2026-10-19: ExecPlan 8's identifier and timestamp
+newtypes retain existing string and integer-microsecond JSON representations.
+The new handler-construction preflight failure contains an operation ID and a
+closed, typed cause containing only public identifiers. Input-resolution errors
+carry node IDs, never dynamic values or raw transport diagnostics, and map to
+the existing runtime reason vocabulary. Unknown cause codes and fields are
+rejected by the v2 decoder/schema. Newtypes alone do not change the description
+digest or temporal evidence semantics.
