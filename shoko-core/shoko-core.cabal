@@ -1,6 +1,6 @@
 cabal-version: 3.12
 name: shoko-core
-version: 0.1.0.0
+version: 0.2.0.0
 synopsis: Evidence-based distributed workflow verification
 description:
   Inspectable typed workflow descriptions, capability preflight, and a bounded
@@ -52,6 +52,7 @@ library
     Shoko.Environment
     Shoko.Evidence
     Shoko.Expectation
+    Shoko.Identifier
     Shoko.Observation
     Shoko.Prelude
     Shoko.Result
@@ -60,6 +61,8 @@ library
     Shoko.Scenario
 
   other-modules:
+    Shoko.Internal.Binding
+    Shoko.Internal.Call
     Shoko.Internal.Digest
     Shoko.Internal.Reference
 
@@ -81,9 +84,11 @@ test-suite shoko-core-test
     Consumer.Account
     Consumer.Composed
     Consumer.DeliveryLedger
+    Consumer.Hooks
     CoverageSpec
     FaultSpec
     GoldenFixtures
+    HandlerSpec
     PolicySpec
     ResultSpec
     RuntimeSpec

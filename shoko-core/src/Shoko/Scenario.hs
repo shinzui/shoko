@@ -118,12 +118,15 @@ collect prefix (Bind program f) =
    in (b, first ++ second)
 collect prefix (AddStep key fixture action) =
   let qualified = Text.intercalate "." (prefix ++ [key])
-   in (Ref qualified, [StepEntry (Step qualified fixture action)])
-collect prefix (AddExpectations es) = ((), map (ExpectEntry True . qualifyExpectation prefix) (expectationList es))
-collect prefix (AddDeferred es) = ((), map (ExpectEntry False . qualifyExpectation prefix) (expectationList es))
+   in (Ref qualified, [InvalidNamespace | Text.null key] ++ [StepEntry (Step qualified fixture action)])
+collect prefix (AddExpectations es) = ((), invalidExpectationNames es ++ map (ExpectEntry True . qualifyExpectation prefix) (expectationList es))
+collect prefix (AddDeferred es) = ((), invalidExpectationNames es ++ map (ExpectEntry False . qualifyExpectation prefix) (expectationList es))
 collect prefix (Namespace label program) =
   let (a, entries) = collect (prefix ++ [label]) program
    in (a, [InvalidNamespace | any Text.null (Text.splitOn "." label)] ++ entries)
+
+invalidExpectationNames :: Expectations op a -> [Entry op]
+invalidExpectationNames es = [InvalidNamespace | Expectation key _ _ _ <- expectationList es, Text.null key]
 
 qualifyExpectation :: [Text] -> Expectation op -> Expectation op
 qualifyExpectation prefix (Expectation key t windows observation) =

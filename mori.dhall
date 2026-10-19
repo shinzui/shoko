@@ -174,7 +174,7 @@ in  Schema.Project::{
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module
         , description = Some
-            "Typed descriptions, binding policy, bounded evidence, and result v1"
+            "Typed descriptions, binding policy, bounded evidence, and result v2"
         , location = Schema.DocLocation.LocalFile "docs/core.md"
         }
       , Schema.DocRef::{

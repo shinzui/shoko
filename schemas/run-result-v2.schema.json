@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Shoko run result v1",
+  "title": "Shoko run result v2",
   "description": "Finite verification evidence, runner faults, and preflight errors. Public fixture values are excluded. Monotonic times are microseconds, UTC times are ISO 8601.",
   "oneOf": [
     {
       "type": "object",
       "properties": {
         "schemaVersion": {
-          "const": 1
+          "const": 2
         },
         "kind": {
           "const": "verification"
@@ -27,7 +27,7 @@
       "type": "object",
       "properties": {
         "schemaVersion": {
-          "const": 1
+          "const": 2
         },
         "kind": {
           "const": "runner-fault"
@@ -71,7 +71,7 @@
       "type": "object",
       "properties": {
         "schemaVersion": {
-          "const": 1
+          "const": 2
         },
         "kind": {
           "const": "preflight-error"
@@ -1091,6 +1091,106 @@
           "required": [
             "code",
             "details"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "inconsistent-source"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "handler-construction-failed"
+            },
+            "id": {
+              "type": "string"
+            },
+            "cause": {
+              "$ref": "#/$defs/handlerBuildError"
+            }
+          },
+          "required": [
+            "code",
+            "id",
+            "cause"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "handlerBuildError": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "endpoint-not-allowlisted"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "observation-method-not-get"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "observation-scope-missing"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "execution-metadata-unsupported"
+            }
+          },
+          "required": [
+            "code"
           ],
           "additionalProperties": false
         }

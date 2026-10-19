@@ -1,6 +1,6 @@
 cabal-version: 3.12
 name: shoko-adapters
-version: 0.1.0.0
+version: 0.2.0.0
 synopsis: Scoped SQL and bounded HTTP evidence for Shoko
 description: Generic transport adapters for typed Shoko context bindings.
 license: BSD-3-Clause
@@ -38,7 +38,7 @@ common common
     bytestring >=0.12.2 && <0.13,
     containers >=0.7 && <0.8,
     hasql >=1.10.3.7 && <1.11,
-    shoko-core >=0.1 && <0.2,
+    shoko-core >=0.2 && <0.3,
     text >=2.1.4 && <2.2,
 
 library

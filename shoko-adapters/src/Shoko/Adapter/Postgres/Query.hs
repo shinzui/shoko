@@ -15,6 +15,7 @@ module Shoko.Adapter.Postgres.Query
     columnValue,
     compileQuery,
     queryDescription,
+    queryScope,
     queryDetails,
   )
 where
@@ -27,6 +28,7 @@ import Hasql.Decoders qualified as D
 import Hasql.Encoders qualified as E
 import Hasql.Statement (Statement, unpreparable)
 import Shoko.Correlation (Correlation (..))
+import Shoko.Identifier
 import Shoko.Observation (PublicValue (..))
 import Shoko.Prelude
 
@@ -44,7 +46,7 @@ identifier name
 
 data Table = Table !Identifier !Identifier deriving stock (Eq, Show, Generic)
 
-data Scope = Scope !Text !Identifier deriving stock (Eq, Show, Generic)
+data Scope = Scope !BusinessKeyName !Identifier deriving stock (Eq, Show, Generic)
 
 data SqlType a where
   SqlText :: SqlType Text
@@ -118,7 +120,7 @@ compileQuery selected query = case query of
     statement :: Table -> Scope -> Maybe Predicate -> (Text -> Text) -> D.Result b -> Either Text (Statement () b)
     statement _ (Scope key column) predicate sql result = case selected of
       ByBusinessKey selectedKey value
-        | key /= "" && key == selectedKey && value /= "" ->
+        | businessKeyNameText key /= "" && key == selectedKey && value /= "" ->
             let mandatory = Equal column SqlText value
                 (whereSql, params, _) = renderPredicate 1 (maybe mandatory (And mandatory) predicate)
              in Right (unpreparable (sql (" WHERE " <> whereSql)) params result)
@@ -141,3 +143,9 @@ queryDetails (Exists _ _ _) value = [("exists", PublicFlag value)]
 queryDetails (Absent _ _ _) value = [("absent", PublicFlag value)]
 queryDetails (Count _ _ _) value = [("row-count", PublicCount (toInteger value))]
 queryDetails (Value _ _ _ _ _) value = [("rows-seen", PublicCount (case value of NoRows -> 0; MultipleRows -> 2; _ -> 1))]
+
+queryScope :: Query a -> Scope
+queryScope (Exists _ scope _) = scope
+queryScope (Absent _ scope _) = scope
+queryScope (Count _ scope _) = scope
+queryScope (Value _ scope _ _ _) = scope

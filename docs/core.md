@@ -133,7 +133,7 @@ errors omit input fragments. The digest is SHA-256 of a versioned fixed-order JS
 array of public description fields, with counts delimiting variable sequences.
 It excludes runtime inputs; scenario revision, binary identity, and logical recipe
 remain separate identities. The public
-[schema](../schemas/run-result-v1.schema.json) and
+[schema](../schemas/run-result-v2.schema.json) and
 [goldens](../shoko-core/test/golden/) cover verification, expected rejection,
 Fail, Unknown, runner fault, and preflight error. They are unit examples rather
 than staging acceptance.

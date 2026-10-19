@@ -6,6 +6,8 @@ module Shoko.Evidence
   )
 where
 
+import Shoko.Clock (MonotonicTime)
+import Shoko.Identifier (SourceId)
 import Shoko.Observation
 import Shoko.Prelude
 
@@ -25,8 +27,8 @@ data Reason
 
 data SubstepEvidence = SubstepEvidence
   { substepId :: !Text,
-    startedAt :: !Integer,
-    finishedAt :: !Integer,
+    startedAt :: !MonotonicTime,
+    finishedAt :: !MonotonicTime,
     reason :: !Reason
   }
   deriving stock (Eq, Show, Generic)
@@ -36,8 +38,8 @@ data ActionEvidence = ActionEvidence
     operationId :: !Text,
     declaredOutcomes :: ![Text],
     observedOutcome :: !(Maybe Text),
-    startedAt :: !Integer,
-    finishedAt :: !Integer,
+    startedAt :: !MonotonicTime,
+    finishedAt :: !MonotonicTime,
     reason :: !Reason,
     substeps :: ![SubstepEvidence],
     supportingData :: ![(Text, PublicValue)]
@@ -46,16 +48,16 @@ data ActionEvidence = ActionEvidence
 
 -- | Search evidence deliberately contains no raw domain values or requests.
 data Evidence = Evidence
-  { source :: !Text,
+  { source :: !SourceId,
     operationId :: !Text,
     baseline :: !(Maybe Baseline),
-    pollStartedAt :: !Integer,
-    finishedAt :: !Integer,
+    pollStartedAt :: !MonotonicTime,
+    finishedAt :: !MonotonicTime,
     coverage :: !(Maybe Coverage),
     matchingOccurrenceIds :: ![Text],
     matchCount :: !Int,
     gaps :: !Bool,
-    evidenceDeadline :: !Integer,
+    evidenceDeadline :: !MonotonicTime,
     supportingData :: ![(Text, PublicValue)]
   }
   deriving stock (Eq, Show, Generic)

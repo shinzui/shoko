@@ -10,7 +10,7 @@ import Data.Text.Encoding qualified as Text
 import Data.Text.IO qualified as TextIO
 import GHC.Clock (getMonotonicTimeNSec)
 import Options.Applicative qualified as O
-import Shoko
+import Shoko hiding (binding, correlation)
 import Shoko.Cli.Config
 import Shoko.Cli.Options
 import Shoko.Cli.Registry
@@ -95,10 +95,10 @@ executeEntry command config@(HostConfig environment implementation format grants
       let runId = "run-" <> Text.pack (show tick)
           options = RunOptions runId synthetic Version.buildIdentity Nothing Nothing
           targetEnvironment = Environment environment False (Set.fromList grants) policy
-          inspectBinding (SomeBinding binding@(Binding _ _ contract _ _ _ _ _)) = case resolveScenario targetEnvironment options correlation binding source of
+          inspectBinding (SomeBinding binding) = case resolveScenario targetEnvironment options correlation binding source of
             Left errors -> Left errors
             Right resolved ->
-              let (_, _, _, _, _, _, _, report) = resolvedParts resolved
+              let report = resolvedPolicyReport resolved
                   sources = case scenarioParts source of
                     Left _ -> []
                     Right (_, _, expectations) ->
@@ -106,7 +106,10 @@ executeEntry command config@(HostConfig environment implementation format grants
                       | Expectation _ _ _ observation <- expectations,
                         let operation = observationOperation observation,
                         let OperationInfo operationId _ _ _ = describeOperation operation,
-                        Just (BindingContract _ _ _ sourceName strength) <- [contract ObservationOperation operation]
+                        Right (Just handler) <- [bindingHandler binding ObservationOperation operation],
+                        Just owned <- [handlerSource handler],
+                        let sourceName = sourceId owned,
+                        let strength = sourceCoverage owned
                       ]
                in Right (report, sources)
           checked = inspectBinding (factory config Nothing)

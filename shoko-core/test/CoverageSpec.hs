@@ -2,10 +2,11 @@ module CoverageSpec (tests) where
 
 import Consumer.Account
 import Consumer.DeliveryLedger
+import Consumer.Hooks
 import Data.IORef
 import Data.Time (UTCTime (..), fromGregorian)
 import Hedgehog (evalIO, property, withTests, (===))
-import Shoko
+import Shoko hiding (binding)
 import Shoko.Clock
 import Shoko.Result
 import Test.Tasty
@@ -17,7 +18,7 @@ tests =
     "coverage strength and gaps"
     [ testPropertyNamed "snapshot absence cannot prove a continuous negative" "snapshotAbsence" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
-        (clock, _) <- evalIO (newFakeClock epoch)
+        (clock, _) <- evalIO (newMicroClock epoch)
         let selected =
               scenario "snapshot-negative" "Sampled absence" "v1" $
                 expect $
@@ -25,7 +26,7 @@ tests =
         result <- evalIO $ case resolveScenario
           ledgerEnvironment
           testOptions
-          (BusinessKeyFrom "accountId" (pure "toy-key"))
+          (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key"))
           (memoryBinding calls)
           selected of
           Left errors -> fail (show errors)
@@ -50,29 +51,29 @@ tests =
         resultVerdict result === Just Fail,
       testPropertyNamed "late sampled presence cannot violate an earlier negative window" "lateSampledWitness" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
-        (clock, advance) <- evalIO (newFakeClock epoch)
-        let Binding n caps describe acquire release baseline action observation = memoryBinding calls
+        (clock, advance) <- evalIO (newMicroClock epoch)
+        let Hooks acquire release baseline action observation = accountHooks calls
             late :: AccountStore -> CallContext -> Account a -> IO (ObservationOutcome a)
             late resource context op = case op of
-              Created _ -> advance 21000 >> pure (Observed [Occurrence Nothing True] (Coverage SampledState 21000 21000 True))
+              Created _ -> advance 21000 >> pure (Observed [Occurrence Nothing True] (Coverage SampledState (MonotonicTime 21000) (MonotonicTime 21000) True))
               _ -> observation resource context op
-            binding = Binding n caps describe acquire release baseline action late
+            binding = accountBindingWith (Hooks acquire release baseline action late)
             selected =
               scenario "late-sample" "Finite negative state window" "v1" $
                 expect $
                   within (duration 20) $
                     never "absent" (observe "exists" (Created (pure "toy-key")) id)
-        result <- evalIO $ case resolveScenario ledgerEnvironment testOptions (BusinessKeyFrom "accountId" (pure "toy-key")) binding selected of
+        result <- evalIO $ case resolveScenario ledgerEnvironment testOptions (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key")) binding selected of
           Left errors -> fail (show errors)
           Right resolved -> runScenario clock (LogicalInput "late-sample-v1" []) resolved
         resultVerdict result === Just Unknown,
       testPropertyNamed "nested within keeps the earliest deadline" "nestedWithin" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
-        (clock, advance) <- evalIO (newFakeClock epoch)
-        let Binding n caps describe acquire release baseline action observation = memoryBinding calls
+        (clock, advance) <- evalIO (newMicroClock epoch)
+        let Hooks acquire release baseline action observation = accountHooks calls
             delayed :: AccountStore -> CallContext -> Account a -> IO (ObservationOutcome a)
             delayed resource context op = advance 20001 >> observation resource context op
-            binding = Binding n caps describe acquire release baseline action delayed
+            binding = accountBindingWith (Hooks acquire release baseline action delayed)
             selected =
               scenario "nested" "Earliest enclosing window" "v1" $
                 expect $
@@ -82,7 +83,7 @@ tests =
         result <- evalIO $ case resolveScenario
           ledgerEnvironment
           testOptions
-          (BusinessKeyFrom "accountId" (pure "toy-key"))
+          (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key"))
           binding
           selected of
           Left errors -> fail (show errors)
@@ -102,16 +103,16 @@ gapRun temporal copies recover = do
   rows <- newIORef []
   readCalls <- newIORef 0
   sequenceNumber <- newIORef (0 :: Int)
-  (clock, _) <- newFakeClock epoch
-  let Binding n caps describe acquire release baseline action observation = ledgerBinding rows readCalls False
+  (clock, _) <- newMicroClock epoch
+  let Hooks acquire release baseline action observation = ledgerHooks rows readCalls False
       interrupted :: () -> CallContext -> Ledger a -> IO (ObservationOutcome a)
       interrupted resource context op = do
         index <- atomicModifyIORef' sequenceNumber (\current -> (current + 1, current))
         if (recover && index == 0) || (not recover && index > 0)
           then pure (ObservationUnavailable "gap")
           else observation resource context op
-      binding = Binding n caps describe acquire release baseline action interrupted
-  case resolveScenario ledgerEnvironment testOptions (businessKeyFromResult "deliveryId" "append") binding (ledgerScenario copies temporal) of
+      binding = ledgerBindingWith (Hooks acquire release baseline action interrupted)
+  case resolveScenario ledgerEnvironment testOptions (businessKeyFromResult (BusinessKeyName "deliveryId") "append") binding (ledgerScenario copies temporal) of
     Left errors -> fail (show errors)
     Right resolved -> runScenario clock (LogicalInput "gap-v1" []) resolved
 
@@ -125,15 +126,15 @@ closingRun available = do
   rows <- newIORef []
   calls <- newIORef 0
   attempts <- newIORef (0 :: Int)
-  (clock@(Clock now _ _ _), _) <- newFakeClock epoch
-  let Binding n caps describe acquire release baseline action observation = ledgerBinding rows calls False
+  (clock@(Clock now _ _ _), _) <- newMicroClock epoch
+  let Hooks acquire release baseline action observation = ledgerHooks rows calls False
       closing :: () -> CallContext -> Ledger a -> IO (ObservationOutcome a)
-      closing resource context@(CallContext _ _ _ _ _ cutoff _) op = do
+      closing resource context op = do
         modifyIORef' attempts (+ 1)
         tick <- now
-        if tick >= cutoff && not available then pure (ObservationUnavailable "closing-source-unavailable") else observation resource context op
-      binding = Binding n caps describe acquire release baseline action closing
-  resolved <- either (fail . show) pure (resolveScenario ledgerEnvironment testOptions (businessKeyFromResult "deliveryId" "append") binding (ledgerScenario 0 Eventually))
+        if tick >= evidenceUntil context && not available then pure (ObservationUnavailable "closing-source-unavailable") else observation resource context op
+      binding = ledgerBindingWith (Hooks acquire release baseline action closing)
+  resolved <- either (fail . show) pure (resolveScenario ledgerEnvironment testOptions (businessKeyFromResult (BusinessKeyName "deliveryId") "append") binding (ledgerScenario 0 Eventually))
   result <- runScenario clock (LogicalInput "closing-history-v1" []) resolved
   count <- readIORef attempts
   pure (result, count)
@@ -142,13 +143,13 @@ crossingRun :: IO RunResult
 crossingRun = do
   rows <- newIORef []
   calls <- newIORef 0
-  (clock, advance) <- newFakeClock epoch
-  let Binding n caps describe acquire release baseline action observation = ledgerBinding rows calls False
+  (clock, advance) <- newMicroClock epoch
+  let Hooks acquire release baseline action observation = ledgerHooks rows calls False
       crossing :: () -> CallContext -> Ledger a -> IO (ObservationOutcome a)
       crossing resource context op = do
         result <- observation resource context op
         advance 40000
         pure result
-      binding = Binding n caps describe acquire release baseline action crossing
-  resolved <- either (fail . show) pure (resolveScenario ledgerEnvironment testOptions (businessKeyFromResult "deliveryId" "append") binding (ledgerScenario 0 Eventually))
+      binding = ledgerBindingWith (Hooks acquire release baseline action crossing)
+  resolved <- either (fail . show) pure (resolveScenario ledgerEnvironment testOptions (businessKeyFromResult (BusinessKeyName "deliveryId") "append") binding (ledgerScenario 0 Eventually))
   runScenario clock (LogicalInput "crossing-history-v1" []) resolved

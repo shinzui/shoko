@@ -1,6 +1,6 @@
 cabal-version: 3.12
 name: shoko-cli
-version: 0.1.0.0
+version: 0.2.0.0
 synopsis: Compiled scenario host for evidence-based verification
 description: Inspect scenarios, resolve strict configuration, and retain bounded verification evidence.
 license: BSD-3-Clause
@@ -27,7 +27,7 @@ common common
 
   build-depends:
     base >=4.21 && <4.22,
-    shoko-core >=0.1 && <0.2,
+    shoko-core >=0.2 && <0.3,
     text >=2.1.4 && <2.2,
 
 library

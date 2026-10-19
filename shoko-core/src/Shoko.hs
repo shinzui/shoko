@@ -2,6 +2,11 @@
 module Shoko
   ( version,
     module Shoko.Action,
+    module Shoko.Identifier,
+    MonotonicTime (..),
+    monotonicMicros,
+    addDuration,
+    differenceMicros,
     module Shoko.Binding,
     module Shoko.Correlation,
     module Shoko.Environment,
@@ -22,9 +27,11 @@ where
 
 import Shoko.Action
 import Shoko.Binding
+import Shoko.Clock (MonotonicTime (..), addDuration, differenceMicros, monotonicMicros)
 import Shoko.Correlation
 import Shoko.Environment
 import Shoko.Expectation
+import Shoko.Identifier
 import Shoko.Observation
 import Shoko.Prelude
 import Shoko.Runner (runScenario)
@@ -32,4 +39,4 @@ import Shoko.Scenario (Scenario, ScenarioBuilder, act, expect, expectAfterAction
 
 -- | Version of the public core package.
 version :: Text
-version = "0.1.0.0"
+version = "0.2.0.0"

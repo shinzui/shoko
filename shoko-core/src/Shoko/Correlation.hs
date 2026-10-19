@@ -9,15 +9,16 @@ module Shoko.Correlation
 where
 
 import Shoko.Action
+import Shoko.Identifier
 import Shoko.Internal.Reference (Input (Reference), Ref (Ref))
 import Shoko.Prelude
 
 data CorrelationStrategy = BusinessKey | ExecutionId
   deriving stock (Eq, Ord, Show, Generic)
 
-data CorrelationPlan = BusinessKeyFrom !Text !(Input Text) | PropagatedExecutionId
+data CorrelationPlan = BusinessKeyFrom !BusinessKeyName !(Input Text) | PropagatedExecutionId
 
-data Correlation = ByBusinessKey !Text !Text | ByExecutionId !Text
+data Correlation = ByBusinessKey !BusinessKeyName !Text | ByExecutionId !Text
   deriving stock (Eq, Show, Generic)
 
 correlationStrategy :: CorrelationPlan -> CorrelationStrategy
@@ -30,5 +31,5 @@ correlationDependencies PropagatedExecutionId = []
 
 -- | Select a named action's Text identity. Resolution validates the node exists;
 -- runtime lookup is checked by Typeable and never broadens a failed query.
-businessKeyFromResult :: Text -> Text -> CorrelationPlan
+businessKeyFromResult :: BusinessKeyName -> Text -> CorrelationPlan
 businessKeyFromResult key node = BusinessKeyFrom key (Reference (Ref node))

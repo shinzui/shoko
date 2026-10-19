@@ -131,3 +131,14 @@ consequences before later actions; it retains the fixed action sequence and star
 all observations after the last action. Strict `expect` retains its ordering check.
 Namespace collection assigns symbolic references lexically, preserving returned
 and external references without renaming operation or predicate identifiers.
+
+Handler implementation revision, 2026-10-19: bindings are constructed from abstract
+per-operation handlers. An observation handler owns its evidence source, baseline
+capture, semantic correlation requirement, and contract; `focus` projects capture
+and execution together. Equal labels within one binding assert shared reader
+identity; coverage equality cannot prove equal closures. Preflight retains typed
+handler-construction failures and validates role, source consistency, lifecycle,
+and cleanup requirements before acquisition. Effectful input resolution records
+undeclared accesses even when a handler ignores the returned error. Distinct
+source/business-key identifiers and absolute monotonic timestamps prevent category
+mistakes while preserving scalar wire representations.

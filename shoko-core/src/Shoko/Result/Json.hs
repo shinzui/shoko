@@ -7,11 +7,13 @@ import Data.Aeson.Types (Parser, parseEither)
 import Data.ByteString.Lazy (ByteString)
 import Data.Set qualified as Set
 import Shoko.Action
-import Shoko.Binding
+import Shoko.Binding hiding (binding, correlation)
+import Shoko.Clock (MonotonicTime (..), monotonicMicros)
 import Shoko.Correlation
 import Shoko.Environment
 import Shoko.Evidence
 import Shoko.Expectation
+import Shoko.Identifier
 import Shoko.Internal.Digest qualified as Digest
 import Shoko.Observation hiding (predicate)
 import Shoko.Prelude
@@ -24,16 +26,16 @@ encodeRunResult = encode . resultValue
 -- Decode errors intentionally omit input fragments and parser exception text.
 decodeRunResult :: ByteString -> Either Text RunResult
 decodeRunResult bytes = case eitherDecode bytes >>= parseEither parseResult of
-  Left _ -> Left "invalid shoko result v1"
+  Left _ -> Left "invalid shoko result v2"
   Right result -> Right result
 
 resultValue :: RunResult -> Value
 resultValue (Verification report) =
   object
-    ["schemaVersion" .= (1 :: Int), "kind" .= ("verification" :: Text), "report" .= reportValue report]
+    ["schemaVersion" .= (2 :: Int), "kind" .= ("verification" :: Text), "report" .= reportValue report]
 resultValue (RunnerFault why partial) =
   object
-    [ "schemaVersion" .= (1 :: Int),
+    [ "schemaVersion" .= (2 :: Int),
       "kind" .= ("runner-fault" :: Text),
       "reason" .= tag reasons why,
       "report" .= fmap reportValue partial
@@ -43,7 +45,7 @@ resultValue (PreflightFailure errors) = preflightValue errors
 parseResult :: Value -> Parser RunResult
 parseResult = checked ["schemaVersion", "kind", "report", "reason", "errors"] "run-result" $ \o -> do
   version <- o .: "schemaVersion" :: Parser Int
-  unless (version == 1) (fail "unsupported version")
+  unless (version == 2) (fail "unsupported version")
   kind <- o .: "kind" :: Parser Text
   case kind of
     "verification" -> Verification <$> (o .: "report" >>= parseReport)
@@ -70,8 +72,8 @@ reportValue (VerificationResult description digest run environment binding build
       "policy" .= policyValue policy,
       "startedAt" .= started,
       "finishedAt" .= finished,
-      "executionStartedAt" .= start,
-      "executionDeadline" .= deadline,
+      "executionStartedAt" .= monotonicMicros start,
+      "executionDeadline" .= monotonicMicros deadline,
       "verdict" .= tag verdicts verdict,
       "actions" .= map actionValue actions,
       "expectations" .= map expectationValue expectations,
@@ -117,8 +119,8 @@ parseReport = checked
       <*> (o .: "policy" >>= parsePolicy)
       <*> o .: "startedAt"
       <*> o .: "finishedAt"
-      <*> o .: "executionStartedAt"
-      <*> o .: "executionDeadline"
+      <*> (MonotonicTime <$> o .: "executionStartedAt")
+      <*> (MonotonicTime <$> o .: "executionDeadline")
       <*> enumField o "verdict" verdicts
       <*> list o "actions" parseAction
       <*> list o "expectations" parseExpectation
@@ -204,8 +206,8 @@ actionValue (ActionEvidence node operation declared observed started finished wh
       "operationId" .= operation,
       "declaredOutcomes" .= declared,
       "observedOutcome" .= observed,
-      "startedAt" .= started,
-      "finishedAt" .= finished,
+      "startedAt" .= monotonicMicros started,
+      "finishedAt" .= monotonicMicros finished,
       "reason" .= tag reasons why,
       "substeps" .= map substepValue substeps,
       "supportingData" .= map publicValue details
@@ -218,8 +220,8 @@ parseAction = checked ["nodeId", "operationId", "declaredOutcomes", "observedOut
     <*> o .: "operationId"
     <*> o .: "declaredOutcomes"
     <*> o .: "observedOutcome"
-    <*> o .: "startedAt"
-    <*> o .: "finishedAt"
+    <*> (MonotonicTime <$> o .: "startedAt")
+    <*> (MonotonicTime <$> o .: "finishedAt")
     <*> enumField o "reason" reasons
     <*> list o "substeps" parseSubstep
     <*> list o "supportingData" parsePublicValue
@@ -227,11 +229,11 @@ parseAction = checked ["nodeId", "operationId", "declaredOutcomes", "observedOut
 substepValue :: SubstepEvidence -> Value
 substepValue (SubstepEvidence key started finished why) =
   object
-    ["id" .= key, "startedAt" .= started, "finishedAt" .= finished, "reason" .= tag reasons why]
+    ["id" .= key, "startedAt" .= monotonicMicros started, "finishedAt" .= monotonicMicros finished, "reason" .= tag reasons why]
 
 parseSubstep :: Value -> Parser SubstepEvidence
 parseSubstep = checked ["id", "startedAt", "finishedAt", "reason"] "substep" $ \o ->
-  SubstepEvidence <$> o .: "id" <*> o .: "startedAt" <*> o .: "finishedAt" <*> enumField o "reason" reasons
+  SubstepEvidence <$> o .: "id" <*> (MonotonicTime <$> o .: "startedAt") <*> (MonotonicTime <$> o .: "finishedAt") <*> enumField o "reason" reasons
 
 expectationValue :: ExpectationResult -> Value
 expectationValue (ExpectationResult key verdict why evidence) =
@@ -249,48 +251,48 @@ parseExpectation = checked ["expectationId", "verdict", "reason", "evidence"] "e
 evidenceValue :: Evidence -> Value
 evidenceValue (Evidence source operation baseline started finished coverage identities count gaps deadline details) =
   object
-    [ "source" .= source,
+    [ "source" .= sourceIdText source,
       "operationId" .= operation,
       "baseline" .= fmap baselineValue baseline,
-      "pollStartedAt" .= started,
-      "finishedAt" .= finished,
+      "pollStartedAt" .= monotonicMicros started,
+      "finishedAt" .= monotonicMicros finished,
       "coverage" .= fmap coverageValue coverage,
       "matchingOccurrenceIds" .= identities,
       "matchCount" .= count,
       "gaps" .= gaps,
-      "evidenceDeadline" .= deadline,
+      "evidenceDeadline" .= monotonicMicros deadline,
       "supportingData" .= map publicValue details
     ]
 
 parseEvidence :: Value -> Parser Evidence
 parseEvidence = checked ["source", "operationId", "baseline", "pollStartedAt", "finishedAt", "coverage", "matchingOccurrenceIds", "matchCount", "gaps", "evidenceDeadline", "supportingData"] "evidence" $ \o ->
   Evidence
-    <$> o .: "source"
+    <$> (SourceId <$> o .: "source")
     <*> o .: "operationId"
     <*> nullable o "baseline" parseBaseline
-    <*> o .: "pollStartedAt"
-    <*> o .: "finishedAt"
+    <*> (MonotonicTime <$> o .: "pollStartedAt")
+    <*> (MonotonicTime <$> o .: "finishedAt")
     <*> nullable o "coverage" parseCoverage
     <*> o .: "matchingOccurrenceIds"
     <*> o .: "matchCount"
     <*> o .: "gaps"
-    <*> o .: "evidenceDeadline"
+    <*> (MonotonicTime <$> o .: "evidenceDeadline")
     <*> list o "supportingData" parsePublicValue
 
 baselineValue :: Baseline -> Value
-baselineValue (Baseline source captured cursor) = object ["source" .= source, "capturedAt" .= captured, "cursor" .= cursor]
+baselineValue (Baseline source captured cursor) = object ["source" .= sourceIdText source, "capturedAt" .= monotonicMicros captured, "cursor" .= cursor]
 
 parseBaseline :: Value -> Parser Baseline
-parseBaseline = checked ["source", "capturedAt", "cursor"] "baseline" $ \o -> Baseline <$> o .: "source" <*> o .: "capturedAt" <*> o .: "cursor"
+parseBaseline = checked ["source", "capturedAt", "cursor"] "baseline" $ \o -> Baseline <$> (SourceId <$> o .: "source") <*> (MonotonicTime <$> o .: "capturedAt") <*> o .: "cursor"
 
 coverageValue :: Coverage -> Value
 coverageValue (Coverage strength from through complete) =
   object
-    ["strength" .= tag strengths strength, "fromMicros" .= from, "throughMicros" .= through, "complete" .= complete]
+    ["strength" .= tag strengths strength, "fromMicros" .= monotonicMicros from, "throughMicros" .= monotonicMicros through, "complete" .= complete]
 
 parseCoverage :: Value -> Parser Coverage
 parseCoverage = checked ["strength", "fromMicros", "throughMicros", "complete"] "coverage" $ \o ->
-  Coverage <$> enumField o "strength" strengths <*> o .: "fromMicros" <*> o .: "throughMicros" <*> o .: "complete"
+  Coverage <$> enumField o "strength" strengths <*> (MonotonicTime <$> o .: "fromMicros") <*> (MonotonicTime <$> o .: "throughMicros") <*> o .: "complete"
 
 publicValue :: (Text, PublicValue) -> Value
 publicValue (key, value) = case value of
@@ -317,14 +319,14 @@ parseLogical = checked ["recipeRevision", "parameters"] "logical-input" $ \o ->
   LogicalInput <$> o .: "recipeRevision" <*> list o "parameters" parsePublicValue
 
 correlationValue :: Correlation -> Value
-correlationValue (ByBusinessKey key value) = object ["kind" .= ("business-key" :: Text), "key" .= key, "value" .= value]
+correlationValue (ByBusinessKey key value) = object ["kind" .= ("business-key" :: Text), "key" .= businessKeyNameText key, "value" .= value]
 correlationValue (ByExecutionId value) = object ["kind" .= ("execution-id" :: Text), "value" .= value]
 
 parseCorrelation :: Value -> Parser Correlation
 parseCorrelation = checked ["kind", "key", "value"] "correlation" $ \o -> do
   kind <- o .: "kind" :: Parser Text
   case kind of
-    "business-key" -> ByBusinessKey <$> o .: "key" <*> o .: "value"
+    "business-key" -> ByBusinessKey <$> (BusinessKeyName <$> o .: "key") <*> o .: "value"
     "execution-id" -> ByExecutionId <$> o .: "value"
     _ -> fail "unknown correlation"
 
@@ -413,12 +415,14 @@ dispositions :: [(Text, Disposition)]
 dispositions = [("cleaned", Cleaned), ("retained", Retained), ("failed", CleanupFailed), ("timed-out", CleanupTimedOut)]
 
 preflightValue :: [PreflightError] -> Value
-preflightValue errors = object ["schemaVersion" .= (1 :: Int), "kind" .= ("preflight-error" :: Text), "errors" .= map render errors]
+preflightValue errors = object ["schemaVersion" .= (2 :: Int), "kind" .= ("preflight-error" :: Text), "errors" .= map render errors]
   where
     render failure = case failure of
       InvalidDefinition definitionErrors -> object ["code" .= ("invalid-definition" :: Text), "details" .= map definitionValue definitionErrors]
       MissingHandler key -> identified "missing-handler" key
       MissingSource key -> identified "missing-source" key
+      InconsistentSource label -> identified "inconsistent-source" (sourceIdText label)
+      HandlerConstructionFailed key cause -> object ["code" .= ("handler-construction-failed" :: Text), "id" .= key, "cause" .= handlerErrorValue cause]
       CapabilitiesDenied caps -> object ["code" .= ("capabilities-denied" :: Text), "capabilities" .= map (tag capabilityTags) (Set.toAscList caps)]
       SyntheticConsentRequired -> identified "synthetic-consent-required" ""
       UnsupportedCorrelation key -> identified "unsupported-correlation" key
@@ -440,12 +444,14 @@ definitionValue problem = case problem of
   EmptyExpectations -> identified "empty-expectations" ""
 
 parsePreflight :: Value -> Parser PreflightError
-parsePreflight = checked ["code", "id", "details", "capabilities"] "preflight-error" $ \o -> do
+parsePreflight = checked ["code", "id", "details", "capabilities", "cause"] "preflight-error" $ \o -> do
   code <- o .: "code" :: Parser Text
   case code of
     "invalid-definition" -> InvalidDefinition <$> list o "details" parseDefinition
     "missing-handler" -> MissingHandler <$> o .: "id"
     "missing-source" -> MissingSource <$> o .: "id"
+    "inconsistent-source" -> InconsistentSource . SourceId <$> o .: "id"
+    "handler-construction-failed" -> HandlerConstructionFailed <$> o .: "id" <*> (o .: "cause" >>= parseHandlerError)
     "capabilities-denied" -> CapabilitiesDenied . Set.fromList <$> list o "capabilities" (parseTag capabilityTags)
     "synthetic-consent-required" -> pure SyntheticConsentRequired
     "unsupported-correlation" -> UnsupportedCorrelation <$> o .: "id"
@@ -466,3 +472,24 @@ parseDefinition = checked ["code", "id"] "definition-error" $ \o -> do
     "empty-outcome-contract" -> EmptyOutcomeContract <$> o .: "id"
     "empty-expectations" -> pure EmptyExpectations
     _ -> fail "unknown definition code"
+
+handlerErrorValue :: HandlerBuildError -> Value
+handlerErrorValue (EndpointNotAllowlisted key) = identified "endpoint-not-allowlisted" key
+handlerErrorValue (ObservationMethodNotGet key) = identified "observation-method-not-get" key
+handlerErrorValue (ObservationScopeMissing key) = identified "observation-scope-missing" key
+handlerErrorValue ExecutionMetadataUnsupported = object ["code" .= ("execution-metadata-unsupported" :: Text)]
+
+parseHandlerError :: Value -> Parser HandlerBuildError
+parseHandlerError = withObject "handler-error" $ \o -> do
+  code <- o .: "code" :: Parser Text
+  let identifiedCause constructor = do
+        unless (all (`elem` ["code", "id"]) (KeyMap.keys o)) (fail "unknown field")
+        constructor <$> o .: "id"
+  case code of
+    "endpoint-not-allowlisted" -> identifiedCause EndpointNotAllowlisted
+    "observation-method-not-get" -> identifiedCause ObservationMethodNotGet
+    "observation-scope-missing" -> identifiedCause ObservationScopeMissing
+    "execution-metadata-unsupported" -> do
+      unless (KeyMap.keys o == ["code"]) (fail "unknown field")
+      pure ExecutionMetadataUnsupported
+    _ -> fail "unknown handler cause"

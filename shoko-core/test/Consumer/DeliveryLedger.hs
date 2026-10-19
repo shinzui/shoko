@@ -1,5 +1,6 @@
-module Consumer.DeliveryLedger (Ledger (..), ledgerScenario, ledgerBinding, ledgerEnvironment) where
+module Consumer.DeliveryLedger (Ledger (..), ledgerScenario, ledgerBinding, ledgerEnvironment, ledgerHooks, ledgerBindingWith) where
 
+import Consumer.Hooks
 import Data.IORef
 import Data.Set qualified as Set
 import Data.Text qualified as Text
@@ -34,22 +35,19 @@ ledgerEnvironment =
 -- The initial list permits tests of pre-baseline exclusion. Only this toy
 -- adapter uses an integer list length as a durable high-water cursor.
 ledgerBinding :: IORef [Text] -> IORef Int -> Bool -> Binding Ledger ()
-ledgerBinding rows readCalls unavailable =
-  Binding
-    "ledger"
-    Set.empty
-    describe
-    (const (pure ()))
-    (const (pure Cleaned))
-    capture
-    perform
-    readObservation
+ledgerBinding rows readCalls unavailable = ledgerBindingWith (ledgerHooks rows readCalls unavailable)
+
+ledgerBindingWith :: Hooks Ledger () -> Binding Ledger ()
+ledgerBindingWith (Hooks acquire release capture perform poll) = binding "ledger" acquire release handlers
   where
-    describe :: OperationRole -> Ledger a -> Maybe BindingContract
-    describe ActionOperation (Append _) = Just available
-    describe ObservationOperation (Deliveries _) = Just available
-    describe _ _ = Nothing
-    available = BindingContract Set.empty Set.empty (Set.singleton BusinessKey) (Just "ledger") DurableHistory
+    handlers :: OperationRole -> Ledger a -> Either HandlerBuildError (Maybe (Handler () a))
+    handlers ActionOperation op@(Append _) = Right (Just (actionHandler noRequirements (\resource call -> perform resource call op)))
+    handlers ObservationOperation op@(Deliveries _) = Right (Just (observationHandler noRequirements (RequiresBusinessKey (BusinessKeyName "deliveryId")) (newSource (SourceId "ledger") DurableHistory (\resource clock -> capture resource clock (SourceId "ledger"))) (\resource call -> poll resource call op)))
+    handlers _ _ = Right Nothing
+
+ledgerHooks :: IORef [Text] -> IORef Int -> Bool -> Hooks Ledger ()
+ledgerHooks rows readCalls unavailable = Hooks (const (pure ())) (const (pure Cleaned)) capture perform readObservation
+  where
     capture _ (Clock now _ _ _) source = do
       tick <- now
       count <- length <$> readIORef rows
@@ -60,14 +58,19 @@ ledgerBinding rows readCalls unavailable =
       pure (ActionObserved "appended" "delivery-key")
     perform _ _ _ = pure (ActionUnavailable "not-an-action")
     readObservation :: () -> CallContext -> Ledger a -> IO (ObservationOutcome a)
-    readObservation _ (CallContext resolve _ base selected _ cutoff (Clock now _ _ _)) (Deliveries input) = do
+    readObservation _ context (Deliveries input) = do
+      let base = sourceBaseline context
+          selected = correlation context
+          cutoff = evidenceUntil context
+          Clock now _ _ _ = callClock context
+      resolved <- resolveInput context input
       modifyIORef' readCalls (+ 1)
       tick <- now
       entries <- readIORef rows
       pure $
         if unavailable
           then ObservationUnavailable "source-unavailable"
-          else case (resolve input, base, selected) of
+          else case (resolved, base, selected) of
             (Right businessKey, Just (Baseline _ captured cursor), Just (ByBusinessKey _ selectedKey))
               | businessKey == selectedKey -> case cursor >>= readMaybe . Text.unpack of
                   Just from ->

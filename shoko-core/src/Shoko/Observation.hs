@@ -23,6 +23,8 @@ where
 
 import Data.Char (isAlphaNum, isAscii)
 import Data.Text qualified as Text
+import Shoko.Clock (MonotonicTime)
+import Shoko.Identifier (SourceId)
 import Shoko.Prelude
 
 data Observation op a = Observation !Text !(op a) (a -> Bool) ![Text]
@@ -72,15 +74,15 @@ data CoverageStrength = SampledState | DurableHistory
 -- | Inclusive monotonic evidence interval, independent of the polling interval.
 data Coverage = Coverage
   { strength :: !CoverageStrength,
-    fromMicros :: !Integer,
-    throughMicros :: !Integer,
+    fromMicros :: !MonotonicTime,
+    throughMicros :: !MonotonicTime,
     complete :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data Baseline = Baseline
-  { source :: !Text,
-    capturedAt :: !Integer,
+  { source :: !SourceId,
+    capturedAt :: !MonotonicTime,
     cursor :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)

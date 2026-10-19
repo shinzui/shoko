@@ -91,7 +91,7 @@
             checkPhase = ''
               runHook preCheck
               export SHOKO_CONFIG_SCHEMA=${./schemas/config-v1.schema.json}
-              export SHOKO_RESULT_SCHEMA=${./schemas/run-result-v1.schema.json}
+              export SHOKO_RESULT_SCHEMA=${./schemas/run-result-v2.schema.json}
               export SHOKO_DEMO_CONFIG=${./config/demo.yaml}
               python ${./scripts/test-cli} --binaries dist/build
               runHook postCheck
@@ -110,7 +110,7 @@
       checks.shoko-adapters = hs.shoko-adapters;
       checks.shoko-cli = hs.shoko-cli;
       checks.result-schema = pkgs.runCommand "shoko-result-schema" { nativeBuildInputs = [ schemaPython ]; } ''
-        python ${./scripts/check-result-schema.py} ${./schemas/run-result-v1.schema.json} ${./shoko-core/test/golden}
+        python ${./scripts/check-result-schema.py} ${./schemas/run-result-v2.schema.json} ${./shoko-core/test/golden}
         touch "$out"
       '';
       checks.workflow-contract = pkgs.runCommand "shoko-workflow-contract" { nativeBuildInputs = [ schemaPython ]; } ''

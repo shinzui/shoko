@@ -3,8 +3,7 @@
 module Shoko.Adapter.MessageDb
   ( MessageDb,
     messageDb,
-    messageDbContract,
-    messageDbBaseline,
+    messageDbObservation,
     observeMessageDb,
     module Shoko.Adapter.MessageDb.Evidence,
   )
@@ -20,9 +19,9 @@ import Hasql.Session qualified as Session
 import Hasql.Statement (preparable)
 import Shoko.Adapter.EventStore.Internal
 import Shoko.Adapter.MessageDb.Evidence
-import Shoko.Binding (BindingContract, CallContext)
-import Shoko.Clock (Clock)
-import Shoko.Observation (Baseline, ObservationOutcome)
+import Shoko.Binding
+import Shoko.Identifier
+import Shoko.Observation (ObservationOutcome)
 import Shoko.Prelude
 
 newtype MessageDb a = MessageDb (Reader a)
@@ -30,7 +29,7 @@ newtype MessageDb a = MessageDb (Reader a)
 -- | Thin read-only bridge to Message DB 1.3.0's public server functions.
 -- Correlation is checked against decoded business keys, never the server's
 -- category-only correlationStreamName filter. sql_condition is never enabled.
-messageDb :: Text -> Text -> EventQuery a -> IO (Either Text (MessageDb a))
+messageDb :: Text -> SourceId -> EventQuery a -> IO (Either Text (MessageDb a))
 messageDb settings source query@(EventQuery _ _ _ mode _ _)
   | mode == ExecutionMetadata = pure (Left "message-db-requires-business-key-correlation")
   | otherwise = fmap MessageDb <$> newReader settings "message_store" source query fetch
@@ -62,14 +61,10 @@ messageDb settings source query@(EventQuery _ _ _ mode _ _)
       _ -> Nothing
     cause _ = Nothing
 
--- | Pure metadata; unsupported legacy correlation is rejected before acquisition.
-messageDbContract :: Text -> EventQuery a -> Maybe BindingContract
-messageDbContract source query@(EventQuery _ _ _ mode _ _)
-  | mode == ExecutionMetadata = Nothing
-  | otherwise = Just (queryContract source query)
-
-messageDbBaseline :: MessageDb a -> Clock -> Text -> IO (Either Text Baseline)
-messageDbBaseline (MessageDb reader) = capture reader
+messageDbObservation :: SourceId -> EventQuery a -> Either HandlerBuildError (Handler (MessageDb a) (EventEvidence a))
+messageDbObservation label query@(EventQuery _ _ _ mode _ _)
+  | mode == ExecutionMetadata = Left ExecutionMetadataUnsupported
+  | otherwise = Right (focus (\(MessageDb reader) -> reader) (readerHandler label query))
 
 observeMessageDb :: CallContext -> MessageDb a -> IO (ObservationOutcome (EventEvidence a))
 observeMessageDb call (MessageDb reader) = observeEvents call reader

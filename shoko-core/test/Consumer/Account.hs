@@ -1,5 +1,6 @@
-module Consumer.Account (Account (..), AccountStore, accountScenario, rejectionScenario, memoryBinding, alternateBinding, testEnvironment, testOptions) where
+module Consumer.Account (Account (..), AccountStore, accountScenario, rejectionScenario, memoryBinding, alternateBinding, testEnvironment, testOptions, accountHooks, accountBindingWith) where
 
+import Consumer.Hooks
 import Data.IORef
 import Data.Set qualified as Set
 import Shoko
@@ -51,31 +52,43 @@ alternateBinding :: IORef Int -> Binding Account AccountStore
 alternateBinding = bindingUsing True
 
 bindingUsing :: Bool -> IORef Int -> Binding Account AccountStore
-bindingUsing useLog calls = Binding sourceName Set.empty describe acquire (const (pure Cleaned)) capture perform readObservation
+bindingUsing useLog calls = accountBindingNamed (if useLog then "account-create-log" else "account-set") (hooksUsing useLog calls)
+
+accountBindingWith :: Hooks Account AccountStore -> Binding Account AccountStore
+accountBindingWith = accountBindingNamed "account-set"
+
+accountBindingNamed :: Text -> Hooks Account AccountStore -> Binding Account AccountStore
+accountBindingNamed name (Hooks acquire release capture perform poll) = binding name acquire release handlers
   where
-    sourceName = if useLog then "account-create-log" else "account-set"
+    handlers :: OperationRole -> Account a -> Either HandlerBuildError (Maybe (Handler AccountStore a))
+    handlers FixtureOperation op@Qualified = Right (Just (actionHandler noRequirements (\resource call -> perform resource call op)))
+    handlers ActionOperation op@(Create _ _) = Right (Just (actionHandler noRequirements (\resource call -> perform resource call op)))
+    handlers ObservationOperation op@(Created _) = Right (Just (observationHandler noRequirements (RequiresBusinessKey (BusinessKeyName "accountId")) (newSource (SourceId name) SampledState (\resource clock -> capture resource clock (SourceId name))) (\resource call -> poll resource call op)))
+    handlers _ _ = Right Nothing
+
+accountHooks :: IORef Int -> Hooks Account AccountStore
+accountHooks = hooksUsing False
+
+hooksUsing :: Bool -> IORef Int -> Hooks Account AccountStore
+hooksUsing useLog calls = Hooks acquire (const (pure Cleaned)) capture perform readObservation
+  where
     acquire _ = do
       modifyIORef' calls (+ 1)
       if useLog then CreateLog <$> newIORef [] else AccountSet <$> newIORef Set.empty
-    capture _ (Clock now _ _ _) source = do
-      tick <- now
-      pure (Right (Baseline source tick Nothing))
-    describe :: OperationRole -> Account a -> Maybe BindingContract
-    describe FixtureOperation Qualified = Just available
-    describe ActionOperation (Create _ _) = Just available
-    describe ObservationOperation (Created _) = Just available
-    describe _ _ = Nothing
-    available = BindingContract Set.empty Set.empty (Set.singleton BusinessKey) (Just sourceName) SampledState
+    capture _ clock label = do
+      tick <- monotonic clock
+      pure (Right (Baseline label tick Nothing))
     perform :: AccountStore -> CallContext -> Account a -> IO (ActionOutcome a)
     perform _ _ Qualified = pure (ActionObserved "ready" "SECRET-FIXTURE-SENTINEL")
-    perform resource (CallContext resolve _ _ _ runSubstep _ _) (Create input valid) =
-      case resolve input of
+    perform resource context (Create input valid) = do
+      resolved <- resolveInput context input
+      case resolved of
         Left _ -> pure (ActionUnavailable "unresolved-reference")
         Right _ -> do
-          _ <- runSubstep "check" (pure ())
+          _ <- runSubstep context "check" (pure ())
           if valid
             then do
-              _ <- runSubstep "write" $ do
+              _ <- runSubstep context "write" $ do
                 modifyIORef' calls (+ 1)
                 case resource of
                   AccountSet rows -> modifyIORef' rows (Set.insert "toy-key")
@@ -84,12 +97,14 @@ bindingUsing useLog calls = Binding sourceName Set.empty describe acquire (const
             else pure (ActionObservedWithDetails "invalid-input" "toy-key" [("rejection", PublicChoice "invalid-input")])
     perform _ _ _ = pure (ActionUnavailable "not-an-action")
     readObservation :: AccountStore -> CallContext -> Account a -> IO (ObservationOutcome a)
-    readObservation resource (CallContext resolve _ _ selected _ _ (Clock now _ _ _)) (Created input) = case (resolve input, selected) of
-      (Right key, Just (ByBusinessKey _ selectedKey)) | key == selectedKey -> do
-        found <- case resource of
-          AccountSet rows -> Set.member key <$> readIORef rows
-          CreateLog rows -> elem ("account-created:" <> key) <$> readIORef rows
-        tick <- now
-        pure (ObservedWithDetails [Occurrence Nothing found] (Coverage SampledState tick tick True) [("exists", PublicFlag found)])
-      _ -> pure (ObservationUnavailable "correlation-lost")
+    readObservation resource context (Created input) = guardCorrelation (BusinessKeyName "accountId") input context $ do
+      resolved <- resolveInput context input
+      case resolved of
+        Left _ -> pure (ObservationUnavailable "input")
+        Right key -> do
+          found <- case resource of
+            AccountSet rows -> Set.member key <$> readIORef rows
+            CreateLog rows -> elem ("account-created:" <> key) <$> readIORef rows
+          tick <- monotonic (callClock context)
+          pure (ObservedWithDetails [Occurrence Nothing found] (Coverage SampledState tick tick True) [("exists", PublicFlag found)])
     readObservation _ _ _ = pure (ObservationUnavailable "not-an-observation")

@@ -29,10 +29,19 @@ inputDependencies (Literal _) = []
 inputDependencies (Reference r) = [refId r]
 inputDependencies (Apply f a) = inputDependencies f ++ inputDependencies a
 
-evaluateInput :: Map Text Dynamic -> Input a -> Either Text a
+evaluateInput :: Map Text Dynamic -> Input a -> Either InputResolutionError a
 evaluateInput _ (Literal value) = Right value
 evaluateInput values (Reference (Ref key)) =
-  case Map.lookup key values >>= fromDynamic of
-    Just value -> Right value
-    Nothing -> Left key
+  case Map.lookup key values of
+    Nothing -> Left (InputReferenceMissing key)
+    Just dynamic -> case fromDynamic dynamic of
+      Just value -> Right value
+      Nothing -> Left (InputReferenceTypeMismatch key)
 evaluateInput values (Apply f a) = evaluateInput values f <*> evaluateInput values a
+
+data InputResolutionError
+  = UndeclaredInputReference !Text
+  | InputReferenceMissing !Text
+  | InputReferenceTypeMismatch !Text
+  | DetachedInputContext
+  deriving stock (Eq, Show, Generic)

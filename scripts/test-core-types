@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""Check semantic type boundaries against the built, public core package."""
+from pathlib import Path
+import subprocess
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+HEADER = '{-# LANGUAGE OverloadedStrings #-}\nmodule Boundary where\nimport Shoko\nimport Shoko.Clock (realClock)\n'
+CASES = [
+    (
+        'source-key',
+        'value :: Source ()\nvalue = sampledSource (SourceId "events")\n',
+        'value :: Source ()\nvalue = sampledSource (BusinessKeyName "events")\n',
+        ('SourceId', 'BusinessKeyName'),
+    ),
+    (
+        'timestamp-duration',
+        'value = detachedCallContext realClock (MonotonicTime 1000) (MonotonicTime 1000) Nothing Nothing\n',
+        'value = detachedCallContext realClock duration (MonotonicTime 1000) Nothing Nothing\nduration = either (error . show) id (milliseconds 1)\n',
+        ('Duration', 'MonotonicTime'),
+    ),
+]
+
+with tempfile.TemporaryDirectory(prefix='shoko-core-types-') as directory:
+    path = Path(directory) / 'Boundary.hs'
+    def compile_module(body):
+        path.write_text(HEADER + body)
+        return subprocess.run(
+            ['cabal', 'exec', '--', 'ghc', '-XGHC2024', '-fno-code',
+             '-fforce-recomp', '-package=shoko-core', '-outputdir', directory, str(path)],
+            cwd=ROOT, capture_output=True, text=True, timeout=60,
+        )
+    for name, positive, negative, types in CASES:
+        accepted = compile_module(positive)
+        if accepted.returncode:
+            raise SystemExit(f'{name}: positive fixture failed\n{accepted.stderr}')
+        refused = compile_module(negative)
+        diagnostic = refused.stdout + refused.stderr
+        if refused.returncode == 0 or not all(kind in diagnostic for kind in types):
+            raise SystemExit(f'{name}: expected rejection mentioning {types}\n{diagnostic}')
+        print(f'{name}: positive compiles; swapped types rejected')

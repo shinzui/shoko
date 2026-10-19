@@ -2,12 +2,12 @@ module GoldenFixtures (resultFixtures, valueFixtures) where
 
 import Consumer.Account
 import Consumer.DeliveryLedger
+import Consumer.Hooks (newMicroClock)
 import Data.Aeson (Value)
 import Data.IORef
 import Data.Set qualified as Set
 import Data.Time (UTCTime (..), fromGregorian)
 import Shoko
-import Shoko.Clock
 import Shoko.Evidence
 import Shoko.Result
 import Shoko.Result.Json
@@ -37,7 +37,7 @@ valueFixtures = do
 accountRun :: Scenario Account -> Bool -> IO RunResult
 accountRun selected includeIdentity = do
   calls <- newIORef 0
-  (clock, _) <- newFakeClock epoch
+  (clock, _) <- newMicroClock epoch
   let options =
         RunOptions
           "golden-run"
@@ -45,7 +45,7 @@ accountRun selected includeIdentity = do
           "toy-binary-v1"
           (if includeIdentity then Just "toy-implementation-v1" else Nothing)
           (if includeIdentity then Just (TargetIdentity "toy-fixture" "toy-namespace-uid" "toy-build-v1") else Nothing)
-  case resolveScenario testEnvironment options (BusinessKeyFrom "accountId" (pure "toy-key")) (memoryBinding calls) selected of
+  case resolveScenario testEnvironment options (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key")) (memoryBinding calls) selected of
     Left errors -> fail (show errors)
     Right resolved ->
       runScenario
@@ -60,11 +60,11 @@ ledgerRun :: Int -> Bool -> IO RunResult
 ledgerRun copies unavailable = do
   rows <- newIORef []
   readCalls <- newIORef 0
-  (clock, _) <- newFakeClock epoch
+  (clock, _) <- newMicroClock epoch
   case resolveScenario
     ledgerEnvironment
     testOptions
-    (businessKeyFromResult "deliveryId" "append")
+    (businessKeyFromResult (BusinessKeyName "deliveryId") "append")
     (ledgerBinding rows readCalls unavailable)
     (ledgerScenario copies (if unavailable then Eventually else ExactlyOnce)) of
     Left errors -> fail (show errors)

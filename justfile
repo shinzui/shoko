@@ -42,6 +42,7 @@ check-docs:
     mori terms validate --path .
 
 check: build test test-adapters test-event-stores test-cli test-workflow-contract
+    python3 scripts/test-core-types
     python3 scripts/check-result-schema.py
     nix flake check
 

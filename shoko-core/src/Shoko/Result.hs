@@ -11,6 +11,7 @@ where
 
 import Data.Time (UTCTime)
 import Shoko.Binding (Disposition, PolicyReport, PreflightError)
+import Shoko.Clock (MonotonicTime)
 import Shoko.Correlation
 import Shoko.Environment (TargetIdentity)
 import Shoko.Evidence
@@ -56,8 +57,8 @@ data VerificationResult = VerificationResult
     policyReport :: !PolicyReport,
     startedAt :: !UTCTime,
     finishedAt :: !UTCTime,
-    executionStartedAt :: !Integer,
-    executionDeadline :: !Integer,
+    executionStartedAt :: !MonotonicTime,
+    executionDeadline :: !MonotonicTime,
     verdict :: !Verdict,
     actions :: ![ActionEvidence],
     expectations :: ![ExpectationResult],

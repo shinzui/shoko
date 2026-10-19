@@ -2,11 +2,11 @@ module TemporalSpec (tests) where
 
 import Consumer.Account
 import Consumer.DeliveryLedger
+import Consumer.Hooks (newMicroClock)
 import Data.IORef
 import Data.Time (UTCTime (..), fromGregorian)
 import Hedgehog (evalIO, property, withTests, (===))
-import Shoko
-import Shoko.Clock
+import Shoko hiding (binding)
 import Shoko.Prelude (Text)
 import Shoko.Result
 import Test.Tasty
@@ -35,7 +35,7 @@ tests =
         verdictOf old === Just Fail,
       testPropertyNamed "typed rejection passes and fixture values stay private" "typedRejection" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
-        (clock, _) <- evalIO (newFakeClock epoch)
+        (clock, _) <- evalIO (newMicroClock epoch)
         let binding = memoryBinding calls
         positive <- run clock binding accountScenario
         negative <- run clock binding rejectionScenario
@@ -53,7 +53,7 @@ tests =
     run clock binding selected = case resolveScenario
       ledgerEnvironment
       testOptions
-      (BusinessKeyFrom "accountId" (pure "toy-key"))
+      (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key"))
       binding
       selected of
       Left errors -> fail (show errors)
@@ -66,11 +66,11 @@ runLedger :: [Text] -> Int -> Temporal -> Bool -> IO RunResult
 runLedger initial copies temporal unavailable = do
   rows <- newIORef initial
   readCalls <- newIORef 0
-  (clock, _) <- newFakeClock epoch
+  (clock, _) <- newMicroClock epoch
   case resolveScenario
     ledgerEnvironment
     testOptions
-    (businessKeyFromResult "deliveryId" "append")
+    (businessKeyFromResult (BusinessKeyName "deliveryId") "append")
     (ledgerBinding rows readCalls unavailable)
     (ledgerScenario copies temporal) of
     Left errors -> fail (show errors)

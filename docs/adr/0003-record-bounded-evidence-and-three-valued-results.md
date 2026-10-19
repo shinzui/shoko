@@ -118,3 +118,9 @@ carry node IDs, never dynamic values or raw transport diagnostics, and map to
 the existing runtime reason vocabulary. Unknown cause codes and fields are
 rejected by the v2 decoder/schema. Newtypes alone do not change the description
 digest or temporal evidence semantics.
+
+Handler implementation revision, 2026-10-19: run-result v2 replaces v1; the decoder
+accepts v2 only. Source consistency and typed handler-construction failures have
+closed preflight encodings with public identifiers and no transport diagnostics.
+Timestamp and identifier wrappers retain integer-microsecond and string encodings.
+Workflow manifests and identity artifacts retain their independent versions.

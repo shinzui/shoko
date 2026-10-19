@@ -19,25 +19,26 @@ import Data.Set (Set)
 import Data.Text qualified as Text
 import Network.HTTP.Client qualified as H
 import Shoko.Environment (Capability)
+import Shoko.Identifier
 import Shoko.Prelude
 
 data HttpMethod = Get | Post | Put | Patch | Delete deriving stock (Eq, Show, Generic)
 
-data Endpoint = Endpoint !Text !H.Request !HttpMethod !Int !(Set Capability) !Bool !(Maybe (Text, ByteString))
+data Endpoint = Endpoint !Text !H.Request !HttpMethod !Int !(Set Capability) !Bool !(Maybe (BusinessKeyName, ByteString))
 
 -- | Exact host-approved destination. No runtime URL input, redirects, URL
 -- credentials, query fragments, or ambient proxy settings are accepted.
-endpoint :: Text -> Text -> HttpMethod -> Int -> Set Capability -> Bool -> Maybe (Text, ByteString) -> Either Text Endpoint
+endpoint :: Text -> Text -> HttpMethod -> Int -> Set Capability -> Bool -> Maybe (BusinessKeyName, ByteString) -> Either Text Endpoint
 endpoint name url method maxBytes extra propagate scope
   | name == "" || maxBytes <= 0 || Text.any (`elem` ['#', '?']) url = Left "invalid-http-endpoint"
-  | Just (key, parameter) <- scope, key == "" || BS.null parameter = Left "invalid-http-scope"
+  | Just (key, parameter) <- scope, businessKeyNameText key == "" || BS.null parameter = Left "invalid-http-scope"
   | otherwise = case H.parseRequest (Text.unpack url) :: Either SomeException H.Request of
       Left _ -> Left "invalid-http-endpoint"
       Right request
         | not (Text.isPrefixOf "http://" url || Text.isPrefixOf "https://" url) || not (null (H.requestHeaders request)) -> Left "invalid-http-endpoint"
         | otherwise -> Right (Endpoint name request method maxBytes extra propagate scope)
 
-endpointParts :: Endpoint -> (Text, H.Request, HttpMethod, Int, Set Capability, Bool, Maybe (Text, ByteString))
+endpointParts :: Endpoint -> (Text, H.Request, HttpMethod, Int, Set Capability, Bool, Maybe (BusinessKeyName, ByteString))
 endpointParts (Endpoint name request method limit extra propagate scope) = (name, request, method, limit, extra, propagate, scope)
 
 newtype TraceParent = TraceParent ByteString

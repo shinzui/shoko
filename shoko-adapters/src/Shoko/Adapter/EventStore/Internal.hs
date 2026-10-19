@@ -25,7 +25,8 @@ import Shoko.Adapter.Postgres.Query (identifier)
 import Shoko.Binding
 import Shoko.Clock
 import Shoko.Correlation
-import Shoko.Environment (Capability (ReadEvents))
+import Shoko.Environment (Capability (ReadEvents), milliseconds)
+import Shoko.Identifier
 import Shoko.Observation hiding (matches)
 import Shoko.Prelude
 
@@ -51,7 +52,7 @@ limits pageSize pages budget
   | pageSize > 0 && pageSize <= 1000 && pages > 0 && pages <= 1000 && pageSize * pages <= 100000 && budget > 0 && budget <= 60000 = Right (Limits (fromIntegral pageSize) pages budget)
   | otherwise = Left "invalid-event-read-limits"
 
-data CorrelationMode = BusinessKeyField !Text | ExecutionMetadata
+data CorrelationMode = BusinessKeyField !BusinessKeyName | ExecutionMetadata
   deriving stock (Eq, Show, Generic)
 
 -- | Complete history requires an owner-backed exclusion of deletion,
@@ -65,7 +66,7 @@ data EventQuery a = EventQuery !Limits !EventScope !HistoryPolicy !CorrelationMo
 eventQuery :: Limits -> EventScope -> HistoryPolicy -> CorrelationMode -> Text -> (Value -> Either Text a) -> Either Text (EventQuery a)
 eventQuery bounded scope policy mode eventType decode = do
   _ <- case scope of StreamScope name -> streamScope name; CategoryScope name -> categoryScope name
-  if eventType == "" || mode == BusinessKeyField ""
+  if eventType == "" || mode == BusinessKeyField (BusinessKeyName "")
     then Left "invalid-event-query"
     else Right (EventQuery bounded scope policy mode eventType decode)
 
@@ -94,30 +95,45 @@ data ReaderState = ReaderState
   { baseline :: !(Maybe Baseline),
     excluded :: !(Set.Set Text),
     seen :: !(Set.Set Text),
-    timely :: !(Map.Map (Text, Integer) (Set.Set Text))
+    timely :: !(Map.Map (Text, MonotonicTime) (Set.Set Text))
   }
 
 -- | A fresh reader belongs to one finite run. No subscriptions are started.
-data Reader a = Reader !Text !Text !Text !(EventQuery a) !Fetch !(IORef ReaderState)
+data Reader a = Reader !Text !Text !SourceId !(EventQuery a) !Fetch !(IORef ReaderState)
 
-newReader :: Text -> Text -> Text -> EventQuery a -> Fetch -> IO (Either Text (Reader a))
+newReader :: Text -> Text -> SourceId -> EventQuery a -> Fetch -> IO (Either Text (Reader a))
 newReader settings schema source query fetch = case identifier schema of
   Left _ -> pure (Left "invalid-event-schema")
   Right _ | Left _ <- ConnectionString.parse settings -> pure (Left "invalid-event-connection-settings")
   Right _
-    | Text.null (Text.strip settings) || Text.null source -> pure (Left "invalid-event-reader")
+    | Text.null (Text.strip settings) || Text.null (sourceIdText source) -> pure (Left "invalid-event-reader")
     | otherwise -> Right . Reader settings schema source query fetch <$> newIORef (ReaderState Nothing Set.empty Set.empty Map.empty)
 
-queryContract :: Text -> EventQuery a -> BindingContract
-queryContract source (EventQuery _ _ _ mode _ _) =
-  BindingContract (Set.singleton ReadEvents) Set.empty (Set.singleton (case mode of BusinessKeyField _ -> BusinessKey; ExecutionMetadata -> ExecutionId)) (Just source) DurableHistory
+queryRequirement :: EventQuery a -> CorrelationRequirement
+queryRequirement (EventQuery _ _ _ mode _ _) = case mode of
+  BusinessKeyField key -> RequiresBusinessKey key
+  ExecutionMetadata -> RequiresExecutionId
+
+sameQuery :: EventQuery a -> EventQuery b -> Bool
+sameQuery (EventQuery limits' scope history mode tag _) (EventQuery limits2 scope2 history2 mode2 tag2 _) =
+  (limits', scope, history, mode, tag) == (limits2, scope2, history2, mode2, tag2)
+
+-- Decoder functions cannot be compared; use the same query for allocation and handler construction.
+readerHandler :: SourceId -> EventQuery a -> Handler (Reader a) (EventEvidence a)
+readerHandler label query = observationHandler (requiring [ReadEvents] noRequirements) (queryRequirement query) owned perform
+  where
+    compatible (Reader _ _ actual allocated _ _) = label == actual && sameQuery query allocated
+    owned = newSource label DurableHistory $ \reader clock ->
+      if compatible reader then capture reader clock label else pure (Left "event-descriptor-mismatch")
+    perform reader context =
+      if compatible reader then observeEvents context reader else pure (ObservationUnavailable "event-descriptor-mismatch")
 
 -- | Re-scan the entire bounded scope in one repeatable-read snapshot. A global
 -- high-water mark cannot skip a delayed lower-position commit in another stream.
-snapshot :: Reader a -> Clock -> Integer -> IO (Either Text ([StoreEvent], Bool))
+snapshot :: Reader a -> Clock -> MonotonicTime -> IO (Either Text ([StoreEvent], Bool))
 snapshot (Reader settings schema _ (EventQuery (Limits pageSize pages budget) scope _ _ _ _) fetch _) (Clock now _ _ bound) end = do
   started <- now
-  let deadline = min end (started + toInteger budget * 1000)
+  let deadline = min end (addDuration started (either (const (error "validated event budget")) id (milliseconds budget)))
   answer <- bound deadline $
     bracket (Connection.acquire (Settings.connectionString settings)) (either (const (pure ())) Connection.release) $ \case
       Left _ -> pure (Left "event-source-unavailable")
@@ -125,7 +141,7 @@ snapshot (Reader settings schema _ (EventQuery (Limits pageSize pages budget) sc
         current <- now
         result <- Connection.use connection $ do
           Session.script "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
-          _ <- Session.statement (Text.pack (show (max 1 ((deadline - current) `div` 1000)))) (setting "statement_timeout")
+          _ <- Session.statement (Text.pack (show (max 1 ((differenceMicros deadline current) `div` 1000)))) (setting "statement_timeout")
           _ <- Session.statement ("\"" <> schema <> "\", pg_catalog") (setting "search_path")
           events <- scan pages (-1) []
           Session.script "COMMIT"
@@ -147,12 +163,12 @@ snapshot (Reader settings schema _ (EventQuery (Limits pageSize pages budget) sc
             | remaining <= 1 || latest == maxBound -> pure (Right (concat (reverse (rows : acc)), False))
             | otherwise -> scan (remaining - 1) latest (rows : acc)
 
-capture :: Reader a -> Clock -> Text -> IO (Either Text Baseline)
+capture :: Reader a -> Clock -> SourceId -> IO (Either Text Baseline)
 capture reader@(Reader _ _ source _ _ state) clock@(Clock now _ _ _) requested
   | source /= requested = pure (Left "event-baseline-source-mismatch")
   | otherwise = do
       start <- now
-      snapshot reader clock (start + 60000000) >>= \case
+      snapshot reader clock (addDuration start (either (const (error "constant event budget")) id (milliseconds 60000))) >>= \case
         Left err -> pure (Left err)
         Right (_, False) -> pure (Left "event-baseline-scan-limit")
         Right (events, True) -> do
@@ -164,11 +180,16 @@ capture reader@(Reader _ _ source _ _ state) clock@(Clock now _ _ _) requested
           pure (Right captured)
 
 observeEvents :: CallContext -> Reader a -> IO (ObservationOutcome (EventEvidence a))
-observeEvents (CallContext _ end supplied selected _ cutoff clock@(Clock now _ _ _)) reader@(Reader _ _ source (EventQuery (Limits pageSize pageLimit _) scope historyPolicy mode wanted decode) _ state) = do
+observeEvents context reader@(Reader _ _ source (EventQuery (Limits pageSize pageLimit _) scope historyPolicy mode wanted decode) _ state) = do
+  let end = requestDeadline context
+      supplied = sourceBaseline context
+      selected = correlation context
+      cutoff = evidenceUntil context
+      clock@(Clock now _ _ _) = callClock context
   ReaderState captured excluded seen timely <- readIORef state
   case (captured, supplied, selected) of
-    (Just expected@(Baseline _ from _), Just actual, Just correlation)
-      | expected == actual && supports mode correlation -> do
+    (Just expected@(Baseline _ from _), Just actual, Just selectedCorrelation)
+      | expected == actual && supports mode selectedCorrelation -> do
           -- A response finishing after the cutoff does not prove its database
           -- snapshot was taken after it. This request start is a conservative
           -- lower bound for snapshot visibility, including connection setup.
@@ -179,8 +200,8 @@ observeEvents (CallContext _ end supplied selected _ cutoff clock@(Clock now _ _
               finished <- now
               let ids = Set.fromList [key | StoreEvent key _ _ _ _ _ _ <- events]
                   fresh = [event | event@(StoreEvent key _ _ _ _ _ _) <- events, Set.notMember key excluded]
-                  decoded = traverse (select correlation) fresh
-                  cacheKey = (Text.pack (show correlation), cutoff)
+                  decoded = traverse (select selectedCorrelation) fresh
+                  cacheKey = (Text.pack (show selectedCorrelation), cutoff)
                   known = Map.findWithDefault Set.empty cacheKey timely
               case decoded of
                 Left _ -> pure (ObservationUnavailable "event-payload-or-correlation-undecodable")
@@ -192,7 +213,7 @@ observeEvents (CallContext _ end supplied selected _ cutoff clock@(Clock now _ _
                       intact = Set.isSubsetOf seen ids
                       complete = historyPolicy == AppendOnlyDuringRun && scannedAll && intact && not ambiguous
                       through = min started cutoff
-                      occurrences = [Occurrence (Just (source <> ":" <> key)) value | (key, value) <- matches, Set.member key timelyIds]
+                      occurrences = [Occurrence (Just (sourceIdText source <> ":" <> key)) value | (key, value) <- matches, Set.member key timelyIds]
                       coordinates =
                         concat
                           [ [("event-" <> key <> "-position", PublicCount (toInteger pos)), ("event-" <> key <> "-recorded-at", PublicChoice (Text.pack (show timestamp)))]
@@ -207,7 +228,7 @@ observeEvents (CallContext _ end supplied selected _ cutoff clock@(Clock now _ _
                       filters =
                         [ ("scope-kind", PublicChoice (case scope of StreamScope _ -> "stream"; CategoryScope _ -> "category")),
                           ("event-type", PublicChoice wanted),
-                          ("correlation-filter", PublicChoice (case mode of BusinessKeyField field -> "business-key:" <> field; ExecutionMetadata -> "exact-execution-metadata")),
+                          ("correlation-filter", PublicChoice (case mode of BusinessKeyField field -> "business-key:" <> businessKeyNameText field; ExecutionMetadata -> "exact-execution-metadata")),
                           ("page-size", PublicCount (toInteger pageSize)),
                           ("page-limit", PublicCount (toInteger pageLimit))
                         ]
@@ -221,16 +242,16 @@ observeEvents (CallContext _ end supplied selected _ cutoff clock@(Clock now _ _
                     )
     _ -> pure (ObservationUnavailable "event-correlation-or-baseline-mismatch")
   where
-    select correlation (StoreEvent key eventType pos timestamp body execution causation)
+    select selectedCorrelation (StoreEvent key eventType pos timestamp body execution causation)
       | eventType /= wanted = Right []
       | otherwise = do
           actual <- case (mode, body) of
-            (BusinessKeyField field, Object fields) -> case KeyMap.lookup (Key.fromText field) fields of
+            (BusinessKeyField field, Object fields) -> case KeyMap.lookup (Key.fromText (businessKeyNameText field)) fields of
               Just (String value) -> Right value
               _ -> Left "missing-business-key"
             (ExecutionMetadata, _) -> maybe (Left "missing-execution-id") Right execution
             _ -> Left "missing-business-key"
-          let expected = case correlation of ByBusinessKey _ value -> value; ByExecutionId value -> maybe value UUID.toText (UUID.fromText value)
+          let expected = case selectedCorrelation of ByBusinessKey _ value -> value; ByExecutionId value -> maybe value UUID.toText (UUID.fromText value)
           if actual /= expected
             then Right []
             else do

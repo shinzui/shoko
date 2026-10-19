@@ -6,7 +6,7 @@ import Data.Set qualified as Set
 import Shoko
 import Shoko.Cli
 import Shoko.Cli.Config (configKeys)
-import Shoko.Clock (Clock (..))
+import Shoko.Clock (monotonic)
 import Shoko.Result (LogicalInput (..))
 import System.Environment (getArgs, lookupEnv)
 
@@ -28,39 +28,28 @@ registry = Registry ["local"] [entry "consumer-approved" True, entry "consumer-r
             result <- act "decide" (accept [if approved then "approved" else "denied"] (Decide approved))
             expect (eventually "decision-evidence" (observe "correct-decision" (ObservedDecision (fromRef result) approved) id))
         )
-        (BusinessKeyFrom "case" (pure "consumer-case"))
+        (BusinessKeyFrom (BusinessKeyName "case") (pure "consumer-case"))
         (LogicalInput "consumer-v1" [])
         [("demo", \_ _ -> SomeBinding consumerBinding)]
         (\_ -> pure (Right (Nothing, Nothing)))
 
 consumerBinding :: Binding Decision ()
-consumerBinding =
-  Binding
-    "independent-consumer"
-    Set.empty
-    contract
-    (\_ -> mark >> pure ())
-    (\_ -> mark >> pure Cleaned)
-    (\_ (Clock now _ _ _) source -> do mark; tick <- now; pure (Right (Baseline source tick Nothing)))
-    action
-    observation
+consumerBinding = binding "independent-consumer" (\_ -> mark >> pure ()) (\_ -> mark >> pure Cleaned) handlers
   where
     mark = lookupEnv "SHOKO_TEST_COUNTER" >>= maybe (pure ()) (\path -> appendFile path "effect\n")
-    contract :: forall a. OperationRole -> Decision a -> Maybe BindingContract
-    contract ActionOperation (Decide _) = Just (BindingContract Set.empty Set.empty (Set.singleton BusinessKey) Nothing SampledState)
-    contract ObservationOperation (ObservedDecision _ _) = Just (BindingContract Set.empty Set.empty (Set.singleton BusinessKey) (Just "consumer-state") SampledState)
-    contract _ _ = Nothing
-    action :: forall a. () -> CallContext -> Decision a -> IO (ActionOutcome a)
-    action _ _ (Decide approved) = mark >> pure (ActionObserved (if approved then "approved" else "denied") approved)
-    action _ _ _ = pure (ActionUnavailable "unsupported-role")
-    observation :: forall a. () -> CallContext -> Decision a -> IO (ObservationOutcome a)
-    observation _ (CallContext resolve _ _ _ _ _ (Clock now _ _ _)) (ObservedDecision input expected) = do
+    handlers :: forall a. OperationRole -> Decision a -> Either HandlerBuildError (Maybe (Handler () a))
+    handlers ActionOperation (Decide approved) = Right $ Just $ actionHandler noRequirements $ \_ _ -> mark >> pure (ActionObserved (if approved then "approved" else "denied") approved)
+    handlers ObservationOperation (ObservedDecision input expected) = Right $ Just $ observationHandler noRequirements (RequiresBusinessKey (BusinessKeyName "case")) owned $ \_ call -> do
       mark
-      tick <- now
-      pure $ case resolve input of
-        Left _ -> ObservationUnavailable "unresolved-input"
-        Right actual -> Observed [Occurrence Nothing (actual == expected)] (Coverage SampledState tick tick True)
-    observation _ _ _ = pure (ObservationUnavailable "unsupported-role")
+      tick <- monotonic (callClock call)
+      resolveInput call input >>= \case
+        Left _ -> pure (ObservationUnavailable "unresolved-input")
+        Right actual -> pure (Observed [Occurrence Nothing (actual == expected)] (Coverage SampledState tick tick True))
+    handlers _ _ = Right Nothing
+    owned = newSource (SourceId "consumer-state") SampledState $ \_ clock -> do
+      mark
+      tick <- monotonic clock
+      pure (Right (Baseline (SourceId "consumer-state") tick Nothing))
 
 main :: IO ()
 main =

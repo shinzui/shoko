@@ -19,7 +19,7 @@ import Shoko
 import Shoko.Adapter.Http qualified as Http
 import Shoko.Adapter.Postgres qualified as Pg
 import Shoko.Clock
-import Shoko.Result
+import Shoko.Result hiding (binding)
 import Shoko.Result.Json
 import System.Environment (getEnv)
 import Test.Tasty
@@ -38,13 +38,14 @@ table :: Pg.Table
 table = Pg.Table (ident "fixture") (ident "accounts")
 
 scope :: Pg.Scope
-scope = Pg.Scope "accountId" (ident "id")
+scope = Pg.Scope (BusinessKeyName "accountId") (ident "id")
 
 context :: Text.Text -> Int -> IO CallContext
 context key budget = do
   let Clock now _ _ _ = realClock
   start <- now
-  pure (CallContext (const (Left "no-inputs")) (start + toInteger budget) Nothing (Just (ByBusinessKey "accountId" key)) (\_ _ -> pure (Left "no-substeps")) (start + toInteger budget) realClock)
+  let end = MonotonicTime (monotonicMicros start + toInteger budget)
+  pure (detachedCallContext realClock end end Nothing (Just (ByBusinessKey (BusinessKeyName "accountId") key)))
 
 query :: Text.Text -> Pg.Query a -> IO (Either Pg.PostgresFailure (a, Pg.Sample))
 query key descriptor = do
@@ -75,7 +76,7 @@ postgresTests =
         query "many" column >>= check . valueIs Pg.MultipleRows,
       test "identifier and correlation rejection" $ do
         check (either (const True) (const False) (Pg.identifier "accounts; DROP TABLE accounts"))
-        let noCorrelation = CallContext (const (Left "none")) 999999 Nothing Nothing (\_ _ -> pure (Left "none")) 999999 realClock
+        let noCorrelation = detachedCallContext realClock (MonotonicTime 999999) (MonotonicTime 999999) Nothing Nothing
         answer <- Pg.runQuery noCorrelation (Pg.postgres "not-a-connection") (Pg.rowExists table scope Nothing)
         check (either (== Pg.CorrelationUnavailable) (const False) answer),
       test "decoding failure is unavailable, never empty" $ do
@@ -91,7 +92,7 @@ postgresTests =
         bracket (C.acquire (CS.connectionString settings)) (either (const (pure ())) C.release) $ \case
           Left _ -> fail "fixture connection failed"
           Right connection -> C.use connection (S.script "INSERT INTO fixture.accounts(id) VALUES ('forbidden')") >>= check . either (const True) (const False)
-        answer <- query "one" (Pg.rowCount (Pg.Table (ident "pg_catalog") (ident "pg_authid")) (Pg.Scope "accountId" (ident "rolname")) Nothing)
+        answer <- query "one" (Pg.rowCount (Pg.Table (ident "pg_catalog") (ident "pg_authid")) (Pg.Scope (BusinessKeyName "accountId") (ident "rolname")) Nothing)
         check (either (== Pg.PermissionDenied) (const False) answer)
     ]
 
@@ -99,7 +100,7 @@ config :: IO Http.HttpConfig
 config = do
   base <- Text.pack <$> getEnv "SHOKO_TEST_HTTP"
   unavailable <- Text.pack <$> getEnv "SHOKO_TEST_UNAVAILABLE_HTTP"
-  let make name route method limit = Http.endpoint name (base <> route) method limit Set.empty (name == "headers") (Just ("accountId", "id"))
+  let make name route method limit = Http.endpoint name (base <> route) method limit Set.empty (name == "headers") (Just (BusinessKeyName "accountId", "id"))
   endpoints <-
     traverse
       (either (fail . Text.unpack) pure)
@@ -159,24 +160,42 @@ instance Vocabulary Op where
   describeOperation (Rest key) = OperationInfo "rest" (Set.singleton ReadState) (inputDependencies key) []
 
 localBinding :: Http.HttpConfig -> Text.Text -> Binding Op (Http.Http, Pg.Postgres)
-localBinding httpConfig settings =
-  Binding
+localBinding httpConfig = localBindingUsing httpConfig httpConfig
+
+localBindingUsing :: Http.HttpConfig -> Http.HttpConfig -> Text.Text -> Binding Op (Http.Http, Pg.Postgres)
+localBindingUsing httpConfig acquiredConfig settings =
+  binding
     "local-adapters"
-    Set.empty
-    contract
-    (\_ -> (,Pg.postgres settings) <$> Http.newHttp httpConfig)
+    (\_ -> (,Pg.postgres settings) <$> Http.newHttp acquiredConfig)
     (\_ -> pure Cleaned)
-    (\_ clock source -> Pg.postgresBaseline clock source)
-    action
-    observation
+    handlers
   where
-    contract :: forall a. OperationRole -> Op a -> Maybe BindingContract
-    contract ActionOperation (Command route _) = Http.httpContract httpConfig route
-    contract ObservationOperation (State _ _) = Just (Pg.postgresContract "sql")
-    contract ObservationOperation (Rest _) = Http.httpContract httpConfig "read"
-    contract _ _ = Nothing
-    action :: forall a. (Http.Http, Pg.Postgres) -> CallContext -> Op a -> IO (ActionOutcome a)
-    action (http, _) call (Command route key) = Http.httpAction http call route (payload key) $ \status bytes ->
+    handlers :: forall a. OperationRole -> Op a -> Either HandlerBuildError (Maybe (Handler (Http.Http, Pg.Postgres) a))
+    handlers ActionOperation (Command route key) =
+      Just . focus fst <$> Http.httpActionHandler httpConfig route (\_ -> pure (Right (payload key))) (decodeAction key)
+    handlers ObservationOperation (State input absent) =
+      let descriptor = (if absent then Pg.rowAbsent else Pg.rowExists) table scope Nothing
+          pg = focus snd (Pg.postgresObservation (SourceId "sql") descriptor)
+          guarded = case handlerSource pg of
+            Nothing -> pg
+            Just owned -> observationHandler (handlerContract pg) (RequiresBusinessKey (BusinessKeyName "accountId")) owned $ \(_, resource) call ->
+              guardCorrelation (BusinessKeyName "accountId") input call (Pg.observeQuery call resource descriptor)
+       in Right (Just guarded)
+    handlers ObservationOperation (Rest input) = do
+      http <-
+        Http.httpObservationHandler
+          httpConfig
+          "read"
+          ( \call ->
+              resolveInput call input >>= \case
+                Left err -> pure (Left (Http.PayloadInputError err))
+                Right _ -> pure (Right Http.emptyPayload)
+          )
+          decodeRead
+      pure (Just (focus fst http))
+    handlers _ _ = Right Nothing
+    decodeRead status bytes = if status == 200 && bytes `elem` ["true", "false"] then Right (bytes == "true") else Left Http.ResponseUndecodable
+    decodeAction key status bytes =
       if status == 201
         then Right ("created", Text.decodeUtf8 bytes)
         else
@@ -186,18 +205,6 @@ localBinding httpConfig settings =
               if status == 409 && bytes == "duplicate"
                 then Right ("duplicate", key)
                 else Left Http.ResponseUndecodable
-    action _ _ _ = pure (ActionUnavailable "unsupported-role")
-    observation :: forall a. (Http.Http, Pg.Postgres) -> CallContext -> Op a -> IO (ObservationOutcome a)
-    observation (_, pg) call@(CallContext resolve _ _ selected _ _ _) (State input absent) = case (resolve input, selected) of
-      (Right key, Just (ByBusinessKey "accountId" selectedKey))
-        | key == selectedKey ->
-            Pg.observeQuery call pg ((if absent then Pg.rowAbsent else Pg.rowExists) table scope Nothing)
-      _ -> pure (ObservationUnavailable "correlation-lost")
-    observation (http, _) call@(CallContext resolve _ _ selected _ _ _) (Rest input) = case (resolve input, selected) of
-      (Right key, Just (ByBusinessKey "accountId" selectedKey)) | key == selectedKey -> Http.httpObservation http call "read" Http.emptyPayload $ \status bytes ->
-        if status == 200 && bytes `elem` ["true", "false"] then Right (bytes == "true") else Left Http.ResponseUndecodable
-      _ -> pure (ObservationUnavailable "correlation-lost")
-    observation _ _ _ = pure (ObservationUnavailable "unsupported-role")
 
 run :: Text.Text -> Text.Text -> [Text.Text] -> Bool -> Text.Text -> IO RunResult
 run route key tags absent settings = do
@@ -214,7 +221,7 @@ run route key tags absent settings = do
         expect (eventually "persisted-state" (observe "matches" (State (fromRef result) absent) id))
         when (route == "create") $ expect (eventually "rest-state" (observe "matches" (Rest (fromRef result)) id))
       options = RunOptions "adapter-run" False "test-build" Nothing Nothing
-  resolved <- either (fail . show) pure (resolveScenario environment options (businessKeyFromResult "accountId" "command") (localBinding httpConfig settings) scenarioValue)
+  resolved <- either (fail . show) pure (resolveScenario environment options (businessKeyFromResult (BusinessKeyName "accountId") "command") (localBinding httpConfig settings) scenarioValue)
   runScenario realClock (LogicalInput "adapter-recipe-v1" []) resolved
 
 verdictIs :: Verdict -> RunResult -> Bool
@@ -228,7 +235,31 @@ roundtripTests :: TestTree
 roundtripTests =
   testGroup
     "HTTP to SQL public runner"
-    [ test "real committed write yields Pass and decodable safe evidence" $ do
+    [ test "HTTP handler rejects an acquired endpoint descriptor mismatch" $ do
+        settings <- Text.pack <$> getEnv "SHOKO_TEST_PG"
+        declared <- config
+        base <- Text.pack <$> getEnv "SHOKO_TEST_HTTP"
+        different <- either (fail . Text.unpack) pure (Http.endpoint "create" (base <> "/noop") Http.Post 1024 Set.empty False (Just (BusinessKeyName "accountId", "id")))
+        acquired <- either (fail . Text.unpack) pure (Http.httpConfig [different])
+        let source = scenario "mismatch" "Descriptor ownership" "1" $ do
+              key <- act "command" (accept ["created"] (Command "create" "descriptor-mismatch"))
+              expect $ eventually "state" (observe "yes" (State (fromRef key) False) id)
+            environment = Environment "local" False (Set.fromList [ReadState, WriteState, SendHttp]) defaultPolicy
+        resolved <- either (fail . show) pure (resolveScenario environment (RunOptions "mismatch" False "fixture" Nothing Nothing) (BusinessKeyFrom (BusinessKeyName "accountId") (pure "descriptor-mismatch")) (localBindingUsing declared acquired settings) source)
+        result <- runScenario realClock (LogicalInput "mismatch" []) resolved
+        check (verdictIs Unknown result)
+        query "descriptor-mismatch" (Pg.rowAbsent table scope Nothing) >>= check . valueIs True,
+      test "invalid HTTP handler construction is retained in zero-allocation preflight" $ do
+        declared <- config
+        let source = scenario "not-get" "Read handler method validation" "1" $ expect $ eventually "read" (observe "yes" (Rest (pure "key")) id)
+            handlers :: OperationRole -> Op a -> Either HandlerBuildError (Maybe (Handler () a))
+            handlers ObservationOperation (Rest _) = Just . focus (const (error "must not execute")) <$> Http.httpObservationHandler declared "create" (const (pure (Right Http.emptyPayload))) (\_ _ -> Right True)
+            handlers _ _ = Right Nothing
+            selected = binding "invalid" (\_ -> fail "must not acquire") (const (pure Cleaned)) handlers
+        case resolveScenario (Environment "local" False (Set.fromList [ReadState, SendHttp]) defaultPolicy) (RunOptions "invalid" False "fixture" Nothing Nothing) (BusinessKeyFrom (BusinessKeyName "accountId") (pure "key")) selected source of
+          Left errors -> check (errors == [HandlerConstructionFailed "rest" (ObservationMethodNotGet "create")])
+          Right _ -> fail "invalid handler accepted",
+      test "real committed write yields Pass and decodable safe evidence" $ do
         settings <- Text.pack <$> getEnv "SHOKO_TEST_PG"
         result <- run "create" "created' scoped" ["created"] False settings
         check (verdictIs Pass result)
@@ -257,11 +288,11 @@ roundtripTests =
         httpConfig <- config
         calls <- newIORef (0 :: Int)
         let original = localBinding httpConfig "never-open"
-            guarded = original {acquire = \_ -> modifyIORef' calls (+ 1) >> fail "must not acquire"}
+            guarded = requiringLifecycle [ExternalSideEffect] original
             forbidden = Environment "denied" False Set.empty defaultPolicy
             scenarioValue = scenario "denied" "denied" "1" $ do
               _ <- act "command" (accept ["created"] (Command "noop" "never"))
               expect (eventually "state" (observe "yes" (State (pure "never") False) id))
-        check (either (const True) (const False) (resolveScenario forbidden (RunOptions "denied" False "test" Nothing Nothing) (BusinessKeyFrom "accountId" (pure "never")) guarded scenarioValue))
+        check (either (const True) (const False) (resolveScenario forbidden (RunOptions "denied" False "test" Nothing Nothing) (BusinessKeyFrom (BusinessKeyName "accountId") (pure "never")) guarded scenarioValue))
         readIORef calls >>= check . (== 0)
     ]

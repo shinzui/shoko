@@ -1,8 +1,7 @@
 module Shoko.Adapter.Kiroku
   ( Kiroku,
     kiroku,
-    kirokuContract,
-    kirokuBaseline,
+    kirokuObservation,
     observeKiroku,
     module Shoko.Adapter.Kiroku.Evidence,
   )
@@ -15,15 +14,15 @@ import Kiroku.Store.SQL qualified as SQL
 import Kiroku.Store.Types qualified as K
 import Shoko.Adapter.EventStore.Internal
 import Shoko.Adapter.Kiroku.Evidence
-import Shoko.Binding (BindingContract, CallContext)
-import Shoko.Clock (Clock)
-import Shoko.Observation (Baseline, ObservationOutcome)
+import Shoko.Binding
+import Shoko.Identifier
+import Shoko.Observation (ObservationOutcome)
 import Shoko.Prelude
 
 newtype Kiroku a = Kiroku (Reader a)
 
 -- | Credentials, schema, public source identity, and a bounded scope/codec.
-kiroku :: Text -> Text -> Text -> EventQuery a -> IO (Either Text (Kiroku a))
+kiroku :: Text -> Text -> SourceId -> EventQuery a -> IO (Either Text (Kiroku a))
 kiroku settings schema source query = fmap Kiroku <$> newReader settings schema source query fetch
   where
     fetch scope cursor size = do
@@ -34,12 +33,8 @@ kiroku settings schema source query = fmap Kiroku <$> newReader settings schema 
     convert scope (K.RecordedEvent (K.EventId key) (K.EventType tag) (K.StreamVersion version) (K.GlobalPosition global) _ _ body _ causation execution timestamp) =
       StoreEvent (UUID.toText key) tag (case scope of StreamScope _ -> version; CategoryScope _ -> global) timestamp body (UUID.toText <$> execution) (UUID.toText <$> causation)
 
--- | Pure metadata for inspection/policy resolution, before reader allocation.
-kirokuContract :: Text -> EventQuery a -> BindingContract
-kirokuContract = queryContract
-
-kirokuBaseline :: Kiroku a -> Clock -> Text -> IO (Either Text Baseline)
-kirokuBaseline (Kiroku reader) = capture reader
+kirokuObservation :: SourceId -> EventQuery a -> Handler (Kiroku a) (EventEvidence a)
+kirokuObservation label query = focus (\(Kiroku reader) -> reader) (readerHandler label query)
 
 observeKiroku :: CallContext -> Kiroku a -> IO (ObservationOutcome (EventEvidence a))
 observeKiroku call (Kiroku reader) = observeEvents call reader

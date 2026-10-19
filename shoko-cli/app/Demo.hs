@@ -5,7 +5,7 @@ import Data.Set qualified as Set
 import Shoko
 import Shoko.Cli.Config (Credentials, HostConfig)
 import Shoko.Cli.Registry
-import Shoko.Clock (Clock (..))
+import Shoko.Clock (monotonic)
 import Shoko.Prelude
 import Shoko.Result (LogicalInput (..))
 
@@ -30,7 +30,7 @@ registry =
     ]
 
 entry :: Text -> Text -> Bool -> Bool -> Bool -> Bool -> Entry
-entry name tag written unavailable fault synthetic = Entry description (businessKeyFromResult "demo-key" "create") (LogicalInput "demo-v1" []) [("demo", factory)] (\_ -> pure (Right (Nothing, Nothing)))
+entry name tag written unavailable fault synthetic = Entry description (businessKeyFromResult (BusinessKeyName "demo-key") "create") (LogicalInput "demo-v1" []) [("demo", factory)] (\_ -> pure (Right (Nothing, Nothing)))
   where
     description = scenario name "Labelled in-memory verifier demo" "v1" $ do
       key <- act "create" (accept [tag] Create)
@@ -38,32 +38,23 @@ entry name tag written unavailable fault synthetic = Entry description (business
     factory :: HostConfig -> Maybe Credentials -> SomeBinding Op
     factory _ _ =
       SomeBinding
-        ( Binding
-            "demo"
-            (if synthetic then Set.singleton SyntheticResource else Set.empty)
-            contract
-            (\_ -> newIORef False)
-            (\_ -> pure Cleaned)
-            (\_ (Clock now _ _ _) source -> do tick <- now; pure (Right (Baseline source tick Nothing)))
-            action
-            observation
+        ( requiringLifecycle [SyntheticResource | synthetic] $
+            binding "demo" (\_ -> newIORef False) (\_ -> pure Cleaned) handlers
         )
-    contract :: forall a. OperationRole -> Op a -> Maybe BindingContract
-    contract ActionOperation Create = Just (BindingContract Set.empty Set.empty (Set.singleton BusinessKey) Nothing SampledState)
-    contract ObservationOperation (Exists _) = Just (BindingContract Set.empty Set.empty (Set.singleton BusinessKey) (Just "demo-state") SampledState)
-    contract _ _ = Nothing
+    handlers :: forall a. OperationRole -> Op a -> Either HandlerBuildError (Maybe (Handler (IORef Bool) a))
+    handlers ActionOperation op@Create = Right (Just (actionHandler noRequirements (\resource call -> action resource call op)))
+    handlers ObservationOperation op@(Exists _) = Right (Just (observationHandler noRequirements (RequiresBusinessKey (BusinessKeyName "demo-key")) (sampledSource (SourceId "demo-state")) (\resource call -> observation resource call op)))
+    handlers _ _ = Right Nothing
     action :: forall a. IORef Bool -> CallContext -> Op a -> IO (ActionOutcome a)
     action state _ Create
       | fault = fail "PRIVATE-DEMO-FAULT-SENTINEL"
       | otherwise = writeIORef state written >> pure (ActionObservedWithDetails tag "demo-business-key" [("demo-detail", PublicChoice "visible-demo-summary")])
     action _ _ _ = pure (ActionUnavailable "unsupported-role")
     observation :: forall a. IORef Bool -> CallContext -> Op a -> IO (ObservationOutcome a)
-    observation state (CallContext resolve _ _ selected _ _ (Clock now _ _ _)) (Exists input)
+    observation state call (Exists input)
       | unavailable = pure (ObservationUnavailable "demo-source-unavailable")
-      | otherwise = case (resolve input, selected) of
-          (Right key, Just (ByBusinessKey "demo-key" selectedKey)) | key == selectedKey -> do
-            value <- readIORef state
-            tick <- now
-            pure (Observed [Occurrence Nothing value] (Coverage SampledState tick tick True))
-          _ -> pure (ObservationUnavailable "correlation-lost")
+      | otherwise = guardCorrelation (BusinessKeyName "demo-key") input call $ do
+          value <- readIORef state
+          tick <- monotonic (callClock call)
+          pure (Observed [Occurrence Nothing value] (Coverage SampledState tick tick True))
     observation _ _ _ = pure (ObservationUnavailable "unsupported-role")

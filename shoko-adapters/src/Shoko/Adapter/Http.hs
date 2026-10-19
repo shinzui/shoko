@@ -3,8 +3,9 @@ module Shoko.Adapter.Http
     httpConfig,
     Http,
     newHttp,
-    httpContract,
-    httpBaseline,
+    HttpPayloadError (..),
+    httpActionHandler,
+    httpObservationHandler,
     httpAction,
     httpObservation,
     module Shoko.Adapter.Http.Request,
@@ -30,6 +31,7 @@ import Shoko.Binding
 import Shoko.Clock
 import Shoko.Correlation
 import Shoko.Environment
+import Shoko.Identifier
 import Shoko.Observation
 import Shoko.Prelude
 
@@ -53,17 +55,54 @@ newHttp config =
           H.managerIdleConnectionCount = 0
         }
 
-httpContract :: HttpConfig -> Text -> Maybe BindingContract
-httpContract (HttpConfig endpoints) key = do
-  endpointValue <- Map.lookup key endpoints
-  let (_, _, method, _, extra, _, _) = endpointParts endpointValue
-      required = Set.fromList [SendHttp, if method == Get then ReadState else WriteState]
-  pure (BindingContract (Set.union required extra) Set.empty (Set.singleton BusinessKey) (Just key) SampledState)
+data HttpPayloadError = PayloadInputError !InputResolutionError | InvalidPayload
+  deriving stock (Eq, Show, Generic)
 
-httpBaseline :: Clock -> Text -> IO (Either Text Baseline)
-httpBaseline (Clock now _ _ _) source = do
-  tick <- now
-  pure (Right (Baseline source tick Nothing))
+lookupEndpoint :: HttpConfig -> Text -> Either HandlerBuildError Endpoint
+lookupEndpoint (HttpConfig endpoints) key = maybe (Left (EndpointNotAllowlisted key)) Right (Map.lookup key endpoints)
+
+endpointContract :: Endpoint -> BindingContract
+endpointContract selected =
+  let (_, _, method, _, extra, _, _) = endpointParts selected
+   in requiring (SendHttp : (if method == Get then ReadState else WriteState) : Set.toList extra) noRequirements
+
+-- Compare all executable descriptor fields before any network IO.
+sameEndpoint :: Endpoint -> Endpoint -> Bool
+sameEndpoint left right =
+  let (ln, lr, lm, ll, lc, lp, ls) = endpointParts left
+      (rn, rr, rm, rl, rc, rp, rs) = endpointParts right
+      target r = (H.secure r, H.host r, H.port r, H.path r)
+   in (ln, target lr, lm, ll, lc, lp, ls) == (rn, target rr, rm, rl, rc, rp, rs)
+
+configuredEndpoint :: Endpoint -> Http -> Bool
+configuredEndpoint descriptor (Http (HttpConfig endpoints) _) =
+  let (key, _, _, _, _, _, _) = endpointParts descriptor
+   in maybe False (sameEndpoint descriptor) (Map.lookup key endpoints)
+
+httpActionHandler :: HttpConfig -> Text -> (CallContext -> IO (Either HttpPayloadError HttpPayload)) -> (Int -> ByteString -> Either HttpFailure (Text, a)) -> Either HandlerBuildError (Handler Http a)
+httpActionHandler config key build decode = do
+  descriptor <- lookupEndpoint config key
+  pure $ actionHandler (endpointContract descriptor) $ \resource context ->
+    if not (configuredEndpoint descriptor resource)
+      then pure (ActionUnavailable "endpoint-descriptor-mismatch")
+      else
+        build context >>= \case
+          Left _ -> pure (ActionUnavailable "payload-unavailable")
+          Right payload -> httpAction resource context key payload decode
+
+httpObservationHandler :: HttpConfig -> Text -> (CallContext -> IO (Either HttpPayloadError HttpPayload)) -> (Int -> ByteString -> Either HttpFailure a) -> Either HandlerBuildError (Handler Http a)
+httpObservationHandler config key build decode = do
+  descriptor <- lookupEndpoint config key
+  let (_, _, method, _, _, _, scope) = endpointParts descriptor
+  if method /= Get then Left (ObservationMethodNotGet key) else pure ()
+  keyName <- maybe (Left (ObservationScopeMissing key)) (Right . fst) scope
+  pure $ observationHandler (endpointContract descriptor) (RequiresBusinessKey keyName) (sampledSource (SourceId key)) $ \resource context ->
+    if not (configuredEndpoint descriptor resource)
+      then pure (ObservationUnavailable "endpoint-descriptor-mismatch")
+      else
+        build context >>= \case
+          Left _ -> pure (ObservationUnavailable "payload-unavailable")
+          Right payload -> httpObservation resource context key payload decode
 
 methodBytes :: HttpMethod -> ByteString
 methodBytes Get = "GET"
@@ -72,8 +111,8 @@ methodBytes Put = "PUT"
 methodBytes Patch = "PATCH"
 methodBytes Delete = "DELETE"
 
-request :: Http -> CallContext -> Bool -> Text -> HttpPayload -> IO (Either HttpFailure (Int, ByteString, Integer, Integer, [(Text, PublicValue)]))
-request (Http (HttpConfig endpoints) manager) (CallContext _ end _ selected _ _ (Clock now _ _ bound)) isRead key (HttpPayload body contentType authorization trace runLabel)
+request :: Http -> CallContext -> Bool -> Text -> HttpPayload -> IO (Either HttpFailure (Int, ByteString, MonotonicTime, MonotonicTime, [(Text, PublicValue)]))
+request (Http (HttpConfig endpoints) manager) context isRead key (HttpPayload body contentType authorization trace runLabel)
   | any (BS.any (`elem` [10, 13])) (contentType : maybe [] pure authorization)
       || maybe False (\label -> Text.null label || Text.length label > 256 || Text.any (\c -> c < ' ' || c > '~') label) runLabel =
       pure (Left InvalidHttpInput)
@@ -96,7 +135,7 @@ request (Http (HttpConfig endpoints) manager) (CallContext _ end _ selected _ _ 
               if started >= end
                 then pure (Left HttpDeadlineExpired)
                 else do
-                  let remaining = fromInteger (min (toInteger (maxBound :: Int)) (end - started))
+                  let remaining = fromInteger (min (toInteger (maxBound :: Int)) (differenceMicros end started))
                       executionHeader = case runLabel of
                         Just runId | propagate -> [("x-shoko-execution-id", Text.encodeUtf8 runId)]
                         _ -> []
@@ -132,6 +171,10 @@ request (Http (HttpConfig endpoints) manager) (CallContext _ end _ selected _ _ 
                           finished,
                           [("endpoint", PublicChoice key), ("method", PublicChoice (Text.decodeUtf8 (methodBytes method))), ("status", PublicCount (toInteger status))]
                         )
+  where
+    end = requestDeadline context
+    selected = correlation context
+    Clock now _ _ bound = callClock context
 
 readBounded :: Int -> H.BodyReader -> IO (Either HttpFailure ByteString)
 readBounded limit reader = go 0 []

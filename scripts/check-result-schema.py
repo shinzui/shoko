@@ -10,7 +10,7 @@ from jsonschema import Draft202012Validator
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    schema_path = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "schemas/run-result-v1.schema.json"
+    schema_path = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "schemas/run-result-v2.schema.json"
     examples = Path(sys.argv[2]) if len(sys.argv) > 2 else root / "shoko-core/test/golden"
     schema = json.loads(schema_path.read_text())
     Draft202012Validator.check_schema(schema)
@@ -29,7 +29,7 @@ def main():
             raise SystemExit("Schema accepted an unsupported version")
         if validator.is_valid(dict(value, undeclaredField=True)):
             raise SystemExit("Schema accepted an undeclared field")
-    print(f"Validated {len(files)} run-result examples against schema v1")
+    print(f"Validated {len(files)} run-result examples against schema v2")
 
 
 if __name__ == "__main__":

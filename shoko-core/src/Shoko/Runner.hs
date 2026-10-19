@@ -17,12 +17,15 @@ import Data.Set qualified as Set
 import Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, liftIO, runEff)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Shoko.Action
-import Shoko.Binding
+import Shoko.Binding hiding (binding, bindingName)
 import Shoko.Clock
 import Shoko.Correlation
 import Shoko.Environment
 import Shoko.Evidence
 import Shoko.Expectation
+import Shoko.Identifier
+import Shoko.Internal.Binding (Binding (..), Handler (..), Source (..))
+import Shoko.Internal.Call (CallContext (..))
 import Shoko.Internal.Digest qualified as Digest
 import Shoko.Internal.Reference (evaluateInput)
 import Shoko.Observation
@@ -33,24 +36,24 @@ import Shoko.Scenario
 -- Execution is separate from construction. Only resolved operation IDs can be
 -- dispatched through this interpreter; no IO is embedded in the scenario.
 data Execute op :: Effect where
-  ExecuteAction :: CallContext -> op a -> Execute op m (ActionOutcome a)
+  ExecuteAction :: OperationRole -> CallContext -> op a -> Execute op m (ActionOutcome a)
   ExecuteObservation :: CallContext -> op a -> Execute op m (ObservationOutcome a)
 
 type instance DispatchOf (Execute op) = Dynamic
 
 runBinding :: forall op resource a. (Vocabulary op) => Set Text -> Binding op resource -> resource -> Eff '[Execute op, IOE] a -> IO a
-runBinding approved (Binding _ _ _ _ _ _ actionHandler observationHandler) resource =
+runBinding approved selectedBinding resource =
   runEff
     . interpret
       ( \_ -> \case
-          ExecuteAction context op ->
-            if permitted op
-              then liftIO (actionHandler resource context op)
-              else pure (ActionUnavailable "undeclared-operation")
+          ExecuteAction role context op ->
+            case bindingHandler selectedBinding role op of
+              Right (Just (ActionHandler _ perform)) | permitted op -> liftIO (perform resource context)
+              _ -> pure (ActionUnavailable "undeclared-operation")
           ExecuteObservation context op ->
-            if permitted op
-              then liftIO (observationHandler resource context op)
-              else pure (ObservationUnavailable "undeclared-operation")
+            case bindingHandler selectedBinding ObservationOperation op of
+              Right (Just (ObservationHandler _ _ _ perform)) | permitted op -> liftIO (perform resource context)
+              _ -> pure (ObservationUnavailable "undeclared-operation")
       )
   where
     permitted :: forall b. op b -> Bool
@@ -80,13 +83,13 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
   let ( description,
         steps,
         expectations,
-        binding@(Binding bindingName _ lookupContract acquire release capture _ _),
+        binding@(Binding bindingName _ acquire release _),
         Environment envName _ _ (Policy budget _ _ grace),
         (RunOptions runKey _ build implementation target),
         correlationPlan,
         policyReport
         ) = resolvedParts resolved
-      runEnd = start + toInteger (durationMicros budget)
+      runEnd = addDuration start budget
       register finalizer = atomicModifyIORef' finalizers (\fs -> (finalizer : fs, ()))
       approved = Set.fromList (map stepOperation steps ++ map expectationOperation expectations)
       finishReport (actionResults, expectationResults, selected, primary) cleanup = do
@@ -122,17 +125,18 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
         pure ([], map (unexecuted tick why Map.empty) expectations, Nothing, Unknown)
       execute resource = do
         let sources =
-              Set.toAscList $
-                Set.fromList
-                  [source | op <- map stepSource steps ++ map expectationSource expectations, Just source <- [op]]
-        captured <- forM sources $ \source -> do
-          result <- attempt runClock runEnd (capture resource runClock source)
+              foldl
+                (\acc source -> if any ((== sourceId source) . sourceId) acc then acc else acc ++ [source])
+                []
+                [source | Expectation _ _ _ observation <- expectations, Right (Just handler) <- [bindingHandler binding ObservationOperation (observationOperation observation)], Just source <- [handlerSource handler]]
+        captured <- forM sources $ \(Source label _ capture _) -> do
+          result <- attempt runClock runEnd (capture resource runClock)
           capturedNow <- now
           pure
-            ( source,
+            ( label,
               case result of
                 Right (Right base@(Baseline observed capturedAt _))
-                  | observed == source && capturedAt >= start && capturedAt <= capturedNow -> Right base
+                  | observed == label && capturedAt >= start && capturedAt <= capturedNow -> Right base
                   | otherwise -> Left InvalidEvidence
                 Right (Left _) -> Left SourceUnavailable
                 Left why -> Left why
@@ -174,13 +178,13 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
                       Just selected,
                       aggregateVerdicts (map actionVerdict actionResults ++ map expectationVerdict results)
                     )
-      stepSource (Step _ fixture action) = sourceFor (if fixture then FixtureOperation else ActionOperation) (actionOperation action)
-      expectationSource (Expectation _ _ _ observation) = sourceFor ObservationOperation (observationOperation observation)
-      sourceFor :: forall a. OperationRole -> op a -> Maybe Text
-      sourceFor role op = case lookupContract role op of Just (BindingContract _ _ _ source _) -> source; Nothing -> Nothing
+      sourceFor :: forall a. OperationRole -> op a -> Maybe SourceId
+      sourceFor role op = case bindingHandler binding role op of
+        Right (Just handler) -> sourceId <$> handlerSource handler
+        _ -> Nothing
       unexecuted tick why baselines (Expectation key _ _ observation) =
         let OperationInfo opKey _ _ _ = describeOperation (observationOperation observation)
-            source = fromMaybe "unavailable" (sourceFor ObservationOperation (observationOperation observation))
+            source = fromMaybe (SourceId "unavailable") (sourceFor ObservationOperation (observationOperation observation))
          in ExpectationResult key Unknown why (Evidence source opKey (Map.lookup source baselines) tick tick Nothing [] 0 True runEnd [])
   acquired <- try (restore (attempt runClock runEnd (acquire register)))
   case acquired of
@@ -192,7 +196,7 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
       unavailable why >>= (`finishReport` cleanup)
     Right (Right resource) -> do
       primary <- try (restore (execute resource))
-      cleanup <- restore (finalize runClock grace finalizers [release resource])
+      cleanup <- restore (finalize runClock grace finalizers (release resource))
       case primary of
         Left (exception :: SomeException) -> rethrowOrFault exception
         Right result -> finishReport result cleanup
@@ -213,7 +217,7 @@ finalize runClock@(Clock now _ _ _) grace registered first = do
   started <- now
   finalizers <- (first ++) <$> readIORef registered
   results <- newIORef []
-  result <- attempt runClock (started + toInteger (durationMicros grace)) $
+  result <- attempt runClock (addDuration started grace) $
     forM_ finalizers $ \finalizer -> do
       outcome <- trySync finalizer
       modifyIORef' results (++ [either (const CleanupFailed) id outcome])
@@ -224,7 +228,7 @@ finalize runClock@(Clock now _ _ _) grace registered first = do
       Left DeadlineExceeded -> [CleanupTimedOut]
       Left _ -> [CleanupFailed]
 
-attempt :: Clock -> Integer -> IO a -> IO (Either Reason a)
+attempt :: Clock -> MonotonicTime -> IO a -> IO (Either Reason a)
 attempt (Clock _ _ _ bound) end action = do
   result <- trySync (bound end (action >>= evaluate))
   pure $ case result of
@@ -251,7 +255,7 @@ expectationOperation (Expectation _ _ _ observation) = case describeOperation (o
 resolveCorrelation :: Text -> Map Text Dynamic.Dynamic -> CorrelationPlan -> Either Reason Correlation
 resolveCorrelation runKey _ PropagatedExecutionId = Right (ByExecutionId runKey)
 resolveCorrelation _ values (BusinessKeyFrom key input) = case evaluateInput values input of
-  Right value | key /= "" && value /= "" -> Right (ByBusinessKey key value)
+  Right value | businessKeyNameText key /= "" && value /= "" -> Right (ByBusinessKey key value)
   _ -> Left CorrelationLost
 
 actionVerdict :: ActionEvidence -> Verdict
@@ -267,21 +271,23 @@ runSteps ::
   Binding op resource ->
   resource ->
   Clock ->
-  Integer ->
+  MonotonicTime ->
   [Step op] ->
   IO (Map Text Dynamic.Dynamic, [ActionEvidence], Maybe Reason)
 runSteps approved binding resource runClock@(Clock now _ _ _) end = go Map.empty []
   where
     go values results [] = pure (values, results, Nothing)
-    go values results (Step key _ action : rest) = do
+    go values results (Step key fixture action : rest) = do
       let op = actionOperation action
           info@(OperationInfo opKey _ _ _) = describeOperation op
           accepted = acceptedTags action
       started <- now
       substeps <- newIORef []
-      let context = makeContext runClock end end values info Nothing Nothing substeps
-      outcome <- attempt runClock end $ runBinding approved binding resource (send (ExecuteAction context op))
+      denied <- newIORef Nothing
+      let context = makeContext runClock end end values info Nothing Nothing substeps denied
+      outcome <- attempt runClock end $ runBinding approved binding resource (send (ExecuteAction (if fixture then FixtureOperation else ActionOperation) context op))
       finished <- now
+      deniedAccess <- readIORef denied
       substepResults <- readIORef substeps
       let substepProblems = [substepReason | SubstepEvidence _ _ _ substepReason <- substepResults, substepReason /= Satisfied]
           observedResult = case outcome of
@@ -292,7 +298,11 @@ runSteps approved binding resource runClock@(Clock now _ _ _) end = go Map.empty
           (tag, why, details) = case observedResult of
             Left failure -> (Nothing, failure, [])
             Right (observed, _, publicDetails) -> (Just observed, if Set.member observed accepted then Satisfied else Mismatch, publicDetails)
-          finalReason = case substepProblems of [] -> why; problem : _ -> problem
+          finalReason = case (outcome, deniedAccess, substepProblems) of
+            (Left failure, _, _) -> failure
+            (_, Just _, _) -> UndeclaredOperation
+            (_, _, []) -> why
+            (_, _, problem : _) -> problem
           evidence = ActionEvidence key opKey (Set.toAscList accepted) tag started finished finalReason substepResults details
       case (observedResult, finalReason) of
         (Right (_, value, _), Satisfied) -> go (Map.insert key (toDyn value) values) (results ++ [evidence]) rest
@@ -300,23 +310,26 @@ runSteps approved binding resource runClock@(Clock now _ _ _) end = go Map.empty
 
 makeContext ::
   Clock ->
-  Integer ->
-  Integer ->
+  MonotonicTime ->
+  MonotonicTime ->
   Map Text Dynamic.Dynamic ->
   OperationInfo ->
   Maybe Baseline ->
   Maybe Correlation ->
   IORef [SubstepEvidence] ->
+  IORef (Maybe Text) ->
   CallContext
-makeContext runClock@(Clock now _ _ _) end cutoff values (OperationInfo _ _ declared inventory) base selected records =
-  CallContext resolve end base selected runSubstep cutoff runClock
+makeContext runClock@(Clock now _ _ _) end cutoff values (OperationInfo _ _ declared inventory) base selected records denied =
+  CallContext resolve end base selected substepRunner cutoff runClock Nothing
   where
-    resolve :: forall a. Input a -> Either Text a
-    resolve input
-      | all (`elem` declared) (inputDependencies input) = evaluateInput values input
-      | otherwise = Left "undeclared-reference"
-    runSubstep :: forall a. Text -> IO a -> IO (Either Text a)
-    runSubstep key action = do
+    resolve :: forall a. Input a -> IO (Either InputResolutionError a)
+    resolve input = case filter (`notElem` declared) (inputDependencies input) of
+      [] -> pure (evaluateInput values input)
+      dependency : _ -> do
+        atomicModifyIORef' denied (\old -> (case old of Nothing -> Just dependency; _ -> old, ()))
+        pure (Left (UndeclaredInputReference dependency))
+    substepRunner :: forall a. Text -> IO a -> IO (Either Text a)
+    substepRunner key action = do
       started <- now
       result <- if key `elem` map fst inventory then attempt runClock end action else pure (Left UndeclaredOperation)
       finished <- now
@@ -333,17 +346,17 @@ runExpectation ::
   Binding op resource ->
   resource ->
   Clock ->
-  Integer ->
-  Integer ->
+  MonotonicTime ->
+  MonotonicTime ->
   Map Text Dynamic.Dynamic ->
   Correlation ->
-  Map Text Baseline ->
+  Map SourceId Baseline ->
   ResolvedScenario op resource ->
   Expectation op ->
   IO ExpectationResult
 runExpectation
   approved
-  binding@(Binding _ _ lookupContract _ _ _ _ _)
+  binding
   resource
   runClock@(Clock now _ sleep _)
   runEnd
@@ -359,12 +372,12 @@ runExpectation
         cutoff =
           minimum
             ( runEnd
-                : map ((activation +) . toInteger . durationMicros) windows
-                ++ [activation + toInteger (durationMicros defaultWindow) | temporal == Eventually]
+                : map (addDuration activation) windows
+                ++ [addDuration activation defaultWindow | temporal == Eventually]
             )
-        (source, advertised) = case lookupContract ObservationOperation op of
-          Just (BindingContract _ _ _ sourceName strength) -> (fromMaybe "unavailable" sourceName, strength)
-          Nothing -> ("unavailable", SampledState)
+        (source, advertised) = case bindingHandler binding ObservationOperation op of
+          Right (Just handler) | Just owned <- handlerSource handler -> (sourceId owned, sourceCoverage owned)
+          _ -> (SourceId "unavailable", SampledState)
         base = Map.lookup source baselines
         baselineTick = maybe activation (\(Baseline _ captured _) -> captured) base
         final (SearchState identities count gaps latest missingId details) why verdict = do
@@ -407,8 +420,9 @@ runExpectation
             then close state
             else do
               records <- newIORef []
+              denied <- newIORef Nothing
               let requestEnd = if temporal == Eventually && advertised /= DurableHistory then cutoff else runEnd
-                  context = makeContext runClock requestEnd cutoff values info base (Just selected) records
+                  context = makeContext runClock requestEnd cutoff values info base (Just selected) records denied
                   query = do
                     observed <- runBinding approved binding resource (send (ExecuteObservation context op))
                     case observationBatch observed of
@@ -419,12 +433,15 @@ runExpectation
                         pure (Just (matchingIds, coverage, details))
               outcome <- attempt runClock requestEnd query
               finished <- now
+              deniedAccess <- readIORef denied
               case outcome of
                 Left UnexpectedRunnerFault -> final state UnexpectedRunnerFault Unknown
+                Left DeadlineExceeded -> final state DeadlineExceeded Unknown
+                _ | Just _ <- deniedAccess -> final state UndeclaredOperation Unknown
                 _ -> do
                   let result = case outcome of Right value -> value; _ -> Nothing
                       validCoverage (Coverage strength from through _) =
-                        from >= 0
+                        from >= MonotonicTime 0
                           && from <= through
                           && through <= finished
                           && (strength /= DurableHistory || advertised == DurableHistory)
@@ -457,7 +474,7 @@ runExpectation
                       -- read already begun at/after the cutoff closes once.
                       | advertised == DurableHistory && finished >= cutoff && current < cutoff && requestEnd > cutoff && finished < runEnd -> loop next
                       | finished >= cutoff -> close next
-                      | otherwise -> sleep (min cutoff (finished + toInteger (durationMicros polling))) >> loop next
+                      | otherwise -> sleep (min cutoff (addDuration finished polling)) >> loop next
     loop (SearchState Set.empty 0 False Nothing False [])
 
 observationBatch :: ObservationOutcome a -> Maybe ([Occurrence a], Coverage, [(Text, PublicValue)])

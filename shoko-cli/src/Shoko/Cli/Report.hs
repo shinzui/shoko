@@ -4,6 +4,7 @@ import Control.Exception (IOException, bracketOnError, catch, onException)
 import Data.ByteString.Lazy qualified as BL
 import Data.Text qualified as Text
 import Shoko.Evidence
+import Shoko.Identifier (sourceIdText)
 import Shoko.Prelude
 import Shoko.Result
 import Shoko.Result.Json
@@ -50,7 +51,7 @@ renderText (Verification (VerificationResult _ _ runId environment binding _ _ _
         <> " "
         <> Text.pack (show reason)
         <> "; source="
-        <> source
+        <> sourceIdText source
         <> "; activation="
         <> Text.pack (show activation)
         <> "; finished="

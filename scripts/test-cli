@@ -22,7 +22,7 @@ else:
     host = Path(subprocess.check_output(["cabal", "list-bin", "shoko-consumer-host"], text=True).strip())
 
 config_schema_path = Path(os.environ.get("SHOKO_CONFIG_SCHEMA", root / "schemas/config-v1.schema.json"))
-result_schema_path = Path(os.environ.get("SHOKO_RESULT_SCHEMA", root / "schemas/run-result-v1.schema.json"))
+result_schema_path = Path(os.environ.get("SHOKO_RESULT_SCHEMA", root / "schemas/run-result-v2.schema.json"))
 demo = str(os.environ.get("SHOKO_DEMO_CONFIG", root / "config/demo.yaml"))
 schema = json.loads(config_schema_path.read_text())
 Draft202012Validator.check_schema(schema)
@@ -58,7 +58,7 @@ assert set(declared) == set(leaves(schema)), "typed declaration/schema keys drif
 call(cli, ["--help"])
 call(cli, ["run", "demo-account-created", secret], 2)
 version = call(cli, ["--version"]).stdout
-assert "0.1.0.0" in version and any(word in version for word in ("clean", "dirty", "source-unrecorded"))
+assert "0.2.0.0" in version and any(word in version for word in ("clean", "dirty", "source-unrecorded"))
 assert "demo-account-created" in call(cli, ["list"]).stdout
 assert "consumer-rejected" in call(host, ["list"]).stdout
 

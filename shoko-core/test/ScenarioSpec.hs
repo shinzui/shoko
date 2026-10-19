@@ -8,7 +8,7 @@ import Data.Set qualified as Set
 import Data.String (fromString)
 import Data.Text qualified as Text
 import Hedgehog (PropertyT, assert, evalIO, property, withTests, (===))
-import Shoko
+import Shoko hiding (binding, correlation)
 import Shoko.Scenario
 import Test.Tasty
 import Test.Tasty.Hedgehog
@@ -36,6 +36,11 @@ tests =
         mapM_ (\label -> assert (isLeft (inspectScenario (build label (Shoko.predicate "valid" id))))) ["", ".x", "x..y", "x."]
         mapM_ (\label -> assert (isLeft (inspectScenario (build "valid" (Shoko.predicate label id))))) ["", "x and y", "(x)", "é"]
         assert (isLeft (inspectScenario (build "valid" (onPart "bad:part" id (Shoko.predicate "ok" id))))),
+      check "namespaces retain local empty-identifier validation" $ do
+        let invalid = scenario "empty-local" "Empty local ID" "1" $ namespace "valid" $ do
+              _ <- given "" (accept ["ready"] Qualified)
+              expect $ eventually "" (observe "exists" (Created (pure "toy-key")) id)
+        assert (isLeft (inspectScenario invalid)),
       check "effect-free inspection and resolution" $ do
         calls <- evalIO (newIORef 0)
         let inspected = inspectScenario accountScenario
@@ -43,7 +48,7 @@ tests =
               resolveScenario
                 testEnvironment
                 testOptions
-                (BusinessKeyFrom "accountId" (pure "toy-key"))
+                (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy-key"))
                 (memoryBinding calls)
                 accountScenario
         assert (isRight inspected)
@@ -52,23 +57,17 @@ tests =
         assert (not (Text.isInfixOf "SECRET-FIXTURE-SENTINEL" (Text.pack (show inspected)))),
       check "hidden binding capability denied before acquire" $ do
         calls <- evalIO (newIORef 0)
-        let Binding name lifecycle lookupContract acquire release baseline action observation = memoryBinding calls
-            hiddenContract :: OperationRole -> Account a -> Maybe BindingContract
-            hiddenContract role op = case lookupContract role op of
-              Nothing -> Nothing
-              Just (BindingContract extraCaps cleanup support source strength) ->
-                Just (BindingContract (Set.insert ExternalSideEffect extraCaps) cleanup support source strength)
-            binding = Binding name lifecycle hiddenContract acquire release baseline action observation
+        let binding = adjustHandlers (\_ _ -> fmap (adjustContract (requiring [ExternalSideEffect]))) (memoryBinding calls)
             Environment envName prod caps policy = testEnvironment
             env = Environment envName prod (Set.delete ExternalSideEffect caps) policy
-        assert (isLeft (resolveScenario env testOptions (BusinessKeyFrom "accountId" (pure "toy")) binding accountScenario))
+        assert (isLeft (resolveScenario env testOptions (BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy")) binding accountScenario))
         evalIO (readIORef calls) >>= (=== 0),
       check "synthetic consent and production fail closed" $ do
         calls <- evalIO (newIORef 0)
         let RunOptions key _ build impl target = testOptions
             withoutConsent = RunOptions key False build impl target
             binding = memoryBinding calls
-            correlation = BusinessKeyFrom "accountId" (pure "toy")
+            correlation = BusinessKeyFrom (BusinessKeyName "accountId") (pure "toy")
             Environment envName _ caps policy = testEnvironment
         assert (isLeft (resolveScenario testEnvironment withoutConsent correlation binding accountScenario))
         assert (isLeft (resolveScenario (Environment envName True caps policy) testOptions correlation binding accountScenario))
@@ -91,7 +90,7 @@ tests =
               ( resolveScenario
                   testEnvironment
                   testOptions
-                  (BusinessKeyFrom "key" (pure "value"))
+                  (BusinessKeyFrom (BusinessKeyName "key") (pure "value"))
                   (memoryBinding calls)
                   missing
               )

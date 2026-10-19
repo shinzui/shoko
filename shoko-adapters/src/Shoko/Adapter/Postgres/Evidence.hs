@@ -1,5 +1,6 @@
 module Shoko.Adapter.Postgres.Evidence (PostgresFailure (..), failureCode, Sample (..)) where
 
+import Shoko.Clock (MonotonicTime)
 import Shoko.Prelude
 
 data PostgresFailure = ConnectionUnavailable | PermissionDenied | QueryUnavailable | DecodeUnavailable | DeadlineExpired | CorrelationUnavailable
@@ -13,5 +14,5 @@ failureCode DecodeUnavailable = "postgres-decode-unavailable"
 failureCode DeadlineExpired = "postgres-deadline-expired"
 failureCode CorrelationUnavailable = "postgres-correlation-unavailable"
 
-data Sample = Sample {started :: !Integer, finished :: !Integer, description :: !Text}
+data Sample = Sample {started :: !MonotonicTime, finished :: !MonotonicTime, description :: !Text}
   deriving stock (Eq, Show, Generic)

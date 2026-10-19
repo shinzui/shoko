@@ -2,6 +2,7 @@ module ResultSpec (tests) where
 
 import Consumer.Account (testOptions)
 import Consumer.DeliveryLedger
+import Consumer.Hooks (newMicroClock)
 import Data.Aeson (Value (..), eitherDecode, encode, toJSON)
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy qualified as LBS
@@ -15,7 +16,6 @@ import Hedgehog (assert, evalIO, forAll, property, withTests, (===))
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 import Shoko
-import Shoko.Clock
 import Shoko.Evidence
 import Shoko.Result
 import Shoko.Result.Json
@@ -45,7 +45,7 @@ tests =
             Object fields -> do
               assert (isLeft (decodeRunResult (encode (Object (KeyMap.insert "schemaVersion" (toJSON (999 :: Int)) fields)))))
               let bad = Object (KeyMap.insert "undeclared" (String "SECRET-PARSER-SENTINEL") fields)
-              decodeRunResult (encode bad) === Left "invalid shoko result v1"
+              decodeRunResult (encode bad) === Left "invalid shoko result v2"
               let changedReport = case KeyMap.lookup "report" fields of
                     Just (Object report) -> Object (KeyMap.insert "descriptionDigest" (String "wrong") report)
                     _ -> Null
@@ -91,11 +91,11 @@ tests =
         copies <- forAll (Gen.int (Range.linear 0 4))
         rows <- evalIO (newIORef [])
         readCalls <- evalIO (newIORef 0)
-        (clock, _) <- evalIO (newFakeClock (UTCTime (fromGregorian 2026 10 18) 0))
+        (clock, _) <- evalIO (newMicroClock (UTCTime (fromGregorian 2026 10 18) 0))
         result <- evalIO $ case resolveScenario
           ledgerEnvironment
           testOptions
-          (businessKeyFromResult "deliveryId" "append")
+          (businessKeyFromResult (BusinessKeyName "deliveryId") "append")
           (ledgerBinding rows readCalls False)
           (ledgerScenario copies ExactlyOnce) of
           Left errors -> fail (show errors)
