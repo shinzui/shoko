@@ -239,7 +239,8 @@
           "const": "business-key"
         },
         "key": {
-          "$ref": "#/$defs/id"
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
         },
         "extraction": {
           "type": "string",
@@ -933,7 +934,8 @@
         "description",
         "allowedOutcomes",
         "actionIds",
-        "isolatedFixtureRecipe"
+        "isolatedFixtureRecipe",
+        "scenarioRevision"
       ],
       "properties": {
         "id": {
@@ -962,6 +964,10 @@
           "uniqueItems": true
         },
         "isolatedFixtureRecipe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scenarioRevision": {
           "type": "string",
           "minLength": 1
         }

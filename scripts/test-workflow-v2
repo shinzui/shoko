@@ -165,6 +165,7 @@ class WorkflowV2(unittest.TestCase):
     def test_contract_rejections(self):
         original = copy.deepcopy(self.contract)
         mutations = [lambda c: c.update(schemaVersion=3), lambda c: c["target"].update(environment="production"),
+                     lambda c: c["negativeScenarios"][0].pop("scenarioRevision"),
                      lambda c: c["target"].update(apiServer="http://cluster.invalid"),
                      lambda c: c["actions"][0].update(endpointId="missing"),
                      lambda c: c["requirements"][0].update(coverage="durable-history"),

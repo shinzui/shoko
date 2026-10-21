@@ -92,7 +92,7 @@
   },
   "correlation": {
     "strategy": "business-key",
-    "key": "notification-id",
+    "key": "notificationId",
     "extraction": "notificationId returned by the accepted hub request"
   },
   "requiredAdapters": [
@@ -129,7 +129,8 @@
       "actionIds": [
         "submit"
       ],
-      "isolatedFixtureRecipe": "Separate unique absent type and request key"
+      "isolatedFixtureRecipe": "Separate unique absent type and request key",
+      "scenarioRevision": "v1"
     }
   ],
   "evidenceSources": [

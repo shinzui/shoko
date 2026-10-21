@@ -20,6 +20,10 @@ before execution, and a target. Workflow-specific prerequisite sets belong in
 the manifest. Registration keeps OTP/completion requirements in its v1 declaration;
 the generic v2 validator has no registration or notification requirement set.
 
+Each positive and negative wrapper declares its own scenario revision. Semantic
+business-key names retain their domain spelling, such as `notificationId`; they
+are not normalized into catalog ID slugs.
+
 Targets name context, cluster, credential-free HTTPS API server, namespace and
 namespace UID. Every ready workload declares its UID and each named application
 and init container's exact template reference and expected runtime digest. Pending
