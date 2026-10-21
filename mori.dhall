@@ -154,6 +154,13 @@ in  Schema.Project::{
       ]
     , docs =
       [ Schema.DocRef::{
+        , key = "scenario-catalog"
+        , kind = Schema.DocKind.Guide
+        , audience = Schema.DocAudience.Module
+        , description = Some "Strict catalog validation and explicit compiled-host inspection"
+        , location = Schema.DocLocation.LocalFile "docs/scenario-catalog.md"
+        }
+      , Schema.DocRef::{
         , key = "scenario-hosts"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module

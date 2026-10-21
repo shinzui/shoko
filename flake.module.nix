@@ -100,6 +100,17 @@
           });
         };
       };
+      suiteSource = pkgs.runCommand "shoko-suite-source" { } ''
+        mkdir -p "$out/scripts" "$out/schemas"
+        cp ${./scripts/shoko-suite} "$out/scripts/shoko-suite"
+        cp ${./scripts/scenario_catalog.py} "$out/scripts/scenario_catalog.py"
+        cp ${./schemas/scenario-catalog-v1.schema.json} "$out/schemas/scenario-catalog-v1.schema.json"
+      '';
+      suite = pkgs.writeShellApplication {
+        name = "shoko-suite";
+        runtimeInputs = [ schemaPython ];
+        text = ''exec python3 ${suiteSource}/scripts/shoko-suite "$@"'';
+      };
     in
     {
       haskellProject.extraDevPackages = [ schemaPython pkgs.apacheKafka ];
@@ -107,6 +118,11 @@
       packages.shoko-core = hs.shoko-core;
       packages.shoko-adapters = hs.shoko-adapters;
       packages.shoko-cli = hs.shoko-cli;
+      packages.shoko-suite = suite;
+      checks.scenario-catalog = pkgs.runCommand "shoko-scenario-catalog" { nativeBuildInputs = [ schemaPython ]; } ''
+        python ${./scripts/test-scenario-catalog} --suite ${suiteSource} --host ${hs.shoko-cli}/bin/shoko-consumer-host
+        touch "$out"
+      '';
       checks.shoko-core = hs.shoko-core;
       checks.shoko-adapters = hs.shoko-adapters;
       checks.shoko-cli = hs.shoko-cli;

@@ -23,6 +23,9 @@ test-kafka:
 test-cli:
     python3 scripts/test-cli
 
+test-scenario-catalog:
+    python3 scripts/test-scenario-catalog
+
 test-workflow-contract:
     python3 scripts/test-workflow-contract
     python3 scripts/test-workflow-identity
@@ -45,7 +48,7 @@ check-docs:
     mori capabilities validate --path .
     mori terms validate --path .
 
-check: build test test-adapters test-event-stores test-kafka test-cli test-workflow-contract
+check: build test test-adapters test-event-stores test-kafka test-cli test-scenario-catalog test-workflow-contract
     python3 scripts/test-core-types
     python3 scripts/check-result-schema.py
     nix flake check

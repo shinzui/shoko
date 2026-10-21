@@ -30,6 +30,8 @@ validates the result schema against checked-in examples, and runs
 `nix flake check`, including formatting, schema validation, and the Nix library/test build.
 The CLI process suite also checks configuration schema/declaration keys, layered
 provenance, all exit classes, safe credentials, and atomic persistence.
+`just test-scenario-catalog` adds strict catalog and dispatcher process checks
+against the independent compiled host. See [catalog inspection](scenario-catalog.md).
 The offline workflow contract suite checks source/coverage mappings, canonical
 host ownership, readiness prerequisites, and rejection of synthetic manifests
 as staging contracts. It runs in both `just check` and `nix flake check`.

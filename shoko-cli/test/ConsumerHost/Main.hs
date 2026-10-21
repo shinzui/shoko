@@ -32,7 +32,10 @@ registry = Registry ["local"] ([entry "consumer-approved" True, entry "consumer-
         )
         (LogicalInput "consumer-v1" [])
         [("demo", \_ _ -> SomeBinding consumerBinding)]
-        (\_ -> pure (Right (Nothing, Nothing)))
+        ( \_ -> do
+            lookupEnv "SHOKO_TEST_COUNTER" >>= maybe (pure ()) (\path -> appendFile path "metadata\n")
+            pure (Right (Nothing, Nothing))
+        )
 
 consumerBinding :: Binding Decision ()
 consumerBinding = binding "independent-consumer" (\_ -> mark >> pure ()) (\_ -> mark >> pure Cleaned) handlers

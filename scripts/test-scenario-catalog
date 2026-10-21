@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Process contract for the shared catalog, including a real compiled host."""
+import argparse
+import copy
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", type=Path)
+    parser.add_argument("--suite", type=Path)
+    args = parser.parse_args()
+    repo = args.suite.resolve() if args.suite else Path(__file__).resolve().parent.parent
+    if args.host:
+        host = args.host.resolve()
+    else:
+        subprocess.run(["cabal", "build", "shoko-consumer-host"], cwd=repo, check=True)
+        host = Path(subprocess.check_output(["cabal", "list-bin", "shoko-consumer-host"], cwd=repo, text=True).strip())
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        catalog = root / "catalog.json"
+        counter = root / "effects"
+        config = root / "consumer.yaml"
+        config.write_text("runtime:\n  environment: local\n  implementation: demo\npolicy:\n  capabilities: [ReadState, WriteState]\naccess:\n  tokenEnv: SHOKO_CATALOG_TEST_SECRET\n")
+        ready = {"id": "consumer-approved", "revision": "v1", "owner": "mori://shinzui/shoko",
+                 "participants": ["mori://shinzui/shoko"], "suites": ["offline-consumer"],
+                 "role": "control", "environment": "local", "state": "ready", "workflow": None,
+                 "config": "consumer.yaml", "host": {"artifact": "consumer", "package": "shoko-cli",
+                 "executable": "shoko-consumer-host", "source": {"project": "mori://shinzui/shoko", "revision": "a" * 40}}}
+        pending = {k: v for k, v in ready.items() if k not in ("host", "config", "workflow")}
+        pending.update(id="pending-notification", environment="staging", state="pending", reason="Owner host not yet available")
+        valid = {"schemaVersion": 1, "scenarios": [ready, pending]}
+        env = dict(os.environ, SHOKO_TEST_COUNTER=str(counter))
+        env.pop("SHOKO_CATALOG_TEST_SECRET", None)
+        env.pop("SHOKO_ENVIRONMENT", None)
+
+        def run(command, code=0, value=None, extra=(), host_path=host, environment=env):
+            catalog.write_text(json.dumps(value if value is not None else valid))
+            result = subprocess.run(["python3", str(repo / "scripts/shoko-suite"), "--workspace", str(root),
+                                     "--catalog", str(catalog), "--host", f"consumer={host_path}",
+                                     *extra, *command], capture_output=True, text=True, env=environment)
+            assert result.returncode == code, (command, result.returncode, result.stdout, result.stderr)
+            assert "SECRET-CATALOG-SENTINEL" not in result.stdout + result.stderr
+            assert not counter.exists(), "inspection acquired scenario resources or called metadata"
+            return result
+
+        run(["catalog-check"])
+        assert "pending-notification" in run(["list"]).stdout
+        run(["explain", "consumer-approved"])
+        policy = run(["check", "consumer-approved"], extra=["--format", "json"])
+        assert json.loads(policy.stdout) == {"kind": "policy-check", "valid": True, "liveReadinessChecked": False}
+        run(["check", "consumer-approved"], environment=dict(env, SHOKO_CATALOG_TEST_SECRET="SECRET-CATALOG-SENTINEL"))
+        for command in (["check"], ["list", "consumer-approved"], ["check", "missing"], ["explain", "pending-notification"],
+                        ["run", "pending-notification"], ["run", "consumer-approved"], ["check", "SECRET-CATALOG-SENTINEL"]):
+            run(command, 2)
+        for selected in ("production", "prod", "production-alias", "SECRET-CATALOG-SENTINEL"):
+            run(["check", "consumer-approved"], 2, extra=["--environment", selected])
+            run(["list"], 2, environment=dict(env, SHOKO_ENVIRONMENT=selected))
+        run(["check", "consumer-approved"], 2, extra=["--environment", "staging"])
+        run(["check", "consumer-approved"], 2, extra=["--token", "SECRET-CATALOG-SENTINEL"])
+        run(["check", "consumer-approved"], 2, host_path="relative/host")
+        run(["check", "consumer-approved"], 2, extra=["--host", f"consumer={host}"])
+        run(["check", "consumer-approved"], 2, host_path=root / "shoko-consumer-host")
+        invalid = []
+        for version in (2, True):
+            invalid.append(dict(valid, schemaVersion=version))
+        invalid.append(dict(valid, scenarios=[ready, ready]))
+        invalid.append(dict(valid, scenarios=[]))
+        for field, value in (("config", "../outside"), ("config", "/outside"), ("config", "./consumer.yaml"),
+                             ("config", "consumer.yaml/../consumer.yaml"), ("environment", "production"),
+                             ("environment", "prod"), ("unexpected", True), ("workflow", "missing")):
+            changed = dict(ready, **{field: value})
+            invalid.append(dict(valid, scenarios=[changed]))
+        changed = copy.deepcopy(ready)
+        del changed["host"]["source"]["revision"]
+        invalid.append(dict(valid, scenarios=[changed]))
+        changed = copy.deepcopy(ready)
+        changed["id"] = "consumer-rejected"
+        changed["host"]["source"]["revision"] = "b" * 40
+        invalid.append(dict(valid, scenarios=[ready, changed]))
+        for value in invalid:
+            run(["catalog-check"], 2, value=value)
+        with tempfile.TemporaryDirectory() as outside:
+            external = Path(outside) / "config.yaml"
+            external.write_text(config.read_text())
+            (root / "escape.yaml").symlink_to(external)
+            run(["catalog-check"], 2, value=dict(valid, scenarios=[dict(ready, config="escape.yaml")]))
+        # Actual subprocess exits, without mocking subprocess.run or host results.
+        fixture_dir = root / "exit-fixture"
+        fixture_dir.mkdir()
+        exit_host = fixture_dir / "shoko-consumer-host"
+        for code in range(5):
+            exit_host.write_text(f"#!/bin/sh\nexit {code}\n")
+            exit_host.chmod(0o755)
+            run(["check", "consumer-approved"], code, host_path=exit_host)
+        catalog.write_text('{"schemaVersion":1,"schemaVersion":1,"scenarios":[]}')
+        result = subprocess.run(["python3", str(repo / "scripts/shoko-suite"), "--workspace", str(root), "--catalog", str(catalog), "catalog-check"], capture_output=True, text=True)
+        assert result.returncode == 2 and "duplicate-json-key" in result.stderr
+        # The instrumentation is live: a real run calls metadata and resources.
+        executed = subprocess.run([str(host), "run", "consumer-approved", "--config", str(config), "--format", "json"], env=dict(env, SHOKO_CATALOG_TEST_SECRET="SECRET-CATALOG-SENTINEL"), capture_output=True, text=True)
+        assert executed.returncode == 0, executed.stderr
+        assert counter.is_file() and "metadata" in counter.read_text() and "effect" in counter.read_text()
+        assert "SECRET-CATALOG-SENTINEL" not in executed.stdout + executed.stderr
+    print("Scenario catalog process contracts passed (real consumer, pure inspection, invalid inputs, exits).")
+
+
+if __name__ == "__main__":
+    main()

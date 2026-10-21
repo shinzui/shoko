@@ -24,6 +24,7 @@ Runtime permission grants such as `ReadState` have a separate meaning; see
 | CAP-8 | [Compiled scenario CLI hosts](compiled-scenario-cli-hosts.md) | Embed typed scenarios in a compiled CLI with inspection, policy checks, strict layered configuration, classified exits, and atomic JSON report output. |
 | CAP-9 | [Offline staging workflow contract validation](offline-workflow-contract-validation.md) | Validate explicit staging workflow manifests for schema and relationship consistency before any target access. |
 | CAP-10 | [Explicit Kubernetes target identity checks](explicit-kubernetes-target-identity.md) | Check declared Kubernetes namespace and workload identities twice through explicit read-only targeting and retain a sanitized private identity artifact. |
+| CAP-11 | [Declarative scenario catalog inspection](declarative-scenario-catalog-inspection.md) | Validate ready and pending entries and delegate pure inspection to explicitly bound compiled hosts. |
 
 ## Maintenance
 

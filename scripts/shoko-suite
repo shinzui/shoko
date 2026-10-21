@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+"""Packaged Shoko catalog entry point."""
+from scenario_catalog import main
+
+raise SystemExit(main())

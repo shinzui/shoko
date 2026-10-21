@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shoko scenario catalog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scenarios"],
+  "properties": {
+    "schemaVersion": {"const": 1, "type": "integer"},
+    "scenarios": {
+      "type": "array", "minItems": 1,
+      "items": {"$ref": "#/$defs/scenario"}
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+    "project": {"type": "string", "pattern": "^mori://[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^[^/\\\\]+(?:/[^/\\\\]+)*$"},
+    "host": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact", "package", "executable", "source"],
+      "properties": {
+        "artifact": {"$ref": "#/$defs/id"},
+        "package": {"$ref": "#/$defs/id"},
+        "executable": {"$ref": "#/$defs/id"},
+        "source": {
+          "type": "object", "additionalProperties": false,
+          "required": ["project", "revision"],
+          "properties": {
+            "project": {"$ref": "#/$defs/project"},
+            "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+          }
+        }
+      }
+    },
+    "scenario": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "revision", "owner", "participants", "suites", "role", "environment", "state"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "revision": {"type": "string", "minLength": 1},
+        "owner": {"$ref": "#/$defs/project"},
+        "participants": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/project"}},
+        "suites": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "role": {"enum": ["required", "control"]},
+        "environment": {"enum": ["local", "staging"]},
+        "state": {"enum": ["ready", "pending"]},
+        "reason": {"type": "string", "minLength": 1},
+        "host": {"$ref": "#/$defs/host"},
+        "config": {"$ref": "#/$defs/path"},
+        "workflow": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/path"}]}
+      },
+      "oneOf": [
+        {"properties": {"state": {"const": "pending"}}, "required": ["reason"], "not": {"anyOf": [{"required": ["host"]}, {"required": ["config"]}, {"required": ["workflow"]}]}},
+        {"properties": {"state": {"const": "ready"}}, "required": ["host", "config", "workflow"], "not": {"required": ["reason"]}, "if": {"properties": {"environment": {"const": "staging"}}}, "then": {"properties": {"workflow": {"$ref": "#/$defs/path"}}}}
+      ]
+    }
+  }
+}
