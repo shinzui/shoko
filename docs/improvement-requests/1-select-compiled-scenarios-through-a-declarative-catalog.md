@@ -4,6 +4,8 @@ title: Select compiled scenarios through a declarative catalog with shared inspe
 description: Give consumers a versioned scenario catalog schema and a packaged list, explain and check dispatcher so a QA repository can select compiled scenarios by stable ID without forking Shoko's inspection mechanics.
 requestId: IR-1
 status: completed
+completedAt: "2026-10-21T23:01:35Z"
+resolution: Published the strict catalog and packaged dispatcher at de83f9b20dc8a3857f1d72e33f3df7780c932757; the pinned QA consumer and full native Shoko checks passed as described below.
 timestamp: "2026-10-21T23:01:35Z"
 origin: mori://tan/tan-platform-qa
 generated:
