@@ -31,6 +31,11 @@ provenance:
       at: 2026-10-18T20:35:16Z
       mode: "implement"
       note: "Advance EP-2 with offline contract tooling while preserving the live staging and selected-reader gates."
+    - model: "claude-fable-5-1"
+      harness: "claude-code"
+      at: 2026-10-21T18:17:24Z
+      mode: "update"
+      note: "Record tan-platform-qa as a second consumer and IR-1, IR-2, IR-3 for the catalog, generalized contract and shared suite executor"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -204,6 +209,9 @@ On 2026-10-01, accept the user's staging and scenario clarifications: verify the
 On 2026-10-18, select registration completion as the first-use MVP, separate its required-reader gate from full adapter completion, and preserve rewrite requirement coverage, bounded cleanup, and independent scenario artifacts. The source/build preview supports starting implementation; it does not replace solver/build or staging acceptance.
 
 Revision 2026-10-01: replace local paired acceptance with staging system verification; update EP-2/EP-7 responsibilities, supporting core/adapter/CLI contracts, ADRs, README, specification guidance, and the HTML explainer. Preserve stable plan IDs/paths and the shared intention.
+
+On 2026-10-21, `mori://tan/tan-platform-qa` planned a notification-hub-to-renderer staging suite on Shoko and raised `mori://shinzui/shoko/okf/improvement-requests/concepts/IR-1`, `mori://shinzui/shoko/okf/improvement-requests/concepts/IR-2` and `mori://shinzui/shoko/okf/improvement-requests/concepts/IR-3` for the scenario catalog, the workflow-independent contract and readiness command, and the shared suite executor. EP-7's envelope, summary and wrappers are now workflow-agnostic shared outputs delivered as that executor; EP-2's registration-specific contract remains valid as one manifest under the generalized schema. Registry statuses are unchanged.
+
 
 ## Outcomes & Retrospective
 

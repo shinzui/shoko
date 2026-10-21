@@ -152,6 +152,7 @@ Shōko's scope is application behavior across services. Existing unit tests, pro
 
 - [Capability catalog](docs/capabilities/index.md) — implemented consumer capabilities, evidence, and limits.
 - [Terminology](docs/terminology/index.md) — the current vocabulary for scenarios, evidence, execution, and hosts.
+- [Improvement requests](docs/improvement-requests/index.md) — cross-repository requests raised against Shoko, with stable IR handles.
 - [Bootstrap MasterPlan](docs/masterplans/1-bootstrap-shoko-for-evidence-based-workflow-parity.md) — the current staging-first scope and seven implementation plans.
 - [Implementation explainer](docs/artifacts/shoko-bootstrap-explainer.html) — a light-themed visual guide with interactive evidence examples.
 - [Initial specification](docs/intial-spec.md) — the full design, examples, open questions, and revised migration milestones.

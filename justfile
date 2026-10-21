@@ -38,6 +38,7 @@ check-docs:
     mori validate
     okf validate docs/capabilities --profile docs/capabilities/profile.dhall --profile-enforce --log-enforce
     okf validate docs/terminology --strict --profile docs/terminology/profile.dhall --profile-enforce --log-enforce
+    okf validate docs/improvement-requests --strict --profile docs/improvement-requests/profile.dhall --profile-enforce --log-enforce
     mori capabilities validate --path .
     mori terms validate --path .
 

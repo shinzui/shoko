@@ -230,6 +230,27 @@ in  Schema.Project::{
             "Controlled Shoko vocabulary with stable TERM handles and source anchors"
         }
       , Schema.OkfBundle::{
+        , name = "improvement-requests"
+        , path = "docs/improvement-requests"
+        , profileBinding = Some
+            ( Schema.ProfileBinding.Published
+                Schema.PinnedImport::{
+                , publisher = "mori://shinzui/okf-profiles"
+                , publisherRef = Some Schema.MoriRef::{
+                  , namespace = "shinzui"
+                  , name = "okf-profiles"
+                  }
+                , export = Some "coordination.improvementRequests"
+                , version = Some "v0.22.0"
+                , pin = Some
+                    "sha256:2294a5bd32ca22daa89610e12fde81dd3115701fcb0bf7a790c7bdee6d85db65"
+                }
+            )
+        , okfVersion = "0.2"
+        , description = Some
+            "Cross-repository improvement requests raised against Shoko, with stable IR handles"
+        }
+      , Schema.OkfBundle::{
         , name = "research"
         , path = "docs/research"
         , profile = Some "docs/research/profile.dhall"

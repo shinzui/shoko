@@ -6,8 +6,9 @@ See the [core](core.md), [adapter](adapters.md), and [host](scenario-hosts.md) g
 No staging credentials are needed for local checks.
 
 The [capability catalog](capabilities/index.md) records implemented consumer surfaces;
-the [terminology catalog](terminology/index.md) defines their vocabulary. Run
-`just check-docs` after editing either catalog. This target requires `okf` 0.9.0.0
+the [terminology catalog](terminology/index.md) defines their vocabulary; the
+[improvement requests](improvement-requests/index.md) record cross-repository requests
+raised against Shoko with stable IR handles. Run `just check-docs` after editing any of them. This target requires `okf` 0.9.0.0
 or later and Mori with `capabilities validate` and `terms validate`; it checks the
 manifest, pinned profiles, catalog metadata, local term relations, and anchors.
 These authoring tools are separate from the managed Haskell build environment;
