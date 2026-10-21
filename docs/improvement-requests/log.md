@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-21
+* **Update**: Record IR-2 generic v2 contract/readiness implementation and keep real compiled-host/suite-consumer observation acceptance explicitly open.
 * **Completion**: Complete IR-1 with published catalog/dispatcher source de83f9b and actual pinned QA-consumer acceptance; live execution remains out of scope.
 * **Addition**: Add IR-3 for a shared suite executor with Shoko-owned acceptance envelopes and offline verification, depending on IR-1 and IR-2, raised by mori://tan/tan-platform-qa.
 * **Addition**: Add IR-2 for a workflow-independent staging contract and packaged validate/check/observe readiness command, raised by mori://tan/tan-platform-qa.

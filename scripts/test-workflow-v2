@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""Workflow v2 real-command contracts with a private fake kubectl and HTTP server."""
+import copy
+from datetime import datetime, timedelta, timezone
+import http.server
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+
+from jsonschema import Draft202012Validator
+
+from workflow_v2 import Gate, IdentityError
+
+ROOT = Path(__file__).resolve().parent.parent
+SENTINEL = "WORKFLOW-SECRET-SENTINEL"
+
+
+FAKE = '''#!/usr/bin/env python3
+import json, os, sys, time
+from pathlib import Path
+args = sys.argv[1:]
+root = Path(os.environ["WORKFLOW_FAKE_ROOT"])
+with (root / "calls").open("a") as log:
+    log.write(json.dumps(args) + "\\n")
+mode = (root / "mode").read_text()
+assert "--context=fixture-context" in args and "--namespace=test" in args
+if "config" not in args:
+    assert "--server=https://cluster.invalid" in args and "--insecure-skip-tls-verify=false" in args
+if mode == "fault":
+    print("WORKFLOW-SECRET-SENTINEL", file=sys.stderr)
+    sys.exit(1)
+if mode == "oversize":
+    print("x" * (4 * 1024 * 1024 + 1))
+    sys.exit(0)
+if mode == "stall":
+    (root / "child-pid").write_text(str(os.getpid()))
+    time.sleep(60)
+data = json.loads((root / "resources.json").read_text())
+if "config" in args:
+    key = "config"
+else:
+    offset = args.index("get")
+    resource = args[offset + 1]
+    key = {"namespaces":"namespace", "deployments.apps":"deployment", "pods":"pods", "replicasets.apps":"replicaset", "services":"service", "endpointslices.discovery.k8s.io":"slices"}[resource]
+value = data[key]
+if mode == "change" and key == "deployment":
+    countfile = root / "deploy-count"
+    count = int(countfile.read_text()) if countfile.exists() else 0
+    countfile.write_text(str(count + 1))
+    if count:
+        value["metadata"]["generation"] = 2
+        value["status"]["observedGeneration"] = 2
+print(json.dumps(value))
+'''
+
+
+def fixture_resources(contract):
+    target = contract["target"]
+    workload = target["workloads"][0]
+    image = workload["containers"][0]["imageDigest"]
+    env = [{"name": "DELIVERY_ENDPOINT", "value": "http://renderer/api/email"}, {"name": "PRIVATE", "value": SENTINEL}]
+    pod_spec = {"containers": [{"name": "hub", "image": image, "env": env, "ports": [{"name": "http", "containerPort": 8080}]}],
+                "initContainers": [{"name": "init", "image": image}, {"name": "sidecar", "image": image, "restartPolicy": "Always"}]}
+    meta = {"name": "hub", "namespace": "test", "uid": "fixture-deployment-uid", "generation": 1}
+    deployment = {"kind": "Deployment", "metadata": meta, "spec": {"replicas": 1, "selector": {"matchLabels": {"app": "hub"}},
+                  "template": {"metadata": {"labels": {"app": "hub"}}, "spec": pod_spec}},
+                  "status": {"observedGeneration": 1, "readyReplicas": 1, "updatedReplicas": 1, "availableReplicas": 1,
+                             "conditions": [{"type": "Available", "status": "True"}]}}
+    status = lambda name, state, ready: {"name": name, "imageID": "docker-pullable://" + image, "restartCount": 0, "ready": ready, "state": state}
+    pod = {"kind": "Pod", "metadata": {"name": "hub-pod", "namespace": "test", "uid": "fixture-pod-uid",
+           "ownerReferences": [{"kind": "ReplicaSet", "name": "hub-rs", "uid": "fixture-rs-uid", "controller": True}]},
+           "spec": pod_spec, "status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}],
+           "containerStatuses": [status("hub", {"running": {}}, True)],
+           "initContainerStatuses": [status("init", {"terminated": {"exitCode": 0}}, False), status("sidecar", {"running": {}}, True)]}}
+    return {"config": {"contexts": [{"name": "fixture-context", "context": {"cluster": "fixture-cluster"}}],
+                       "clusters": [{"name": "fixture-cluster", "cluster": {"server": "https://cluster.invalid"}}]},
+            "namespace": {"kind": "Namespace", "metadata": {"name": "test", "uid": "fixture-namespace-uid"}},
+            "deployment": deployment, "pods": {"kind": "PodList", "items": [pod]},
+            "replicaset": {"kind": "ReplicaSet", "metadata": {"name": "hub-rs", "namespace": "test", "uid": "fixture-rs-uid",
+                           "ownerReferences": [{"kind": "Deployment", "name": "hub", "uid": "fixture-deployment-uid", "controller": True}]}},
+            "service": {"kind": "Service", "metadata": {"name": "hub", "namespace": "test", "uid": "fixture-service-uid"},
+                        "spec": {"selector": {"app": "hub"}, "ports": [{"port": 80, "targetPort": "http"}]}},
+            "slices": {"items": [{"kind": "EndpointSlice", "metadata": {"name": "hub-slice", "namespace": "test", "uid": "fixture-slice-uid",
+                       "ownerReferences": [{"kind": "Service", "name": "hub", "uid": "fixture-service-uid"}]},
+                       "ports": [{"port": 8080}], "endpoints": [{"conditions": {"ready": True}, "targetRef": {"kind": "Pod", "namespace": "test", "uid": "fixture-pod-uid"}}]}]}}
+
+
+class WorkflowV2(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.addCleanup(self.temporary.cleanup)
+        self.contract = json.loads((ROOT / "integration/examples/notification-workflow.example.json").read_text())
+        self.contract["purpose"] = "staging-contract"
+        self.contract["readiness"]["prerequisites"][0].update(status="confirmed", evidence="mori://tan/notification-hub/okf/improvement-requests/concepts/IR-5",
+            expiresAt=(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat())
+        self.resources = fixture_resources(self.contract)
+        self.manifest = self.root / "workflow.json"
+        binary = self.root / "kubectl"
+        binary.write_text(FAKE)
+        binary.chmod(0o700)
+        self.env = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ["PATH"], WORKFLOW_FAKE_ROOT=str(self.root), KUBECONFIG=str(self.root / "missing"))
+
+    def invoke(self, command="check", expected=0, mode="normal", extra=()):
+        self.manifest.write_text(json.dumps(self.contract))
+        (self.root / "resources.json").write_text(json.dumps(self.resources))
+        (self.root / "mode").write_text(mode)
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/shoko-workflow"), command, "--manifest", str(self.manifest),
+                                 "--artifacts", str(self.root / "artifacts"), *extra], env=self.env, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+        self.assertNotIn(SENTINEL, result.stdout + result.stderr)
+        if command != "validate" and result.stdout:
+            envelope = json.loads(result.stdout)
+            record = json.loads(Path(envelope["artifact"]).read_text())
+            Draft202012Validator(json.loads((ROOT / "schemas/target-observation-v1.schema.json").read_text())).validate(record)
+            rendered = json.dumps(record)
+            self.assertNotIn(SENTINEL, rendered)
+            self.assertNotIn("cluster.invalid", rendered)
+            self.assertNotIn("http://renderer", rendered)
+            self.assertEqual(Path(envelope["artifact"]).stat().st_mode & 0o777, 0o600)
+            self.assertEqual(Path(envelope["artifact"]).parent.stat().st_mode & 0o777, 0o700)
+            return record
+        return result
+
+    def test_structure_pending_and_v1_compatibility(self):
+        implementation = (ROOT / "scripts/workflow_v2.py").read_text()
+        for workflow_specific in ("otp-path", "real-completion", "registration-completed", "qualification"):
+            self.assertNotIn(workflow_specific, implementation)
+        self.contract["purpose"] = "synthetic-example"
+        self.contract["readiness"]["prerequisites"][0]["status"] = "pending"
+        result = self.invoke("validate", extra=["--structure-only"])
+        self.assertFalse(json.loads(result.stdout)["liveReadinessChecked"])
+        self.assertFalse((self.root / "calls").exists())
+        record = self.invoke(expected=2)
+        self.assertIn("synthetic-contract-live-refused", record["blockers"])
+        self.assertFalse((self.root / "calls").exists())
+        v1 = ROOT / "integration/examples/workflow.example.json"
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/shoko-workflow"), "validate", "--manifest", str(v1), "--structure-only"], env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_readiness_and_observe_share_protocol(self):
+        checked = self.invoke()
+        observed = self.invoke("observe")
+        self.assertEqual(checked["readinessStatus"], "ready")
+        self.assertEqual(checked["observations"], observed["observations"])
+        self.assertEqual(checked["contractSha256"], observed["contractSha256"])
+        calls = [json.loads(line) for line in (self.root / "calls").read_text().splitlines()]
+        self.assertTrue(calls)
+        self.assertTrue(all("get" in call or "config" in call for call in calls))
+
+    def test_consumer_host_can_reuse_another_participants_vocabulary(self):
+        self.contract["participants"].append("mori://tan/tan-platform-qa")
+        self.contract["host"].update(project="mori://tan/tan-platform-qa", package="mori://tan/tan-platform-qa/packages/qa-host", packageDirectory="qa-host")
+        self.invoke("validate", extra=["--structure-only"])
+        self.contract["participants"].remove("mori://tan/tan-platform-qa")
+        self.invoke("validate", 2, extra=["--structure-only"])
+
+    def test_contract_rejections(self):
+        original = copy.deepcopy(self.contract)
+        mutations = [lambda c: c.update(schemaVersion=3), lambda c: c["target"].update(environment="production"),
+                     lambda c: c["target"].update(apiServer="http://cluster.invalid"),
+                     lambda c: c["actions"][0].update(endpointId="missing"),
+                     lambda c: c["requirements"][0].update(coverage="durable-history"),
+                     lambda c: c["requirements"].append(copy.deepcopy(c["requirements"][0])),
+                     lambda c: c["target"]["configurationChecks"][0].update(expectedValue="https://user:password@bad.invalid"),
+                     lambda c: c["readiness"]["prerequisites"][0].pop("evidence")]
+        for mutation in mutations:
+            self.contract = copy.deepcopy(original)
+            mutation(self.contract)
+            self.invoke("validate", 2, extra=["--structure-only"])
+        self.assertFalse((self.root / "calls").exists())
+
+    def test_pending_workload_endpoint_expiry(self):
+        self.contract["target"]["workloads"][0].update(state="pending", uid=None, containers=[], reason="Not deployed")
+        self.contract["target"]["endpoints"][0].update(state="pending", address=None, reason="Access route pending", serviceUid=None)
+        self.contract["readiness"]["prerequisites"][0]["expiresAt"] = "2020-01-01T00:00:00Z"
+        record = self.invoke(expected=2)
+        self.assertIn("pending-workload-hub", record["blockers"])
+        self.assertIn("pending-endpoint-hub-http", record["blockers"])
+        self.assertIn("expired-prerequisite-controlled-fixture", record["blockers"])
+        self.assertFalse((self.root / "calls").exists())
+
+    def test_mismatch_classes(self):
+        original = copy.deepcopy(self.resources)
+        mutations = [lambda r: r["config"]["clusters"][0]["cluster"].update({"insecure-skip-tls-verify": True}),
+                     lambda r: r["namespace"]["metadata"].update(uid="wrong"),
+                     lambda r: r["pods"]["items"][0]["metadata"].pop("namespace"),
+                     lambda r: r["deployment"]["status"].update(readyReplicas=0),
+                     lambda r: r["deployment"]["spec"]["template"]["spec"]["containers"][0].update(image="wrong"),
+                     lambda r: r["pods"]["items"][0]["status"]["containerStatuses"][0].update(imageID="wrong"),
+                     lambda r: r["pods"]["items"][0]["status"]["initContainerStatuses"][0].update(imageID="wrong"),
+                     lambda r: r["pods"]["items"][0]["status"]["initContainerStatuses"][1].update(ready=False),
+                     lambda r: r["replicaset"]["metadata"]["ownerReferences"][0].update(uid="wrong"),
+                     lambda r: r["service"]["spec"].update(selector={"app": "wrong"}),
+                     lambda r: r["service"]["spec"]["ports"][0].update(targetPort=9999),
+                     lambda r: r["slices"]["items"][0]["ports"][0].update(port=9999),
+                     lambda r: r["slices"]["items"][0]["endpoints"][0]["targetRef"].update(uid="wrong"),
+                     lambda r: r["pods"]["items"][0]["spec"]["containers"][0]["env"][0].update(value=SENTINEL)]
+        for mutation in mutations:
+            self.resources = copy.deepcopy(original)
+            mutation(self.resources)
+            record = self.invoke(expected=2)
+            self.assertTrue(record["blockers"])
+            self.assertEqual(record["readinessStatus"], "blocked")
+
+    def test_change_fault_and_response_budget(self):
+        self.assertIn("target-changed-during-observation", self.invoke(expected=2, mode="change")["blockers"])
+        self.assertIn("kubectl-read-failed", self.invoke(expected=2, mode="fault")["blockers"])
+        self.assertIn("kubectl-response-too-large", self.invoke(expected=2, mode="oversize")["blockers"])
+
+    def test_interrupt_reaps_owned_child(self):
+        self.manifest.write_text(json.dumps(self.contract))
+        (self.root / "resources.json").write_text(json.dumps(self.resources))
+        (self.root / "mode").write_text("stall")
+        process = subprocess.Popen([sys.executable, str(ROOT / "scripts/shoko-workflow"), "check", "--manifest", str(self.manifest)], env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            deadline = time.monotonic() + 5
+            while not (self.root / "child-pid").exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue((self.root / "child-pid").exists())
+            child = int((self.root / "child-pid").read_text())
+            process.send_signal(signal.SIGINT)
+            output, errors = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 4)
+            self.assertNotIn(SENTINEL.encode(), output + errors)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child, 0)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+
+
+class ProbeHTTP(unittest.TestCase):
+    def test_status_redirect_size_and_total_deadline(self):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+            def do_GET(self):
+                if self.path == "/stall":
+                    time.sleep(0.5)
+                self.send_response(302 if self.path == "/redirect" else 200)
+                self.send_header("Location", "/should-not-be-followed")
+                self.end_headers()
+                try:
+                    self.wfile.write(b"x" * (65537 if self.path == "/large" else 1))
+                except BrokenPipeError:
+                    pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        endpoint = {"address": f"http://127.0.0.1:{server.server_port}", "credentialEnv": []}
+        gate = Gate({})
+        gate.probe(endpoint, {"path": "/ok", "expectedStatus": 200})
+        for path in ("/redirect", "/large"):
+            with self.assertRaises(IdentityError):
+                gate.probe(endpoint, {"path": path, "expectedStatus": 200})
+        gate.deadline = time.monotonic() + 0.1
+        with self.assertRaises(IdentityError):
+            gate.probe(endpoint, {"path": "/stall", "expectedStatus": 200})
+
+
+if __name__ == "__main__":
+    unittest.main()

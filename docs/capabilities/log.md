@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-21
+* **Update**: Extend CAP-9 and CAP-10 with generic workflow v2 validation and the shared bounded read-only target-observation gate; preserve v1 registration compatibility.
 * **Addition**: Add strict catalog inspection and explicit compiled-host dispatch with real consumer process evidence.
 * **Event readers**: Refresh CAP-7 for typed rejection of Kafka topic scopes and record correlation by the SQL readers. The Kafka topic reader is not catalogued until hosts can allocate it.
 

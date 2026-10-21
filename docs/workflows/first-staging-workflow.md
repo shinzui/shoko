@@ -284,3 +284,9 @@ acceptance are claimed by the offline tests.
 
 See [EP-2](../plans/2-establish-the-first-workflow-contract-and-composed-local-environments.md)
 and [ADR 0004](../adr/0004-gate-parity-on-real-workflows-and-context-owned-vocabulary.md).
+# Workflow v2 compatibility
+
+The registration v1 schema, `workflow-env` command and existing tests retain their
+original behavior. New consumers use the [workflow-independent v2 contract](generic-staging-contract.md)
+and packaged `shoko-workflow`; `validate --structure-only` also inspects v1 without
+changing its declaration. V2 does not complete registration OTP/smoke readiness.

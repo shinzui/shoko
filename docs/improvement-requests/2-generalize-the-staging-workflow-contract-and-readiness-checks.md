@@ -3,7 +3,7 @@ type: Improvement Request
 title: Generalize the staging workflow contract and readiness checks beyond registration
 description: Factor the registration-specific workflow contract and identity checks into a workflow-independent schema and a packaged validate, check and observe command so a second workflow can declare its target, prerequisites and evidence without relabeling the registration example.
 requestId: IR-2
-status: proposed
+status: in-progress
 origin: mori://tan/tan-platform-qa
 generated:
   by: anthropic/claude-fable-5-1
@@ -52,3 +52,21 @@ Workflow-specific prerequisites move into each manifest. The registration manife
 ## Completion
 
 Completion requires evidence for AC-1 through AC-5, the generic schema and command published from one immutable Shoko revision, the registration compatibility path recorded in the first-staging-workflow guide, and an updated capability entry for offline contract validation and target identity checks.
+
+## Implementation checkpoint — 2026-10-21
+
+The strict workflow v2 schema, pending workload/endpoint representation, packaged
+`shoko-workflow` command and target-observation v1 schema implement the generic
+declaration and read-only gate. V1 and its existing contract/identity tests are
+preserved. The [generic guide](../workflows/generic-staging-contract.md) defines
+the supplied-check/owner-evidence boundary and honest limits; CAP-9 and CAP-10
+describe both paths. The notification fixture and consumer manifest validate
+without target access, and private fake-cluster/loopback process tests exercise
+runtime/rollout/controller/Service/EndpointSlice mismatches, all container classes,
+bounded calls, cancellation, sanitized artifacts and both output modes.
+
+AC-4 remains open for acceptance of the actual compiled notification host and
+suite executor parsing this observation protocol. They must invoke `observe`
+freshly; check/observe parity in the shared process fixture is not evidence that
+those later consumers are integrated. No deployed notification readiness or
+business Pass is claimed by this contribution.

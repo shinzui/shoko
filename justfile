@@ -29,6 +29,7 @@ test-scenario-catalog:
 test-workflow-contract:
     python3 scripts/test-workflow-contract
     python3 scripts/test-workflow-identity
+    python3 scripts/test-workflow-v2
 
 workflow-validate:
     python3 scripts/workflow-env validate --manifest integration/workflow.json

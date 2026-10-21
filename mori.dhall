@@ -154,6 +154,13 @@ in  Schema.Project::{
       ]
     , docs =
       [ Schema.DocRef::{
+        , key = "generic-staging-contract"
+        , kind = Schema.DocKind.Guide
+        , audience = Schema.DocAudience.Module
+        , description = Some "Workflow v2 structure, bounded read-only readiness and the shared target observation protocol"
+        , location = Schema.DocLocation.LocalFile "docs/workflows/generic-staging-contract.md"
+        }
+      , Schema.DocRef::{
         , key = "scenario-catalog"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module

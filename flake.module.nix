@@ -111,6 +111,25 @@
         runtimeInputs = [ schemaPython ];
         text = ''exec python3 ${suiteSource}/scripts/shoko-suite "$@"'';
       };
+      workflowSource = pkgs.runCommand "shoko-workflow-source" { } ''
+        mkdir -p "$out/scripts" "$out/schemas" "$out/integration/examples"
+        cp ${./scripts/shoko-workflow} "$out/scripts/shoko-workflow"
+        cp ${./scripts/workflow_v2.py} "$out/scripts/workflow_v2.py"
+        cp ${./scripts/workflow_probe.py} "$out/scripts/workflow_probe.py"
+        cp ${./scripts/workflow_contract.py} "$out/scripts/workflow_contract.py"
+        cp ${./scripts/workflow_identity.py} "$out/scripts/workflow_identity.py"
+        cp ${./scripts/test-workflow-v2} "$out/scripts/test-workflow-v2"
+        cp ${./schemas/workflow-v1.schema.json} "$out/schemas/workflow-v1.schema.json"
+        cp ${./schemas/workflow-v2.schema.json} "$out/schemas/workflow-v2.schema.json"
+        cp ${./schemas/target-observation-v1.schema.json} "$out/schemas/target-observation-v1.schema.json"
+        cp ${./integration/examples/workflow.example.json} "$out/integration/examples/workflow.example.json"
+        cp ${./integration/examples/notification-workflow.example.json} "$out/integration/examples/notification-workflow.example.json"
+      '';
+      workflow = pkgs.writeShellApplication {
+        name = "shoko-workflow";
+        runtimeInputs = [ schemaPython pkgs.kubectl ];
+        text = ''exec python3 ${workflowSource}/scripts/shoko-workflow "$@"'';
+      };
     in
     {
       haskellProject.extraDevPackages = [ schemaPython pkgs.apacheKafka ];
@@ -119,6 +138,11 @@
       packages.shoko-adapters = hs.shoko-adapters;
       packages.shoko-cli = hs.shoko-cli;
       packages.shoko-suite = suite;
+      packages.shoko-workflow = workflow;
+      checks.workflow-v2 = pkgs.runCommand "shoko-workflow-v2" { nativeBuildInputs = [ schemaPython ]; } ''
+        python ${workflowSource}/scripts/test-workflow-v2
+        touch "$out"
+      '';
       checks.scenario-catalog = pkgs.runCommand "shoko-scenario-catalog" { nativeBuildInputs = [ schemaPython ]; } ''
         python ${./scripts/test-scenario-catalog} --suite ${suiteSource} --host ${hs.shoko-cli}/bin/shoko-consumer-host
         touch "$out"

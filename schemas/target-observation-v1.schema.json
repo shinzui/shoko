@@ -1,0 +1,347 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "workflowId",
+    "contractSha256",
+    "checkedAt",
+    "identityStatus",
+    "readinessStatus",
+    "observations",
+    "blockers",
+    "probes"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "const": "staging-target-observation"
+    },
+    "workflowId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "contractSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "checkedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "identityStatus": {
+      "enum": [
+        "matched",
+        "blocked"
+      ]
+    },
+    "readinessStatus": {
+      "enum": [
+        "ready",
+        "blocked"
+      ]
+    },
+    "observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "before": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "namespaceUid",
+            "workloads",
+            "endpoints",
+            "configurationChecks"
+          ],
+          "properties": {
+            "namespaceUid": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workloads": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "uid",
+                  "generation",
+                  "pods"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "uid": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "generation": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "pods": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "uid",
+                        "containers"
+                      ],
+                      "properties": {
+                        "uid": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "containers": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "name",
+                              "kind",
+                              "imageDigest",
+                              "restartCount"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9-]*$"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "application",
+                                  "init"
+                                ]
+                              },
+                              "imageDigest": {
+                                "type": "string",
+                                "pattern": "^.+@sha256:[0-9a-f]{64}$"
+                              },
+                              "restartCount": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "endpoints": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "serviceUid"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "serviceUid": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "configurationChecks": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              }
+            }
+          }
+        },
+        "after": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "namespaceUid",
+            "workloads",
+            "endpoints",
+            "configurationChecks"
+          ],
+          "properties": {
+            "namespaceUid": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workloads": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "uid",
+                  "generation",
+                  "pods"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "uid": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "generation": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "pods": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "uid",
+                        "containers"
+                      ],
+                      "properties": {
+                        "uid": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "containers": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "name",
+                              "kind",
+                              "imageDigest",
+                              "restartCount"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9-]*$"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "application",
+                                  "init"
+                                ]
+                              },
+                              "imageDigest": {
+                                "type": "string",
+                                "pattern": "^.+@sha256:[0-9a-f]{64}$"
+                              },
+                              "restartCount": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "endpoints": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "serviceUid"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "serviceUid": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "configurationChecks": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      }
+    },
+    "probes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bounded Shoko staging target observation v1",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "readinessStatus": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "identityStatus": {
+            "const": "matched"
+          },
+          "blockers": {
+            "maxItems": 0
+          },
+          "observations": {
+            "required": [
+              "before",
+              "after"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

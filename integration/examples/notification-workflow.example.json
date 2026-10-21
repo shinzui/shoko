@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 2,
+  "purpose": "synthetic-example",
+  "workflowId": "notification-rendering",
+  "scenarioId": "notification-rendering-success",
+  "scenarioRevision": "v1",
+  "domainOwner": "mori://tan/notification-hub",
+  "vocabularyOwner": "mori://tan/notification-hub",
+  "vocabularyModule": "NotificationHub.Verification",
+  "participants": [
+    "mori://tan/notification-hub",
+    "mori://tan/notification-render-service"
+  ],
+  "logicalInput": {
+    "recipeId": "controlled-notification",
+    "revision": "v1",
+    "sanitizedSummary": "A controlled transactional request; no addresses or personal payloads."
+  },
+  "host": {
+    "project": "mori://tan/notification-hub",
+    "package": "mori://tan/notification-hub/packages/notification-hub-verification",
+    "packageDirectory": "notification-hub-verification",
+    "publicModule": "NotificationHub.Verification",
+    "executable": "notification-qa-host",
+    "buildRecipe": "Build the accepted owner artifact",
+    "invocationRecipe": "Invoke the accepted compiled host",
+    "sourceRevision": null
+  },
+  "target": {
+    "environment": "staging",
+    "implementation": "notification-hub",
+    "context": "fixture-context",
+    "cluster": "fixture-cluster",
+    "apiServer": "https://cluster.invalid",
+    "namespace": "test",
+    "namespaceUid": "fixture-namespace-uid",
+    "workloads": [
+      {
+        "id": "hub",
+        "kind": "Deployment",
+        "name": "hub",
+        "owner": "mori://tan/notification-hub",
+        "state": "ready",
+        "uid": "fixture-deployment-uid",
+        "containers": [
+          {
+            "name": "hub",
+            "kind": "application",
+            "templateImage": "example.invalid/hub@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "imageDigest": "example.invalid/hub@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "name": "init",
+            "kind": "init",
+            "templateImage": "example.invalid/hub@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "imageDigest": "example.invalid/hub@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "name": "sidecar",
+            "kind": "init",
+            "templateImage": "example.invalid/hub@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "imageDigest": "example.invalid/hub@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "sourceRevision": null
+      }
+    ],
+    "endpoints": [
+      {
+        "id": "hub-http",
+        "state": "ready",
+        "address": "http://hub",
+        "targetAssociation": "Fixture Service selects the declared hub Deployment",
+        "accessRoute": "Explicit test-only fixture route",
+        "credentialEnv": [],
+        "serviceName": "hub",
+        "serviceUid": "fixture-service-uid",
+        "workloadIds": [
+          "hub"
+        ]
+      }
+    ],
+    "configurationChecks": [
+      {
+        "id": "render-base",
+        "workloadId": "hub",
+        "container": "hub",
+        "environmentName": "DELIVERY_ENDPOINT",
+        "expectedValue": "http://renderer/api/email"
+      }
+    ]
+  },
+  "correlation": {
+    "strategy": "business-key",
+    "key": "notification-id",
+    "extraction": "notificationId returned by the accepted hub request"
+  },
+  "requiredAdapters": [
+    "http"
+  ],
+  "requiredCapabilities": [
+    "read-state",
+    "send-http",
+    "write-state"
+  ],
+  "actions": [
+    {
+      "id": "submit",
+      "endpointId": "hub-http",
+      "method": "POST",
+      "path": "/v1/notifications",
+      "description": "Controlled notification submission",
+      "allowedOutcomes": [
+        "accepted",
+        "renderer-refused"
+      ]
+    }
+  ],
+  "positiveActionIds": [
+    "submit"
+  ],
+  "negativeScenarios": [
+    {
+      "id": "notification-rendering-refusal",
+      "description": "A unique unknown type reaches the renderer",
+      "allowedOutcomes": [
+        "renderer-refused"
+      ],
+      "actionIds": [
+        "submit"
+      ],
+      "isolatedFixtureRecipe": "Separate unique absent type and request key"
+    }
+  ],
+  "evidenceSources": [
+    {
+      "id": "notification-state",
+      "endpointId": "hub-http",
+      "adapter": "http",
+      "coverage": "sampled-state",
+      "selector": "Exact notificationId from the run"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "rendered-safe-mode-skip",
+      "kind": "terminal-invariant",
+      "invariant": "Exact post-render safe-mode consequence",
+      "scenarioId": "notification-rendering-success",
+      "expectationId": "specific-safe-mode-skip",
+      "evidenceSourceId": "notification-state",
+      "coverage": "sampled-state"
+    },
+    {
+      "id": "renderer-refusal",
+      "kind": "negative-contract",
+      "invariant": "Structured renderer refusal and hub consequence",
+      "scenarioId": "notification-rendering-refusal",
+      "expectationId": "structured-refusal",
+      "evidenceSourceId": "notification-state",
+      "coverage": "sampled-state"
+    }
+  ],
+  "excludedRequirements": [
+    {
+      "id": "provider-delivery",
+      "scope": "email-delivery",
+      "reason": "Initial success ends at the safe-mode block"
+    }
+  ],
+  "testInputs": {
+    "recipeReferences": [
+      "Owner-approved recipe reference is pending"
+    ],
+    "externalEffectPolicy": "Render then specifically block before provider entry",
+    "cleanup": {
+      "mode": "bounded-retention",
+      "owner": "mori://tan/notification-hub",
+      "mechanism": "Owner-approved retention is pending",
+      "retentionHours": 24
+    }
+  },
+  "readiness": {
+    "prerequisites": [
+      {
+        "id": "controlled-fixture",
+        "owner": "mori://tan/notification-hub",
+        "status": "pending",
+        "reason": "Owner-controlled fixture is not yet approved",
+        "clearedBy": "Owner supplies the controlled recipient and live type"
+      }
+    ],
+    "probes": []
+  }
+}

@@ -3,8 +3,8 @@ type: "Capability"
 title: "Offline staging workflow contract validation"
 description: "Validate explicit staging workflow manifests for schema and relationship consistency before any target access."
 generated:
-  by: "openai/gpt-6"
-  at: "2026-10-19T02:45:50Z"
+  by: "openai/gpt-6.1-sol"
+  at: "2026-10-21T23:13:53Z"
 capabilityId: "CAP-9"
 provider: "mori://shinzui/shoko"
 status: "shipped"
@@ -14,6 +14,8 @@ packages:
   - "scripts/workflow-env"
   - "schemas/workflow-v1.schema.json"
 interface:
+  - "shoko-workflow validate --structure-only --manifest PATH"
+  - "schemas/workflow-v2.schema.json"
   - "python3 scripts/workflow-env validate --manifest PATH"
   - "scripts/workflow_contract.py"
 evidence:
@@ -32,6 +34,11 @@ The offline validator checks stable requirement/scenario references, declared en
 The command rejects synthetic examples as staging contracts and pending prerequisites without contacting Kubernetes or resolving credentials.
 
 ## Limits
+
+The [generic v2 path](../workflows/generic-staging-contract.md) accepts workflow-owned
+requirements, explicit pending workloads/endpoints and structure-only validation
+without target IO. It preserves the v1 registration checks rather than relabeling
+their example. `scripts/test-workflow-v2` exercises both paths.
 
 A structurally valid manifest and owner declarations do not prove live readiness or successful business behavior. The repository does not yet contain the accepted real staging manifest or an implemented independent smoke workflow.
 

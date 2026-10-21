@@ -1,0 +1,971 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shoko workflow-independent staging contract v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "purpose",
+    "workflowId",
+    "scenarioId",
+    "scenarioRevision",
+    "domainOwner",
+    "vocabularyOwner",
+    "vocabularyModule",
+    "logicalInput",
+    "host",
+    "target",
+    "correlation",
+    "requiredAdapters",
+    "requiredCapabilities",
+    "actions",
+    "positiveActionIds",
+    "negativeScenarios",
+    "evidenceSources",
+    "requirements",
+    "excludedRequirements",
+    "testInputs",
+    "readiness",
+    "participants"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "purpose": {
+      "enum": [
+        "staging-contract",
+        "synthetic-example"
+      ]
+    },
+    "workflowId": {
+      "$ref": "#/$defs/id"
+    },
+    "scenarioId": {
+      "$ref": "#/$defs/id"
+    },
+    "scenarioRevision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "domainOwner": {
+      "type": "string",
+      "pattern": "^mori://[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$"
+    },
+    "vocabularyOwner": {
+      "type": "string",
+      "pattern": "^mori://[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$"
+    },
+    "vocabularyModule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "logicalInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recipeId",
+        "revision",
+        "sanitizedSummary"
+      ],
+      "properties": {
+        "recipeId": {
+          "$ref": "#/$defs/id"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sanitizedSummary": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "package",
+        "packageDirectory",
+        "publicModule",
+        "executable",
+        "buildRecipe",
+        "invocationRecipe",
+        "sourceRevision"
+      ],
+      "properties": {
+        "project": {
+          "type": "string",
+          "pattern": "^mori://[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$"
+        },
+        "package": {
+          "type": "string",
+          "pattern": "^mori://[^/]+/[^/]+/packages/[^/]+$"
+        },
+        "packageDirectory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "publicModule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "executable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "buildRecipe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "invocationRecipe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40,64}$"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "implementation",
+        "context",
+        "cluster",
+        "apiServer",
+        "namespace",
+        "namespaceUid",
+        "workloads",
+        "endpoints",
+        "configurationChecks"
+      ],
+      "properties": {
+        "environment": {
+          "const": "staging"
+        },
+        "implementation": {
+          "$ref": "#/$defs/id"
+        },
+        "context": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cluster": {
+          "type": "string",
+          "minLength": 1
+        },
+        "apiServer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespaceUid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workloads": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/workload"
+          }
+        },
+        "endpoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/endpoint"
+          }
+        },
+        "configurationChecks": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "workloadId",
+              "container",
+              "environmentName",
+              "expectedValue"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "workloadId": {
+                "$ref": "#/$defs/id"
+              },
+              "container": {
+                "$ref": "#/$defs/id"
+              },
+              "environmentName": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              },
+              "expectedValue": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "key",
+        "extraction"
+      ],
+      "properties": {
+        "strategy": {
+          "const": "business-key"
+        },
+        "key": {
+          "$ref": "#/$defs/id"
+        },
+        "extraction": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "requiredAdapters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "http",
+          "postgresql",
+          "kiroku",
+          "message-db",
+          "kafka"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "requiredCapabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "read-state",
+          "read-events",
+          "write-state",
+          "send-http",
+          "external-side-effect",
+          "synthetic-resource"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "positiveActionIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "uniqueItems": true
+    },
+    "negativeScenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/negative"
+      }
+    },
+    "evidenceSources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/requirement"
+      }
+    },
+    "excludedRequirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "scope",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "scope": {
+            "$ref": "#/$defs/id"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "testInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recipeReferences",
+        "externalEffectPolicy",
+        "cleanup"
+      ],
+      "properties": {
+        "recipeReferences": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "externalEffectPolicy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "owner",
+            "mechanism",
+            "retentionHours"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "supported-delete",
+                "bounded-retention"
+              ]
+            },
+            "owner": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mechanism": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retentionHours": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prerequisites",
+        "probes"
+      ],
+      "properties": {
+        "prerequisites": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/prerequisite"
+          }
+        },
+        "probes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "endpointId",
+              "path",
+              "expectedStatus"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "endpointId": {
+                "$ref": "#/$defs/id"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^/[^?#]*$"
+              },
+              "expectedStatus": {
+                "type": "integer",
+                "minimum": 200,
+                "maximum": 299
+              }
+            }
+          }
+        }
+      }
+    },
+    "participants": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^mori://[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "endpointId",
+        "method",
+        "path",
+        "description",
+        "allowedOutcomes"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "endpointId": {
+          "$ref": "#/$defs/id"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/[^?#]*$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowedOutcomes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "address",
+        "targetAssociation",
+        "accessRoute",
+        "credentialEnv",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "address": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "targetAssociation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accessRoute": {
+          "type": "string",
+          "minLength": 1
+        },
+        "credentialEnv": {
+          "type": "array",
+          "minItems": 0,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          "uniqueItems": true
+        },
+        "serviceName": {
+          "$ref": "#/$defs/id"
+        },
+        "workloadIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "ownerEvidence": {
+          "type": "string",
+          "pattern": "^mori://[^\\s]+$"
+        },
+        "serviceUid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "ready"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "serviceName",
+            "workloadIds",
+            "serviceUid"
+          ],
+          "not": {
+            "required": [
+              "ownerEvidence"
+            ]
+          }
+        },
+        {
+          "required": [
+            "ownerEvidence"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "serviceName"
+                ]
+              },
+              {
+                "required": [
+                  "workloadIds"
+                ]
+              },
+              {
+                "required": [
+                  "serviceUid"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "pending"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "address": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          },
+          "else": {
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "not": {
+              "required": [
+                "reason"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "endpointId",
+        "adapter",
+        "coverage",
+        "selector"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "endpointId": {
+          "$ref": "#/$defs/id"
+        },
+        "adapter": {
+          "enum": [
+            "http",
+            "postgresql",
+            "kiroku",
+            "message-db",
+            "kafka"
+          ]
+        },
+        "coverage": {
+          "enum": [
+            "sampled-state",
+            "durable-history"
+          ]
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1
+        },
+        "historyPolicy": {
+          "const": "append-only-during-run",
+          "description": "Owner-backed exclusion of deletion, truncation, and rewriting of this scope throughout the finite run."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "coverage": {
+                "const": "durable-history"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "historyPolicy"
+            ]
+          }
+        }
+      ]
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "owner",
+        "state",
+        "uid",
+        "containers",
+        "sourceRevision"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "Deployment",
+            "StatefulSet",
+            "DaemonSet"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/id"
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^mori://[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "ready"
+          ]
+        },
+        "uid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "kind",
+              "templateImage",
+              "imageDigest"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/id"
+              },
+              "kind": {
+                "enum": [
+                  "application",
+                  "init"
+                ]
+              },
+              "templateImage": {
+                "type": "string",
+                "minLength": 1
+              },
+              "imageDigest": {
+                "type": "string",
+                "pattern": "^.+@sha256:[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "sourceRevision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "state": {
+              "const": "pending"
+            },
+            "uid": {
+              "type": "null"
+            },
+            "containers": {
+              "maxItems": 0
+            }
+          },
+          "required": [
+            "reason"
+          ]
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "ready"
+            },
+            "uid": {
+              "type": "string"
+            },
+            "containers": {
+              "minItems": 1
+            }
+          },
+          "not": {
+            "required": [
+              "reason"
+            ]
+          }
+        }
+      ]
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "invariant",
+        "scenarioId",
+        "expectationId",
+        "evidenceSourceId",
+        "coverage"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "$ref": "#/$defs/id"
+        },
+        "invariant": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scenarioId": {
+          "$ref": "#/$defs/id"
+        },
+        "expectationId": {
+          "$ref": "#/$defs/id"
+        },
+        "evidenceSourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "coverage": {
+          "enum": [
+            "sampled-state",
+            "durable-history"
+          ]
+        }
+      }
+    },
+    "prerequisite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "reason",
+        "clearedBy"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^mori://[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "confirmed"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clearedBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "string",
+          "pattern": "^mori://[^\\s]+$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "confirmed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "evidence",
+              "expiresAt"
+            ]
+          }
+        }
+      ]
+    },
+    "negative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "allowedOutcomes",
+        "actionIds",
+        "isolatedFixtureRecipe"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowedOutcomes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        },
+        "actionIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        },
+        "isolatedFixtureRecipe": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

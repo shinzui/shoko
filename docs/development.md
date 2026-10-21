@@ -39,6 +39,9 @@ The same target includes offline identity-discovery process tests. They provide
 their own fake `kubectl`, verify explicit targeting and sanitized private
 artifacts, and exercise mismatches, deployment changes, response limits, and
 timeouts. They never use the developer's kubeconfig or contact a cluster. See
+the [generic v2 contract](workflows/generic-staging-contract.md) for the packaged
+workflow-independent gate and its private fake-cluster/loopback-HTTP process checks.
+See
 the [workflow guide](workflows/first-staging-workflow.md) for the guarded live
 identity command and its remaining readiness limits.
 The event-store suite uses pinned real Kiroku and Message DB schemas, separate
