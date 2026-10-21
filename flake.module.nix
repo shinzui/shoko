@@ -75,11 +75,12 @@
           shoko-adapters = (pkgs.haskell.lib.appendConfigureFlag
             (hself.callCabal2nix "shoko-adapters" ./shoko-adapters { })
             "--ghc-option=-Werror").overrideAttrs (old: {
-            nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.python3 pkgs.postgresql ];
+            nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.python3 pkgs.postgresql pkgs.apacheKafka ];
             checkPhase = ''
               runHook preCheck
               python ${./scripts/test-adapters} --binaries dist/build
               python ${./scripts/test-event-stores} --binaries dist/build
+              python ${./scripts/test-kafka} --binaries dist/build
               runHook postCheck
             '';
           });
@@ -101,7 +102,7 @@
       };
     in
     {
-      haskellProject.extraDevPackages = [ schemaPython ];
+      haskellProject.extraDevPackages = [ schemaPython pkgs.apacheKafka ];
       packages.default = hs.shoko-cli;
       packages.shoko-core = hs.shoko-core;
       packages.shoko-adapters = hs.shoko-adapters;

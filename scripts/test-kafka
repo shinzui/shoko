@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""Exercise the Kafka topic reader against an owned single-node KRaft broker."""
+
+import argparse
+import os
+from pathlib import Path
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+
+SECRET_SENTINEL = "SECRET-FIXTURE"
+OBSERVER_PREFIX = "shoko-observer-"
+FIXTURE_PREFIX = "fixture-"
+
+
+def free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--binaries", type=Path)
+    args = parser.parse_args()
+    root = Path.cwd()
+    failures = root / ".dev/kafka-tests"
+    broker_port, controller_port = free_port(), free_port()
+    while controller_port == broker_port:
+        controller_port = free_port()
+    bootstrap = f"127.0.0.1:{broker_port}"
+    with tempfile.TemporaryDirectory(prefix="shoko-kafka-", dir="/tmp") as temporary:
+        owned = Path(temporary)
+        logs = owned / "logs"
+        logs.mkdir()
+        env = dict(os.environ, LOG_DIR=str(logs), TASTY_NUM_THREADS="1")
+        env["KAFKA_OPTS"] = (env.get("KAFKA_OPTS", "") + " -Djava.security.egd=file:/dev/./urandom").strip()
+        env.setdefault("KAFKA_HEAP_OPTS", "-Xmx512m -Xms256m")
+
+        def run(command, timeout=120, **kwargs):
+            return subprocess.run(command, env=env, cwd=root, check=True, timeout=timeout, **kwargs)
+
+        def tool(name, *arguments, stdin=None, timeout=60):
+            result = run([name, "--bootstrap-server", bootstrap, *arguments], timeout=timeout, input=stdin,
+                         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return result.stdout
+
+        properties = owned / "server.properties"
+        properties.write_text("\n".join([
+            "node.id=1",
+            "process.roles=broker,controller",
+            f"listeners=PLAINTEXT://127.0.0.1:{broker_port},CONTROLLER://127.0.0.1:{controller_port}",
+            f"advertised.listeners=PLAINTEXT://127.0.0.1:{broker_port}",
+            f"controller.quorum.voters=1@127.0.0.1:{controller_port}",
+            "controller.listener.names=CONTROLLER",
+            "inter.broker.listener.name=PLAINTEXT",
+            "listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
+            "offsets.topic.replication.factor=1",
+            "offsets.topic.num.partitions=1",
+            "transaction.state.log.replication.factor=1",
+            "transaction.state.log.min.isr=1",
+            "transaction.state.log.num.partitions=1",
+            "share.coordinator.state.topic.replication.factor=1",
+            "share.coordinator.state.topic.min.isr=1",
+            "auto.create.topics.enable=false",
+            "group.initial.rebalance.delay.ms=0",
+            f"log.dirs={owned / 'data'}",
+            "",
+        ]))
+        cluster = run(["kafka-storage.sh", "random-uuid"], text=True, stdout=subprocess.PIPE).stdout.strip()
+        run(["kafka-storage.sh", "format", "--ignore-formatted", "-t", cluster, "-c", str(properties)],
+            stdout=subprocess.DEVNULL)
+        broker_log = owned / "broker.out"
+        broker = None
+        accepted = False
+        try:
+            with open(broker_log, "w") as output:
+                broker = subprocess.Popen(["kafka-server-start.sh", str(properties)], env=env, cwd=root,
+                                          stdout=output, stderr=subprocess.STDOUT)
+            wait_ready(tool, broker)
+            version = run(["kafka-topics.sh", "--version"], text=True, stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL).stdout.split()[0]
+
+            # An inactive application group with an explicitly committed offset.
+            tool("kafka-topics.sh", "--create", "--topic", "application-events", "--partitions", "1",
+                 "--replication-factor", "1")
+            tool("kafka-console-producer.sh", "--topic", "application-events", stdin="seed\n")
+            tool("kafka-consumer-groups.sh", "--group", "application-worker", "--topic", "application-events",
+                 "--reset-offsets", "--to-offset", "1", "--execute")
+            if application_offsets(tool) != {("application-worker", "application-events", "0", "1")}:
+                raise RuntimeError("fixture application group did not commit offset 1")
+            # Complete one transaction so the lazily created transaction-state
+            # topic exists before the snapshot rather than appearing during it.
+            tool("kafka-topics.sh", "--create", "--topic", FIXTURE_PREFIX + "warmup", "--partitions", "1",
+                 "--replication-factor", "1")
+            run(["kafka-producer-perf-test.sh", "--topic", FIXTURE_PREFIX + "warmup", "--num-records", "1",
+                 "--record-size", "16", "--throughput", "-1", "--transactional-id", "shoko-fixture-warmup",
+                 "--transaction-duration-ms", "100", "--producer-props", f"bootstrap.servers={bootstrap}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            groups_before = set(tool("kafka-consumer-groups.sh", "--list").split())
+            topics_before = set(tool("kafka-topics.sh", "--list").split())
+            offsets_before = application_offsets(tool)
+            if "__transaction_state" not in topics_before:
+                raise RuntimeError("fixture transaction warm-up did not create the transaction-state topic")
+
+            env["SHOKO_KAFKA_BOOTSTRAP"] = bootstrap
+            env["SHOKO_KAFKA_LOG_DIR"] = str(logs)
+            print(f"Real kafka: apache-kafka {version} at {bootstrap}", flush=True)
+            if args.binaries:
+                binary = root / args.binaries / "kafka-adapter-test/kafka-adapter-test"
+                run([str(binary.resolve())], timeout=600)
+            else:
+                run(["cabal", "test", "kafka-adapter-test", "--test-show-details=direct"], timeout=1800)
+
+            groups_after = set(tool("kafka-consumer-groups.sh", "--list").split())
+            topics_after = set(tool("kafka-topics.sh", "--list").split())
+            observers = sorted(group for group in groups_after if group.startswith(OBSERVER_PREFIX))
+            if observers:
+                raise RuntimeError(f"observer consumer groups were created: {len(observers)}")
+            if groups_after - groups_before:
+                raise RuntimeError("unexpected consumer groups were created")
+            unexpected = sorted(topic for topic in topics_after ^ topics_before if not topic.startswith(FIXTURE_PREFIX))
+            if unexpected:
+                raise RuntimeError("topics outside the fixture prefix changed: " + ", ".join(unexpected))
+            if application_offsets(tool) != offsets_before:
+                raise RuntimeError("observation changed application committed offsets")
+            print("kafka: public runner, finite partition scans, correlation, cardinality, visibility, and "
+                  "group/topic non-interference passed", flush=True)
+            accepted = True
+            print(f"Accepted real broker: apache-kafka {version}")
+        finally:
+            if broker is not None and broker.poll() is None:
+                broker.terminate()
+                try:
+                    broker.wait(timeout=60)
+                except subprocess.TimeoutExpired:
+                    broker.kill()
+                    broker.wait()
+            if not accepted:
+                retain(failures, broker_log)
+
+
+def wait_ready(tool, broker):
+    deadline = time.monotonic() + 120
+    while True:
+        if broker.poll() is not None:
+            raise RuntimeError("kafka broker exited before becoming ready")
+        try:
+            tool("kafka-topics.sh", "--list", timeout=30)
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            if time.monotonic() > deadline:
+                raise RuntimeError("kafka broker did not become ready within 120 seconds")
+            time.sleep(1)
+
+
+def application_offsets(tool):
+    """Parsed (group, topic, partition, committed offset) tuples, ignoring members and lag."""
+    rows = set()
+    for line in tool("kafka-consumer-groups.sh", "--describe", "--group", "application-worker").splitlines():
+        fields = line.split()
+        if len(fields) >= 4 and fields[0] == "application-worker":
+            rows.add(tuple(fields[:4]))
+    return rows
+
+
+def retain(failures, broker_log):
+    if not broker_log.exists():
+        return
+    failures.mkdir(parents=True, exist_ok=True)
+    tail = broker_log.read_text(errors="replace").splitlines()[-400:]
+    redacted = "\n".join(line.replace(SECRET_SENTINEL, "<redacted>") for line in tail)
+    target = failures / f"broker-{int(time.time())}.log"
+    target.write_text(redacted + "\n")
+    print(f"Broker log tail retained at {target}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

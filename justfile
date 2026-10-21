@@ -17,6 +17,9 @@ test-event-stores:
 test-event-store store:
     python3 scripts/test-event-stores --store {{store}}
 
+test-kafka:
+    python3 scripts/test-kafka
+
 test-cli:
     python3 scripts/test-cli
 
@@ -42,7 +45,7 @@ check-docs:
     mori capabilities validate --path .
     mori terms validate --path .
 
-check: build test test-adapters test-event-stores test-cli test-workflow-contract
+check: build test test-adapters test-event-stores test-kafka test-cli test-workflow-contract
     python3 scripts/test-core-types
     python3 scripts/check-result-schema.py
     nix flake check

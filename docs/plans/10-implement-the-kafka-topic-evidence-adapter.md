@@ -83,7 +83,7 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
   exist, `Shoko.Adapter.Kafka` passes the first contract slice (descriptor mismatch, denied
   policy before allocation, produce → exactlyOnce over repeated pages, cardinality, empty
   scans, unrelated keys, pre-baseline exclusion, independent readers, three partitions), and
-  all 36 existing Kiroku/Message DB checks still pass.
+  all 38 existing Kiroku/Message DB checks (19 groups per store) still pass.
 - [ ] M3 — Complete Kafka contract suite integrated into `just check` and the native Nix
   check: missing/undecodable correlation, page exhaustion, cutoff ambiguity, crossing reads,
   unverified history, deadline with consumer release, outage before mutation, transactional
@@ -106,7 +106,42 @@ Log). Every step that calls the Kafka client — the M1 spike, the client bindin
 scanner port, and the real-broker contract groups of M2/M3 — waits for
 [IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2) to land as a
 tagged fork commit. All client-independent work is implemented in this session; see the
-handoff note after the milestones once it is recorded.
+handoff note below.
+
+Handoff (2026-10-21, client-independent work done; every milestone stays open until the
+fork lands). The owner directed implementation of everything that does not call the client
+ahead of the M1 gate.
+
+- Done for M1: `pkgs.apacheKafka` is in the dev shell and the adapter derivation;
+  `scripts/test-kafka` and `just test-kafka` exist; the adapter `checkPhase` runs the script.
+  Local evidence: `nix develop --command just test-kafka` printed `Accepted real broker:
+  apache-kafka 4.3.1` with 31 suite groups passing, and two stand-in suites proved the script
+  fails on a new `shoko-observer-` group and on a moved application offset. `nix build
+  .#checks.aarch64-darwin.shoko-adapters` ran the same script in the derivation's
+  `checkPhase` and printed `Accepted real broker: apache-kafka 4.3.1`, so no platform gate
+  is needed on macOS. Remaining: the
+  `nix.kafka` Seihou toggle (deferred, see Decision Log), the fork pin, the spike, and Linux
+  CI.
+- Done for M2: `Scanner`/`Scan` split from Hasql in `EventStore/Internal.hs`; `TopicScope`,
+  `topicScope`, `BusinessKeyRecordKey`, `BusinessKeyHeader`, the two `HandlerBuildError`
+  causes with codec/schema/tests, `kirokuObservation :: … -> Either HandlerBuildError …`;
+  `Shoko.Adapter.Kafka` (`Kafka`, `KafkaSettings`, `kafkaSettings`, `kafkaObservation`,
+  `observeKafka`) and `Shoko.Adapter.Kafka.Internal` (`KafkaPort`, `kafkaReader`, the
+  scanner). The first contract slice passes through the public runner over the controlled
+  port in `shoko-adapters/test/Kafka/Controlled.hs`; `just test-event-stores` still passes
+  all 19 groups per store. Remaining: the fork-backed `KafkaPort`, the public `kafka`
+  constructor, and the same slice against the real broker.
+- Done for M3: every honesty group in the plan except those needing a real client runs
+  over the controlled port (30 groups), and `test-kafka` is part of `just check`. A mutation
+  check (non-sticky loss, ignored end regression) made two groups fail as intended.
+  Remaining against the real broker: socket release after the 80 ms deadline, captured
+  stderr free of bootstrap addresses and secrets, real transactions and
+  `kafka-delete-records.sh` truncation, nonexistent-topic assignment, and a green CI run.
+- Done for M4: workflow schema, validator, and tests (10 contract tests); `docs/adapters.md`,
+  `docs/development.md`, `docs/dependencies.md`, `README.md`, the workflow guide, and
+  `mori.dhall`; TERM-2, TERM-16, and CAP-7 refreshed; ADR 0001, 0003, and 0004 revised;
+  `just check-docs` passes. Remaining: CAP-11 and the `mori.dhall` dependency entries,
+  added when hosts can allocate a client-backed reader.
 
 
 ## Surprises & Discoveries
@@ -136,6 +171,15 @@ In `mori://confluentinc/librdkafka` at `v2.15.0`, project-relative
 The end returned by a `read_committed` watermark query is therefore a visibility boundary
 (last stable offset), not an unconditional physical high watermark. M1 must demonstrate
 this with a transaction open before baseline capture. Artifact-level URI pending.
+
+Implementation session (2026-10-21): the event-store suite has 19 groups per store (38
+checks), not the 18/36 the plan recorded. `kafka-producer-perf-test.sh --transactional-id …
+--transaction-duration-ms 100` completes one transaction with only the stock tools, so the
+fixture can create `__transaction_state` before its snapshot. `kafka-consumer-groups.sh
+--reset-offsets --to-offset 1 --execute` on an absent group creates the inactive
+`application-worker` group with a committed offset. The owned broker boots in the macOS dev
+shell in a few seconds with the settings in M1, plus single-partition offsets/transaction
+topics and share-coordinator replication of 1 for Kafka 4.x.
 
 Repository validation passed `just check-docs`, `nix develop --command just
 test-workflow-contract` (8 contract and 17 identity tests), and `nix develop --command
@@ -252,6 +296,30 @@ from the concurrent finalizer registered in `newRdKafkaT`; running that finalize
   verifiable step once IR-2 lands.
   Date: 2026-10-21
 
+- Decision: Defer the Seihou `nix.kafka=true` toggle to the client binding step; add Apache
+  Kafka to the dev shell and adapter checks through `flake.module.nix` now.
+  Rationale: the dry run shows the toggle is not a same-version change — Seihou requires
+  `seihou update`, upgrading `nix-haskell-flake` from 0.31.0 to 0.34.0 and replacing
+  `flake.lock`, `flake.nix`, and `nix/haskell.nix`. librdkafka is useless until the fork is
+  linked, so the upgrade and its pin reverification belong to that step.
+  Date: 2026-10-21
+
+- Decision: Do not record CAP-11 until hosts can allocate a client-backed Kafka reader.
+  Rationale: the capabilities profile permits only `shipped`, `deprecated`, or `withdrawn`
+  ("whether a consumer can use this capability right now"); without the public `kafka`
+  constructor no consumer can. CAP-7 is refreshed for the SQL readers' new typed rejections.
+  Date: 2026-10-21
+
+- Decision: Shared public details report `history-intact` as the conjunction of the shared
+  `seen ⊆ ids` check and the scanner's own `historyIntact`; Kafka adds
+  `low-watermark-intact` as a separate sticky flag. Baseline failures for an unstable
+  partition set return `kafka-partitions-unstable`, and records whose offsets are not
+  strictly increasing from the requested offset, or exceed the record limit, return
+  `kafka-offsets-invalid`.
+  Rationale: these keep the plan's fixed-reason rule for cases the plan did not name, and SQL
+  output is unchanged because SQL scanners always report intact history.
+  Date: 2026-10-21
+
 
 ## Outcomes & Retrospective
 
@@ -294,7 +362,7 @@ The important names in `Internal.hs` are:
   an opaque token); and `observeEvents`, which turns a scan into `ObservedWithDetails` with
   occurrences, `Coverage DurableHistory from through complete`, and safe public details.
 
-The shared contract suite is `shoko-adapters/test/EventStore/Contract.hs` (18 groups per
+The shared contract suite is `shoko-adapters/test/EventStore/Contract.hs` (19 groups per
 store) driven by `shoko-adapters/test/EventStoreMain.hs` and the fixture script
 `scripts/test-event-stores`, which owns a Unix-socket PostgreSQL cluster and passes
 `SHOKO_EVENT_STORE`, `SHOKO_EVENT_READ`, and `SHOKO_EVENT_WRITE` to the suite. `justfile`
@@ -653,7 +721,7 @@ two distinct records fail cardinality; a complete empty read passes `never` and 
 `eventually`; unrelated keys cannot satisfy the query; a record produced before capture is
 excluded; a second independent reader sees identical occurrence ids; and one matching record
 per partition on a three-partition topic yields three distinct occurrences. Acceptance:
-`just test-kafka` passes this slice and `just test-event-stores` still reports all 18 groups
+`just test-kafka` passes this slice and `just test-event-stores` still reports all 19 groups
 for both stores.
 
 ### M3 — Complete the Kafka contract suite and integrate it into the checks
@@ -772,7 +840,7 @@ nix develop --command just fmt
 A passing `just test-kafka` prints, with the port varying per run:
 
 ```text
-Real kafka: apache-kafka 4.3.1 at 127.0.0.1:<port> (nixpkgs d5dfd8e6716dde34398bc14bc87c10dece9c8c68)
+Real kafka: apache-kafka 4.3.1 at 127.0.0.1:<port>
 kafka: public runner, finite partition scans, correlation, cardinality, visibility, and group/topic non-interference passed
 Accepted real broker: apache-kafka 4.3.1
 ```
@@ -833,7 +901,7 @@ fails with the tail of its log retained under `.dev/kafka-tests/` after redactin
 fixture's secret sentinel. The Seihou reconfiguration is previewable with `--dry-run` and
 `--diff` and reversible by rerunning with `nix.kafka=false`; never edit `nix/haskell.nix` or
 `flake.lock` by hand. Regenerating the freeze file is deterministic for the pinned
-`index-state`. The `Internal.hs` refactor is protected by the existing 36 real-store checks:
+`index-state`. The `Internal.hs` refactor is protected by the existing 38 real-store checks:
 run `just test-event-stores` after each change to that module before touching Kafka code. If
 the Nix sandbox cannot run the JVM broker on one platform, gate the native Kafka step by
 platform and record the reason rather than removing the check. If `kafka-delete-records.sh`

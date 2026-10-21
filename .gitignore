@@ -21,3 +21,4 @@ result-*
 .pre-commit-config.yaml
 __pycache__/
 .shoko/runs/
+.dev/
