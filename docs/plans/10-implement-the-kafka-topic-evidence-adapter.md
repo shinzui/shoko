@@ -10,6 +10,18 @@ provenance:
     model: "claude-fable-5-1"
     harness: "claude-code"
     at: 2026-10-21T16:49:39Z
+  revisions:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-21T17:17:48Z
+      mode: "update"
+      note: "Validate released Kafka client APIs; record dependency blockers and correct EOF, visibility, lifecycle, and milestone guidance"
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-21T17:19:57Z
+      verdict: "changes-requested"
+      note: "Released 5.3.0 rejects empty subscriptions and lacks deterministic public teardown; M1 must resolve client selection before M2. EOF, visibility, fixture, and milestone defects corrected."
 ---
 
 # Implement the Kafka topic evidence adapter
@@ -34,7 +46,9 @@ topic reader that fits the existing durable-event model. A context binding descr
 finite topic query with the same `eventQuery` function used for Kiroku and Message DB, selects
 the correlation value from the record key, a header, or a payload field, and the public core
 runner evaluates `eventually`, `never`, and `exactlyOnce` over the records produced during the
-run. The reader never joins an application's consumer group, never commits offsets, never
+run. For Kafka, membership starts at the baseline's committed-visible boundary: a transaction
+already open at capture can become evidence when it commits during the run. Producer timestamps
+do not establish membership. The reader never joins an application's consumer group, never commits offsets, never
 creates topics, and advertises honest coverage: complete history only when the topic owner
 has promised append-only retention for the run, every partition was read to its end, and no
 retention deletion or ambiguous late record was observed.
@@ -54,7 +68,7 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
 ## Progress
 
 - [ ] M1 — Toolchain and broker fixture accepted: librdkafka is in the Seihou-managed dev
-  shell, released `hw-kafka-client` 5.3.0 is selected in Cabal and Nix, `scripts/test-kafka`
+  shell, a released client meeting the observer contract is selected in Cabal and Nix, `scripts/test-kafka`
   boots an owned KRaft broker, and the spike checks prove assign-based reading without
   subscription, partition-EOF detection, watermark offsets, header/key/timestamp decoding,
   read-committed visibility, and zero observer groups, both locally and in `nix flake check`
@@ -76,10 +90,46 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
   reader; CAP-11 is recorded; ADR 0001, 0003, and 0004 carry the durable decisions; `just
   check-docs` passes.
 
+Validation handoff (2026-10-21): M1 is blocked on client selection. Hackage 5.3.0 cannot
+construct the proposed empty-subscription consumer, its EOF errors omit partition identity,
+and its public close operation does not explicitly destroy the client. Do not begin M2 or
+mark this plan implementation-ready until M1 records a released, supported solution and the
+corresponding dependency bounds. The fixture and reproduction work in M1 can proceed.
+
 
 ## Surprises & Discoveries
 
-(None yet.)
+Release-source validation on 2026-10-21 found that the local corpus has fixes absent from
+the selected release. Hackage still lists 5.3.0 as the newest normal release; its upstream
+tag is `e80c3220c46f4b6b2a1cd5007fca5e6df7f22ba1`. In that tarball,
+`mori://haskell-works/hw-kafka-client` (project-relative `src/Kafka/Consumer.hs`,
+artifact-level URI pending), `newConsumer` unconditionally calls `subscribe`, including for
+`topics []`. In `mori://confluentinc/librdkafka` at tag `v2.15.0`
+(`9a94e11452cdeb0a844db44ee5dd01ccbe17d3ab`), project-relative
+`src/rdkafka_subscription.c` rejects an empty subscription with
+`RD_KAFKA_RESP_ERR__INVALID_ARG`. The corpus skips subscription when the set is empty;
+that is not evidence that 5.3.0 supports the same operation.
+
+The same Hackage tarball's project-relative `src/Kafka/Consumer/Convert.hs` converts every
+errored message to `KafkaResponseError errorCode`, losing its topic, partition, and offset.
+Counting these anonymous EOF errors cannot prove that every assigned partition finished.
+Its `closeConsumer` calls `rd_kafka_consumer_close`; destruction is attached to a concurrent
+foreign-pointer finalizer in project-relative `src/Kafka/Internal/RdKafka.chs`. A `bracket`
+around this API does not by itself establish the plan's bounded socket-release guarantee.
+Those source paths belong to `mori://haskell-works/hw-kafka-client`; artifact-level URIs
+are pending.
+
+In `mori://confluentinc/librdkafka` at `v2.15.0`, project-relative
+`src/rdkafka_request.c` sends the configured isolation level in `rd_kafka_ListOffsetsRequest`.
+The end returned by a `read_committed` watermark query is therefore a visibility boundary
+(last stable offset), not an unconditional physical high watermark. M1 must demonstrate
+this with a transaction open before baseline capture. Artifact-level URI pending.
+
+Repository validation passed `just check-docs`, `nix develop --command just
+test-workflow-contract` (8 contract and 17 identity tests), and `nix develop --command
+python3 scripts/check-result-schema.py` (7 examples). The host Python lacks `jsonschema`;
+use the managed shell for the Python validation commands. No Kafka runtime acceptance was
+run: the adapter, fixture, and test target do not yet exist.
 
 
 ## Decision Log
@@ -99,7 +149,8 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
   Rationale: librdkafka's high-level consumer API (`rd_kafka_consumer_poll`, `rd_kafka_assign`)
   returns `RD_KAFKA_RESP_ERR__UNKNOWN_GROUP` without a `group.id`, but an assign-only consumer
   never joins or commits, so the broker records no group state; this is the observer-safe
-  shape the research record attributed to shibuya's side-car consumers.
+  shape to verify against the released client, with
+  `mori://shinzui/shibuya-kafka-adapter` as precedent only.
   Date: 2026-10-21
 
 - Decision: Every poll re-reads each partition from its baseline offset to its end instead of
@@ -109,11 +160,14 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
   query's limits; the cost is proportional to records produced during the finite run.
   Date: 2026-10-21
 
-- Decision: Select released `hw-kafka-client` 5.3.0 from Hackage, provided by the managed Nix
+- Decision: Evaluate released `hw-kafka-client` 5.3.0 from Hackage, provided by the managed Nix
   package set, with librdkafka 2.15.0 from the pinned Nixpkgs; do not depend on the
   `mori://shinzui/hw-kafka-client` fork.
-  Rationale: the fork's fix concerns `CallbackPollModeAsync`, which the synchronous observer
-  does not use, and ADR 0001 forbids unpublished dependencies.
+  Rationale: ADR 0001 requires released dependencies. Validation found that 5.3.0 cannot
+  meet the proposed construction path; it is a reproduction baseline, not an accepted
+  implementation pin. The earlier assumption that only asynchronous callback behavior
+  differed from the corpus was incorrect. M1 must resolve construction and deterministic
+  teardown through a released supported API before selection is final.
   Date: 2026-10-21
 
 - Decision: The fixture broker is Apache Kafka 4.3.1 (`pkgs.apacheKafka`, KRaft single node on
@@ -127,8 +181,9 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
 - Decision: Execution-ID correlation is unsupported for Kafka in this plan; construction
   returns `Left ExecutionMetadataUnsupported`. Business-key correlation may come from the
   record key, a named header, or a payload JSON field.
-  Rationale: no TAN service propagates a Shōko execution ID into Kafka envelopes (Keiro IR-52
-  is open), and the legacy `correlation-id` header carries a Message DB message id, not a run
+  Rationale: the inspected publisher does not propagate a Shōko execution ID into its Kafka
+  envelope ([IR-52](mori://shinzui/keiro/okf/improvement-requests/concepts/IR-52) is proposed),
+  and the legacy `correlation-id` header carries a Message DB correlation id, not a run
   identity.
   Date: 2026-10-21
 
@@ -264,7 +319,9 @@ source were inspected. The relevant API is `Kafka.Consumer` (`newConsumer`, `ass
 (`brokersList`, `groupId`, `noAutoCommit`, `noAutoOffsetStore`, `extraProp`, `clientId`,
 `callbackPollMode`), `Kafka.Metadata` (`topicMetadata`, `watermarkOffsets`), `Kafka.Producer`
 and `Kafka.Transaction` for fixtures, and `Kafka.Types` (`TopicName`, `PartitionId`, `Offset`,
-`Timeout`, `Headers`, `headersToList`, `KafkaError`). Hackage lists 5.3.0 as the latest
+`Timeout`, `Headers`, `headersToList`, `KafkaError`). The local corpus is newer than the
+release and must not be treated as its API contract; use the release tarball for M1.
+Hackage lists 5.3.0 as the latest
 release (uploaded 2023-08-05); it links `-lrdkafka`. The C library is
 [librdkafka](mori://confluentinc/librdkafka); its `CONFIGURATION.md` documents the consumer
 defaults used below (`allow.auto.create.topics` false for consumers, `isolation.level`
@@ -286,7 +343,8 @@ The first real topic is `registration.completed.v1`, published by
 `registration-service-v2/src/RegistrationServiceV2/Completion/Publisher.hs`; artifact-level
 URI pending) and consumed by [mls-service-v2](mori://tan/mls-service-v2) (project-relative
 `mls-service-v2-core/src/MlsService/Kafka/RegistrationCompleted/Inbound.hs` and
-`MlsService/Kafka/Envelope.hs`). The record key is the `registrationId` text, the value is a
+`mls-service-v2-core/src/MlsService/Kafka/Envelope.hs`; artifact-level URIs pending).
+The record key is the `registrationId` text, the value is a
 bare JSON object that also carries `registrationId`, and the headers are `event-type`
 (`RegistrationCompleted`), `event-version`, `source-service`, optional `correlation-id` (the
 source Message DB correlation UUID), and optional `traceparent`. The same service's test
@@ -304,26 +362,39 @@ This milestone de-risks the two uncertain interfaces: the C-backed Kafka client 
 managed Nix environment, and a JVM broker inside both the dev shell and the Nix build
 sandbox. At its end the dev shell links `hw-kafka-client`, `scripts/test-kafka` owns a broker,
 and a small spike suite documents how librdkafka behaves for an assign-only observer.
+First reproduce the release defects recorded above. An empty subscription is known to fail
+with 5.3.0. A non-empty `subscribe` fallback is not permitted: even if no group survives
+shutdown, it cannot establish that the observer never joined a group. Resolve this through
+a verified released client API and update the dependency selection and exact construction
+calls here. If no released option meets the contract, leave M1 blocked and retain the
+reproducer; do not patch or vendor unpublished dependency code, weaken the guarantee, or
+expand into dependency development as part of this plan validation.
 
 Enable the client library through Seihou rather than by editing generated files. From the
 repository root run `seihou run nix-haskell-flake --var nix.kafka=true --dry-run --no-commands`
 and read the plan. If Seihou refuses because the installed module advanced past the recorded
 0.31.0 and ships migrations, use `seihou update nix-haskell-flake --var nix.kafka=true
 --dry-run` instead, inspect the generated changes, and apply without `--dry-run`. Either path
-must leave `nix.redpanda` false, update `.seihou/config.dhall`, regenerate `nix/haskell.nix`
-with the rdkafka block and shell exports, and keep `flake.lock` unchanged; run `seihou diff`
+must leave `nix.redpanda` false, update `.seihou/config.dhall`, and regenerate `nix/haskell.nix`
+with the rdkafka block and shell exports. A same-version toggle keeps `flake.lock` unchanged;
+an actual module upgrade may replace the managed lock. In that case inspect the generated
+pin changes and reverify every package version below before proceeding; never restore an old
+lock over the new template or hand-edit it. Run `seihou diff`
 afterwards and record the resulting module version in `docs/development.md`. Add
 `pkgs.apacheKafka` to `haskellProject.extraDevPackages` in `flake.module.nix` so
 `kafka-storage.sh`, `kafka-server-start.sh`, `kafka-topics.sh`, `kafka-consumer-groups.sh`,
 `kafka-console-producer.sh`, `kafka-console-consumer.sh`, and `kafka-delete-records.sh` are
 on the dev-shell `PATH`.
 
-Select the dependency per ADR 0001. Confirm the Hackage release listing and the upstream
+Select the dependency per ADR 0001 only after the release gate above is resolved. Confirm the Hackage release listing and the upstream
 `v5.3.0` tag revision (`git ls-remote --tags https://github.com/haskell-works/hw-kafka-client`),
-add `hw-kafka-client == 5.3.0` to the `constraints` block of `cabal.project`, add
-`hw-kafka-client >=5.3 && <5.4` to the `shoko-adapters` library `build-depends`, regenerate
+use 5.3.0 only for the reproducer, then record the accepted released version and compatible
+bound in the `constraints` block of `cabal.project` and the `shoko-adapters` library
+`build-depends`. Regenerate
 `cabal.project.freeze` with `nix develop --command cabal freeze` after `cabal update`, and
-confirm the Nix build takes the same 5.3.0 from the managed set without `callHackageDirect`.
+confirm Cabal and Nix select the same accepted release. Use the managed package when it
+matches; a newer released selection must follow the existing documented, hashed
+`callHackageDirect` convention in `flake.module.nix`.
 Record release, upload date, upstream revision, librdkafka 2.15.0, and Apache Kafka 4.3.1
 with JRE 17.0.19 in `docs/dependencies.md`. Note in that file that `hw-kafka-client` requires
 `-threaded` executables for its callback machinery; all adapter test suites already pass
@@ -340,40 +411,63 @@ a run-owned temporary directory. Every JVM child gets `LOG_DIR` pointing at a wr
 run-owned directory and `KAFKA_OPTS` extended with `-Djava.security.egd=file:/dev/./urandom`;
 without these the broker fails to start inside the Nix sandbox. It formats storage with
 `kafka-storage.sh format --ignore-formatted -t <cluster-id> -c server.properties`, starts
-`kafka-server-start.sh`, waits up to 120 seconds for a TCP connection to the broker port, and
+`kafka-server-start.sh`, waits up to 120 seconds for a successful Kafka metadata command
+(`kafka-topics.sh --bootstrap-server <bootstrap> --list`, with a per-attempt process timeout), and
 always binds and advertises `127.0.0.1` rather than `localhost`, because librdkafka resolves
 `localhost` to `::1` first. It then seeds a fixture application group: creates topic
-`application-events`, produces one record with `kafka-console-producer.sh`, and consumes it
-with `kafka-console-consumer.sh --group application-worker --from-beginning --max-messages 1`
-so that group has a committed offset. It snapshots `kafka-consumer-groups.sh --list`,
-`kafka-topics.sh --list`, and `kafka-consumer-groups.sh --describe --group application-worker`,
+`application-events`, produces one record with `kafka-console-producer.sh`, and
+sets a committed offset explicitly with `kafka-consumer-groups.sh --bootstrap-server
+<bootstrap> --group application-worker --topic application-events --reset-offsets --to-offset
+1 --execute`. Verify the inactive group describes offset 1; do not rely on a short-lived
+console consumer's periodic auto-commit. Initialize a fixture transactional producer and
+complete one transaction before snapshots, so lazy creation of `__transaction_state` is not
+mistaken for observer topic creation. It snapshots `kafka-consumer-groups.sh --list`,
+`kafka-topics.sh --list`, and `kafka-consumer-groups.sh --describe --group application-worker`
+(each with `--bootstrap-server <bootstrap>`),
 runs the suite with `SHOKO_KAFKA_BOOTSTRAP=127.0.0.1:<broker>` and `SHOKO_KAFKA_LOG_DIR` set,
 snapshots again, fails if any `shoko-observer-` group appeared, if the topic list changed
-other than topics the suite names with its `fixture-` prefix, or if the application group's
-offsets changed, and finally stops the broker and removes the directory. Sanitized failure
+other than topics the suite names with its `fixture-` prefix, or if the application's parsed
+`(group, topic, partition, committed-offset)` tuples changed. Do not compare transient
+member IDs, lag, or whitespace from CLI output. Finally stop the broker and remove the directory. Sanitized failure
 output goes under `.dev/kafka-tests/`. `--binaries dist/build` runs compiled test binaries
 exactly as `test-event-stores` does.
+
+Add `test-kafka` to `justfile` in M1. Register the `kafka-adapter-test` Cabal suite with
+`-threaded`, `hw-kafka-client`, `aeson`, `async`, `network`, `process`, `time`, `uuid`,
+`shoko-adapters`, and the existing Tasty/Hedgehog test dependencies as needed. Add
+`pkgs.apacheKafka` to the adapter derivation's `nativeBuildInputs` and
+`python ${./scripts/test-kafka} --binaries dist/build` to its `checkPhase` in M1, so this
+milestone's own acceptance commands exist. M3 adds the completed suite to `just check`.
 
 Add the `kafka-adapter-test` suite (`shoko-adapters/test/KafkaMain.hs` and
 `shoko-adapters/test/Kafka/Contract.hs`) and start it with the spike groups, written directly
 against `hw-kafka-client` because the adapter does not exist yet. The suite creates one fresh
-topic per test with `kafka-topics.sh --create --topic fixture-<unique> --partitions N`
+topic per test with `kafka-topics.sh --bootstrap-server <bootstrap> --create --topic
+fixture-<unique> --partitions N --replication-factor 1`
 through `System.Process` (the 5.3.0 release has no admin module), using the `LOG_DIR` the
 script supplied. The spike must establish, with evidence recorded in Surprises & Discoveries:
 that a consumer built with `brokersList`, `groupId (ConsumerGroupId "shoko-observer-<uuid>")`,
 `noAutoCommit`, `noAutoOffsetStore`, `extraProp "enable.partition.eof" "true"`,
 `extraProp "allow.auto.create.topics" "false"`, `extraProp "isolation.level" "read_committed"`,
-`callbackPollMode CallbackPollModeSync`, and an empty `topics []` subscription can `assign`
-explicit partition offsets, `pollMessage` with a 100 millisecond `Timeout` until each
-partition reports `KafkaResponseError RdKafkaRespErrPartitionEof`, and read key, headers,
+`callbackPollMode CallbackPollModeSync`, and a supported assignment-only constructor can
+`assign` explicit partition offsets. The intended `topics []` call is a failing reproducer
+on 5.3.0, not that constructor. Use one consumer assigned to one partition at a time, freshly
+allocated for that partition, so an anonymous `KafkaResponseError RdKafkaRespErrPartitionEof`
+has an unambiguous owner. Do not count anonymous EOFs from a multi-partition assignment.
+Poll with at most a 100 millisecond `Timeout`, capped by remaining request time, and read key, headers,
 value, and `CreateTime`/`LogAppendTime` timestamps; that `watermarkOffsets` returns low and
-high offsets per partition; that after `closeConsumer` the broker lists no
+committed-visible end offsets per partition, including when the transaction is already open
+before capture; that after deterministic teardown the broker lists no
 `shoko-observer-` group; that assigning a nonexistent topic yields an error rather than a
 created topic; and that with an open transaction holding a record in a partition, a later
 committed record in the same partition is invisible to a `read_committed` consumer until the
-transaction commits, after which both appear at their original offsets. The fallback if
-assign-only reading proves impossible is `subscribe` with the run-unique group and a
-documented proof that the group disappears after close; record whichever applies.
+transaction commits, after which both appear at their original offsets. Include two empty
+partitions and one busy partition, and test EOF after aborted transactions/control records.
+Prove the 80 millisecond stalled-broker deadline and socket-release criterion from M3 already
+in this spike. `closeConsumer` alone is not an explicit destroy API; the accepted release
+must supply supported deterministic teardown, without forced GC, hidden-module imports,
+or detached cleanup threads. Discard a client choice that cannot pass these checks and keep
+M1 blocked pending a released alternative. Promote only a passing spike into M2.
 
 Acceptance: `nix develop --command just test-kafka` passes locally on macOS; `nix flake
 check` builds the adapter derivation with the Kafka script in its `checkPhase` on Linux CI.
@@ -384,17 +478,28 @@ If the Nix sandbox on macOS cannot run the JVM broker, gate that native step on 
 
 This milestone separates the store-neutral evidence state machine from Hasql, extends the
 shared descriptors, and adds the reader. At its end a context can write
-`eventQuery bounded (topicScope "registration.completed.v1") AppendOnlyDuringRun
-(BusinessKeyRecordKey (BusinessKeyName "registrationId")) "RegistrationCompleted" decode`
-and bind it with `kafkaObservation`.
+the following validated query and bind it with `kafkaObservation`:
+
+```haskell
+query = do
+  bounded <- limits 100 10 1000
+  scope <- topicScope "registration.completed.v1"
+  eventQuery bounded scope AppendOnlyDuringRun
+    (BusinessKeyRecordKey (BusinessKeyName "registrationId"))
+    "RegistrationCompleted" decode
+```
 
 Refactor `shoko-adapters/src/Shoko/Adapter/EventStore/Internal.hs` so `Reader a` holds the
 public `SourceId`, the `EventQuery a`, a `Scanner`, and the `IORef ReaderState`. A `Scanner`
-is a record of two IO functions: `baselineScan`, which returns the ids to exclude and an
+is a record of two IO functions, both receiving the `Clock` and absolute request deadline:
+`baselineScan`, which returns the ids to exclude and an
 opaque cursor token, and `scan`, which returns a `Scan` of normalized `StoreEvent`s, a
 `scannedAll` flag (false when a page or record limit stopped the read), a `historyIntact`
 flag (false when the source itself reports deletion), and store-specific public details such
-as scanned position bounds. Build the PostgreSQL scanner from the existing settings, schema,
+as scanned position bounds. The Kafka scanner owns typed run-local state for the baseline
+partition-ID set, each partition's start and greatest observed visible end, and a sticky
+history-loss flag; the public token is diagnostic, never parsed back into that state.
+Build the PostgreSQL scanner from the existing settings, schema,
 and `Fetch` so `snapshot`'s repeatable-read transaction, statement timeout, page progress
 check, and `event-baseline-scan-limit` behavior are unchanged, with `historyIntact` always
 true. `observeEvents` then becomes store-neutral: it computes fresh and timely ids,
@@ -402,7 +507,14 @@ ambiguity at the cutoff, `intact = seen ⊆ ids`, `complete = AppendOnlyDuringRu
 && intact && historyIntact && not ambiguous`, `through = min started cutoff`, and the shared
 public flags, appending the scanner's details. Change `StoreEvent.payload` to
 `Either Text Value` so a non-JSON Kafka value does not fail an observation unless the record
-is a correlated candidate; SQL scanners wrap their JSONB payloads in `Right`.
+is a correlated candidate; SQL scanners wrap their JSONB payloads in `Right`. Add an internal
+optional normalized record correlation field, separate from execution `correlationId`:
+Kafka fills it from the selected record key/header, SQL uses `Nothing`, and shared selection
+uses it only for `BusinessKeyRecordKey` and `BusinessKeyHeader`. Preserve the actual
+correlation value only in memory; never render it. Select the last header with a given name
+(Kafka permits duplicates), for both `event-type` and the configured correlation header,
+and test that rule. Emit only the fixed correlation source kind in Kafka public details,
+not the configured header name or its contents.
 
 Extend the descriptors. Add `TopicScope !Text` to `EventScope` with
 `topicScope :: Text -> Either Text EventScope`, which accepts 1 to 249 ASCII letters, digits,
@@ -424,7 +536,8 @@ inputs so acquisition can never silently reinterpret them. Update the consumer i
 
 Create `shoko-adapters/src/Shoko/Adapter/Kafka.hs` and
 `shoko-adapters/src/Shoko/Adapter/Kafka/Evidence.hs` (a re-export of
-`Shoko.Adapter.EventStore`, matching the other stores). `KafkaSettings` holds the bootstrap
+`Shoko.Adapter.EventStore`, matching the other stores), and list both in the library's
+`exposed-modules` in `shoko-adapters/shoko-adapters.cabal`. `KafkaSettings` holds the bootstrap
 list and opaque client properties and has no rendering instance. `kafkaSettings` validates a
 comma-separated `host:port` list without scheme or credentials, accepts only
 `security.protocol`, `sasl.*`, and `ssl.*` extra properties, and rejects observer-controlled
@@ -436,20 +549,31 @@ source query` performs no broker IO; it returns `Left` for a non-topic scope or
 (EventEvidence a))` by focusing the shared `readerHandler`, and `observeKafka` exposes the
 observation for direct tests.
 
-The Kafka scanner opens a fresh consumer per baseline and per scan inside `bracket`
-(`newConsumer`/`closeConsumer`), under the clock's `bound` with the request budget from
-`Limits` and the remaining deadline, and with poll timeouts of at most 100 milliseconds so a
-blocking foreign call returns promptly for cancellation. It fetches `topicMetadata` for the
+The Kafka scanner uses the assignment-only constructor and deterministic teardown accepted
+in M1 inside `bracket`, with one fresh consumer per partition per baseline/scan. The whole
+baseline or scan shares one deadline, `min requestDeadline (started + budget)`, rather than
+receiving a new budget for each partition. Recompute remaining time before metadata,
+`partitionWatermarkOffsets`, assignment, and polling; cap each timed foreign call by that
+remaining time and polling by 100 milliseconds. A timeout is unavailable evidence, never
+EOF. `Clock.bounded` alone cannot guarantee prompt cancellation of foreign calls or masked
+cleanup, which is why M1 must prove the complete lifecycle. Install no-op error/log callbacks
+before client creation so raw broker addresses and secrets cannot escape to stderr;
+discard raw library error text from return values as well. It fetches `topicMetadata` for the
 topic; a missing topic is `kafka-topic-missing`, more than 64 partitions is
-`kafka-partition-limit`, and a partition count differing from the baseline's makes
-`scannedAll` false and sets a `partitions-stable` flag to false. The baseline reads
-`watermarkOffsets` for each partition and stores the high watermark as that partition's
-baseline offset; the cursor token renders those offsets; no ids are excluded because records
-before the baseline are excluded by offset. Each scan reads `watermarkOffsets` again and sets
-`historyIntact` false if any low watermark exceeds its baseline offset (retention or
-truncation removed records inside the window) or any high watermark fell below a previously
-observed end; it then `assign`s every partition at its baseline offset and polls until each
-reports partition EOF, stopping early with `scannedAll` false once a partition yields
+`kafka-partition-limit`. Reject topic/partition metadata errors, compare the exact partition-ID
+set with the baseline before and after reading, and make `scannedAll` false and
+`partitions-stable` false on change. The baseline calls `partitionWatermarkOffsets` for each
+partition using `read_committed` and stores the returned visible end (last stable offset)
+as that partition's baseline offset. It does not substitute a physical high watermark:
+records hidden behind a transaction at capture must still be found after commit. The token
+renders those offsets; no ids are excluded because the committed prefix is excluded by
+offset. Each scan checks low and visible-end offsets before and after reading and sets a
+sticky `historyIntact` false if any low watermark exceeds its baseline offset, any visible
+end falls below a previously observed end, or the partition-ID set changes. Once observed,
+history loss cannot be cleared by later offset recovery. The scanner assigns exactly one
+partition per fresh consumer at its baseline offset and polls to that consumer's EOF;
+only EOF from every baseline partition establishes `scannedAll`. Stop early with
+`scannedAll` false once a partition yields
 `pageSize * pages` records. Records become `StoreEvent`s with identity `<partition>/<offset>`,
 event type from the UTF-8 `event-type` header or empty when absent, position equal to the
 offset, `recordedAt` from the record timestamp (`NoTimestamp` is
@@ -489,7 +613,10 @@ appears in the result; `limits 1 1 budget` with two records is Unknown rather th
 history; a record first seen after the cutoff is counted ambiguous and excluded while
 `through` equals the cutoff; a read spanning the cutoff under the fake clock keeps a
 conservative `through`; `UnverifiedHistory` cannot pass `never` or `exactlyOnce`;
-`ExecutionMetadata` is rejected at construction; `BusinessKeyHeader` and
+`ExecutionMetadata` is rejected at construction; malformed key/header UTF-8 and duplicate
+headers obey the declared correlation rules; Kafka header names/values, bootstrap addresses,
+and secret sentinels are absent from both reports and captured process stderr;
+`BusinessKeyHeader` and
 `BusinessKeyRecordKey` each select exactly one occurrence among records with different keys
 across partitions; a bootstrap address pointing at a loopback socket that accepts and never
 answers (opened by the test with the `network` package, already in the freeze) returns
@@ -498,16 +625,17 @@ connection reaches end-of-file within one second afterwards, proving the consume
 released; an unreachable bootstrap is Unknown before any action mutation; after an open
 transaction holds a record while a committed record follows it in the same partition, the
 first observation reports zero occurrences with complete coverage of the visible state and
-the observation after commit reports both without skipping; `kafka-delete-records.sh`
+the observation after commit reports both without skipping (repeat with the transaction
+opened before baseline capture); two empty partitions and one busy partition cannot report
+complete until all three finish; a partition added during a read invalidates completeness;
+`kafka-delete-records.sh`
 truncating a partition past the baseline offset makes `low-watermark-intact` false and
-`never` Unknown instead of Pass; and the script's before/after snapshots prove no observer
+`never` Unknown instead of Pass, with a controlled scanner test proving history loss stays
+sticky after apparent offset recovery; and the script's before/after snapshots prove no observer
 group, no new topic outside the fixture prefix, and unchanged application offsets.
 
-Add `test-kafka` to `justfile` and to the `check` recipe, add the suite to
-`shoko-adapters/shoko-adapters.cabal` with `hw-kafka-client`, `aeson`, `network`, `process`,
-`time`, and `uuid` test dependencies, and in `flake.module.nix` add `pkgs.apacheKafka` to the
-adapter derivation's `nativeBuildInputs` and `python ${./scripts/test-kafka} --binaries
-dist/build` to its `checkPhase` (Linux-gated only if M1 recorded a sandbox limitation).
+Add the M1 `test-kafka` recipe to `check` in `justfile`; retain and extend the Cabal and
+native Nix wiring already established in M1 (Linux-gated only if M1 recorded a sandbox limitation).
 Acceptance: `nix develop --command just check` passes with the new suite listed in its
 output, `nix flake check` passes, and the GitHub Actions run on the pushed commit is green.
 
@@ -546,15 +674,17 @@ scope; destructive consumers still deferred). Acceptance: `just check-docs`, `mo
 
 ## Concrete Steps
 
-All commands run from the repository root. Discover the dependencies and the template first:
+All commands run from the repository root. This is an implementation sequence after the
+M1 release blocker is resolved, except for the discovery and reproducer work. Discover the
+dependencies and the template first:
 
 ```bash
 mori registry show haskell-works/hw-kafka-client --full
 mori registry docs haskell-works/hw-kafka-client
 mori registry show confluentinc/librdkafka --full
 mori registry show shinzui/seihou-modules --full
-curl -sS https://hackage.haskell.org/package/hw-kafka-client/preferred.json
-git ls-remote --tags https://github.com/haskell-works/hw-kafka-client | grep 'v5.3.0'
+curl -fsSL https://hackage.haskell.org/package/hw-kafka-client/preferred.json
+git ls-remote --tags https://github.com/haskell-works/hw-kafka-client 'refs/tags/v5.3.0*'
 ```
 
 Enable the client in the managed shell and verify the generated changes:
@@ -568,8 +698,8 @@ git diff --stat -- .seihou/config.dhall nix/haskell.nix flake.lock
 
 If `seihou run` refuses because of pending migrations, substitute
 `seihou update nix-haskell-flake --var nix.kafka=true --dry-run` and then the same command
-without `--dry-run`; `flake.lock` must stay unchanged in either case. Then select the
-dependency and rebuild:
+without `--dry-run`; a same-version toggle preserves the lock, while an upgrade requires
+the managed-pin review described in M1. Once a supported release is selected, rebuild:
 
 ```bash
 nix develop --command cabal update
@@ -600,7 +730,7 @@ After the documentation and catalog work:
 ```bash
 just check-docs
 mori validate
-python3 scripts/test-workflow-contract
+nix develop --command just test-workflow-contract
 git diff --check
 ```
 
@@ -620,12 +750,15 @@ complete coverage fails `eventually` only after the closing read; an unreachable
 broker produces Unknown without retrying any mutation; records with unrelated keys, headers,
 or payload fields never satisfy the query; a record produced during the action before the
 first poll is found; a committed record hidden behind an open transaction is found after the
-transaction commits and is never skipped; a second independent reader reports the same
+transaction commits and is never skipped, including a transaction open at baseline;
+a second independent reader reports the same
 occurrence ids; a record first observed after the cutoff cannot produce accepted
 cardinality; `UnverifiedHistory` yields witnesses but never a passing `never` or
 `exactlyOnce`; truncation detected through the low watermark makes coverage incomplete; and
-after the whole suite the broker lists no `shoko-observer-` consumer group, no topic outside
-the fixture prefix, and unchanged committed offsets for the `application-worker` group.
+after the whole suite the broker lists no `shoko-observer-` consumer group, no new topic
+outside the fixture prefix compared with the warmed-up baseline, and unchanged committed
+offsets for the `application-worker` group. Source/API inspection must additionally prove
+no group-joining subscription is used; before/after snapshots alone cannot prove that.
 
 The early representative interaction check is the M1 spike: real `hw-kafka-client` against
 the real broker, assign-only, before any adapter code exists. Its findings on partition EOF,
@@ -700,13 +833,25 @@ Scripts and environment: `scripts/test-kafka` (owned broker, before/after snapsh
 `kafka-adapter-test` suite; `just test-kafka`; `flake.module.nix` adds `pkgs.apacheKafka` to
 the dev shell and the adapter derivation.
 
-Dependencies: `hw-kafka-client` 5.3.0 (`mori://haskell-works/hw-kafka-client/packages/hw-kafka-client`,
-library bound `>=5.3 && <5.4`, frozen at 5.3.0), librdkafka 2.15.0
-(`mori://confluentinc/librdkafka`, supplied by the pinned Nixpkgs through the Seihou
+Dependencies: `hw-kafka-client` (`mori://haskell-works/hw-kafka-client/packages/hw-kafka-client`)
+has no accepted implementation version yet. Hackage 5.3.0 is the verified reproduction
+baseline; the originally proposed `>=5.3 && <5.4` bound and 5.3.0 freeze are not approved
+for the observer. M1 must replace this paragraph with a released version, bound, immutable
+upstream revision, and explicit assignment/teardown API evidence before M2. The currently
+planned native dependency is librdkafka 2.15.0
+(`mori://confluentinc/librdkafka/packages/librdkafka`, supplied by the pinned Nixpkgs through the Seihou
 `nix.kafka` option), Apache Kafka 2.13-4.3.1 with JRE 17.0.19 as a development and test tool
 only (`pkgs.apacheKafka`; Mori has no registered project, so the Nixpkgs attribute is the
 reference), and the already frozen `network` 3.2.9.0 and `process` 1.6.26.1 for test fixtures.
 Core gains two `HandlerBuildError` constructors and their codec and schema entries.
+
+Release evidence checked on 2026-10-21: the
+[Hackage release listing](https://hackage.haskell.org/package/hw-kafka-client/preferred.json)
+and [5.3.0 source archive](https://hackage.haskell.org/package/hw-kafka-client-5.3.0/hw-kafka-client-5.3.0.tar.gz)
+were compared with upstream tags. Apache Kafka tag 4.3.1 peels to
+`26b251a451ce941d3d7a55e6487bcb7f16b5ad48`. Recheck availability when resolving M1;
+the original package-set versions above describe the current lock, not a guarantee after
+a Seihou upgrade.
 
 Prerequisites: `docs/plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md`,
 `docs/plans/4-implement-postgresql-and-http-evidence-bindings.md`, and
@@ -718,3 +863,9 @@ CAP-11; it extends `Shoko.Adapter.EventStore.Internal`, `shoko-adapters.cabal`,
 `flake.module.nix`, `justfile`, and the workflow schema and validator, whose registration
 example stays unchanged. The staging host that selects this reader, its topic names, ACL
 credentials, and append-only promise belong to the bounded context and the environment owner.
+
+Revision 2026-10-21: validated the plan against the working tree, local ADRs, Mori-discovered
+sources, and the actual released client. Recorded construction and teardown blockers;
+corrected partition EOF attribution, committed-visible baselines, persistent history-loss
+state, secret-safe diagnostics, fixture readiness and offset snapshots, and M1 build wiring.
+The four implementation milestones remain incomplete; this revision changes only the plan.
