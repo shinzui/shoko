@@ -3,7 +3,8 @@ type: Improvement Request
 title: Select compiled scenarios through a declarative catalog with shared inspection
 description: Give consumers a versioned scenario catalog schema and a packaged list, explain and check dispatcher so a QA repository can select compiled scenarios by stable ID without forking Shoko's inspection mechanics.
 requestId: IR-1
-status: proposed
+status: completed
+timestamp: "2026-10-21T23:01:35Z"
 origin: mori://tan/tan-platform-qa
 generated:
   by: anthropic/claude-fable-5-1
@@ -49,3 +50,20 @@ The dispatcher resolves a declared host artifact and passes an argument vector. 
 ## Completion
 
 Completion requires evidence for AC-1 through AC-4, the schema and dispatcher published from one immutable Shoko revision, and a capability entry in the capability catalog describing the inspection surface and its limits.
+
+## Resolution — 2026-10-21
+
+Implemented at `de83f9b20dc8a3857f1d72e33f3df7780c932757`: strict
+`schemas/scenario-catalog-v1.schema.json`, semantic validation and explicit
+argument-vector dispatch in `scripts/scenario_catalog.py`, the packaged
+`shoko-suite` inspection entry point, and real consumer process contracts in
+`scripts/test-scenario-catalog`. The [catalog guide](../scenario-catalog.md) and
+[CAP-11](../capabilities/declarative-scenario-catalog-inspection.md) state the
+interface, artifact-resolution responsibilities and execution exclusions.
+
+Native `nix develop --command just check` passed core, real adapter, CLI,
+catalog, workflow and Nix checks; `just check-docs` passed. The consumer at
+`mori://tan/tan-platform-qa/plans/1-establish-the-qa-workspace-and-explicit-scenario-catalog`
+pins that same revision and NAR hash, invokes the packaged tool without a local
+catalog parser, and passed its actual-consumer and isolated Nix workspace gates.
+Its staging entries remain pending. No live readiness or staging Pass is claimed.
