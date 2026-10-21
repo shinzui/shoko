@@ -36,3 +36,18 @@ dependency still uses the removed pre-1.10 statement constructor. Do not solve
 that conflict with unpublished source edits or relaxed bounds. Pinned upstream
 SQL fixtures retain licenses and per-file source hashes and exercise actual
 stores in both Cabal and native Nix checks. See [dependency evidence](../dependencies.md).
+
+Kafka client selection, 2026-10-21: no released Haskell Kafka client can build a
+read-only observer (see [dependency evidence](../dependencies.md#kafka-selection)).
+The owner authorized one scoped exception to the released-dependency rule: the
+Kafka client is the [owner's hw-kafka-client fork](mori://shinzui/hw-kafka-client),
+pinned by immutable commit through a `source-repository-package` stanza and the
+matching Nix override, the convention its other consumers already use. Nothing may
+depend on it until the fork carries
+[IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2), and
+the exception ends when a released version carries the same API. It does not
+permit copying working-tree edits, branch pins, or blanket bounds waivers. Apache
+Kafka itself is a development and test tool supplied by the pinned Nixpkgs through
+`flake.module.nix`. `nix.kafka` stays disabled until the client is linked, because
+enabling it now forces a managed template upgrade whose regenerated pins must be
+reverified. Private Redpanda remains disabled.

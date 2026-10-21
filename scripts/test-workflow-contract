@@ -93,6 +93,47 @@ class WorkflowContractTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_contract(value, self.schema)
 
+    def kafka_source(self):
+        value = copy.deepcopy(self.example)
+        value["requiredAdapters"].append("kafka")
+        value["target"]["endpoints"].append({
+            "id": "integration-events",
+            "address": "kafka://broker.example.invalid:9092",
+            "targetAssociation": "Synthetic staging broker carrying the registration topic.",
+            "accessRoute": "synthetic-tunnel",
+            "credentialEnv": ["SHOKO_KAFKA_SASL"],
+        })
+        value["evidenceSources"][0].update(adapter="kafka", coverage="durable-history", endpointId="integration-events", historyPolicy="append-only-during-run")
+        value["requirements"][0]["coverage"] = "durable-history"
+        return value
+
+    def test_kafka_topic_reader_can_discharge_history(self):
+        validate_contract(self.kafka_source(), self.schema)
+        unpromised = self.kafka_source()
+        del unpromised["evidenceSources"][0]["historyPolicy"]
+        with self.assertRaises(ContractError):
+            validate_contract(unpromised, self.schema)
+
+    def test_kafka_sources_and_endpoints_are_checked(self):
+        on_http = self.kafka_source()
+        on_http["evidenceSources"][0]["endpointId"] = "registration-api"
+        unselected = self.kafka_source()
+        unselected["requiredAdapters"].remove("kafka")
+        broker_for_postgres = self.kafka_source()
+        broker_for_postgres["evidenceSources"][1]["endpointId"] = "integration-events"
+        cases = [on_http, unselected, broker_for_postgres]
+        for address in ("kafka://user:SECRET-sentinel@broker.example.invalid:9092",
+                        "kafka://broker.example.invalid",
+                        "kafka://broker.example.invalid:9092/registration.completed.v1",
+                        "kafka://a.example.invalid:9092,b.example.invalid:9092"):
+            value = self.kafka_source()
+            value["target"]["endpoints"][-1]["address"] = address
+            cases.append(value)
+        for index, value in enumerate(cases):
+            with self.subTest(case=index):
+                with self.assertRaises(ContractError):
+                    validate_contract(value, self.schema)
+
     def invoke(self, value, command="validate"):
         with tempfile.TemporaryDirectory(prefix="shoko-contract-") as directory:
             path = Path(directory) / "manifest.json"

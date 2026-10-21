@@ -142,3 +142,16 @@ Public type probes and internal malformed-reference/handle/digest probes preserv
 the typed and private-value boundaries without exposing internal constructors.
 The independent host emits schema-valid v2 reports for standalone and composed
 workflows; its successful resolutions retain entity-instance attribution.
+
+Kafka topic evidence, 2026-10-21: a Kafka topic is a third durable-history source
+under the same finite event-scan model. The adapter, not the producer clock, owns
+the visibility proof. Its baseline is each partition's read-committed end (the
+last stable offset), so a transaction open at capture becomes evidence when it
+commits during the run, and producer timestamps never decide membership. Every
+poll re-reads each baseline partition from that offset to an observed partition
+end; a timeout or record limit is never an end, and complete coverage requires
+the end of every baseline partition. A low watermark past a baseline offset, a
+read-committed end below one already observed, or a partition-set change is
+history loss that stays sticky for the run. `AppendOnlyDuringRun` for a topic is
+the owner's promise that neither retention nor compaction removes records during
+the run; compaction cannot be detected by the reader.

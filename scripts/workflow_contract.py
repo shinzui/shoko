@@ -99,10 +99,14 @@ def validate_contract(value, schema):
             parsed.port
         except ValueError:
             raise ContractError("endpoint address is invalid") from None
-        if (parsed.scheme not in {"http", "https", "postgresql"}
+        if (parsed.scheme not in {"http", "https", "postgresql", "kafka"}
                 or not hostname or parsed.username or parsed.password
                 or parsed.query or parsed.fragment):
             raise ContractError("endpoint must be a credential-free absolute address")
+        # A Kafka endpoint names exactly one bootstrap broker; topics belong to the binding.
+        if parsed.scheme == "kafka" and (parsed.port is None or parsed.path not in {"", "/"}
+                                         or "," in parsed.netloc):
+            raise ContractError("Kafka endpoint must be one bootstrap host and port")
     for action in actions.values():
         if action["endpointId"] not in endpoints:
             raise ContractError("action references an unknown endpoint")
@@ -116,10 +120,10 @@ def validate_contract(value, schema):
         if source["adapter"] not in adapters:
             raise ContractError("evidence source adapter is not selected")
         scheme = urlsplit(endpoints[source["endpointId"]]["address"]).scheme
-        allowed_schemes = {"http", "https"} if source["adapter"] == "http" else {"postgresql"}
+        allowed_schemes = {"http": {"http", "https"}, "kafka": {"kafka"}}.get(source["adapter"], {"postgresql"})
         if scheme not in allowed_schemes:
             raise ContractError("evidence source adapter does not match its endpoint protocol")
-        if source["coverage"] == "durable-history" and source["adapter"] not in {"kiroku", "message-db"}:
+        if source["coverage"] == "durable-history" and source["adapter"] not in {"kiroku", "message-db", "kafka"}:
             raise ContractError("durable history requires a selected event reader")
 
     expectation_pairs = set()

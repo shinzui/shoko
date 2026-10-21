@@ -69,3 +69,13 @@ expectations, include init containers, and do not change the deployed system mer
 to satisfy the verifier's manifest format. A matching template does not verify its
 running digest or pod/controller ownership. Discovery performs no manifest recipe
 execution or workload lifecycle operations.
+
+Kafka observation scope, 2026-10-21: bounded, read-only observation of a Kafka
+topic moves into scope as a generic adapter (`Shoko.Adapter.Kafka`). It reads a
+finite topic query, never joins a consumer group, commits offsets, or creates
+topics, and correlates by business key from a record key, header, or payload
+field. Topic names, key and header choices, and decoders stay in the bounded
+context's vocabulary and binding. Execution-ID correlation over Kafka waits for
+[Keiro IR-52](mori://shinzui/keiro/okf/improvement-requests/concepts/IR-52).
+Destructive queue consumers, continuous Observe, Replay, and trace/metrics
+querying remain deferred.

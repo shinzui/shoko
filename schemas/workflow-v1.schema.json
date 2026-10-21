@@ -219,7 +219,8 @@
           "http",
           "postgresql",
           "kiroku",
-          "message-db"
+          "message-db",
+          "kafka"
         ]
       },
       "uniqueItems": true
@@ -492,7 +493,8 @@
             "http",
             "postgresql",
             "kiroku",
-            "message-db"
+            "message-db",
+            "kafka"
           ]
         },
         "coverage": {

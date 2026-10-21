@@ -209,3 +209,39 @@ release revisions are `cacb242660a8e441e4d9179237b5a42054fbe581` and
 `mori://haskell-hvr/uuid/packages/uuid`; Vector's intended handle is
 `mori://haskell/vector/packages/vector` (registry coverage pending). No new
 version divergence from the existing freeze is introduced for these two packages.
+
+## Kafka selection
+
+Plan 10 (`docs/plans/10-implement-the-kafka-topic-evidence-adapter.md`) adds a
+bounded Kafka topic reader. Rechecked on 2026-10-21, the newest Hackage release of
+[hw-kafka-client](mori://haskell-works/hw-kafka-client/packages/hw-kafka-client) is
+5.3.0 (uploaded 2023-08-05, upstream tag `v5.3.0` at
+`e80c3220c46f4b6b2a1cd5007fca5e6df7f22ba1`). It cannot build a read-only observer:
+`newConsumer` always subscribes, and librdkafka rejects an empty subscription;
+per-message errors, including partition EOF, lose their partition; and the client is
+destroyed only by a garbage-collector finalizer. Its internal modules are hidden. No
+other Hackage package is viable: `librdkafka` and `kafka` are 0.0.0.0 placeholders,
+`kafka-client` dates from 2015, `haskakafka` from 2016, and `kafka-interchange`
+only encodes the wire protocol.
+
+The owner selected the fork [shinzui/hw-kafka-client](mori://shinzui/hw-kafka-client),
+pinned by immutable commit through a `source-repository-package` stanza, the
+convention [kafka-effectful](mori://shinzui/kafka-effectful) already uses. This is a
+scoped, owner-authorized exception to the released-dependency rule in ADR 0001. It
+applies only once the fork carries
+[IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2), and it
+ends when a released version carries the same API. Until then no Shōko package
+depends on a Kafka client, the managed shell keeps `nix.kafka = false`, and
+librdkafka is not linked. Enabling `nix.kafka` currently forces a
+`nix-haskell-flake` upgrade from 0.31.0 to 0.34.0 that replaces the managed
+`flake.lock`. That upgrade is deferred to the client binding step, where the
+regenerated pins must be reverified.
+
+The development and test tool **Apache Kafka 2.13-4.3.1** (JRE 17.0.19) comes from
+the pinned Nixpkgs revision `d5dfd8e6716dde34398bc14bc87c10dece9c8c68` as
+`pkgs.apacheKafka`, in the dev shell and the adapter derivation's checks. Upstream
+tag `4.3.1` peels to `26b251a451ce941d3d7a55e6487bcb7f16b5ad48`; Mori has no
+registered project, so the Nixpkgs attribute is the reference. The
+`kafka-adapter-test` suite adds only the already frozen **process 1.6.26.1**.
+When the client lands, every executable linking it must be built with
+`-threaded` for its callback machinery; all adapter test suites already are.

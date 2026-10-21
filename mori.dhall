@@ -46,7 +46,7 @@ in  Schema.Project::{
         , language = Schema.Language.Haskell
         , path = Some "shoko-adapters"
         , description = Some
-            "Scoped SQL, HTTP, Kiroku, and Message DB evidence adapters"
+            "Scoped SQL, HTTP, Kiroku, Message DB, and Kafka topic evidence adapters"
         , dependencies =
           [ Schema.Dependency.ByName "shinzui/shoko:shoko-core"
           , Schema.Dependency.ByName "haskell/aeson:aeson"

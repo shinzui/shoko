@@ -3,8 +3,8 @@ type: "Capability"
 title: "Bounded durable event evidence"
 description: "Read correlated Kiroku or Message DB events in finite stream or category scopes without advancing application checkpoints."
 generated:
-  by: "openai/gpt-6"
-  at: "2026-10-19T02:45:50Z"
+  by: "anthropic/claude-opus-5-5"
+  at: "2026-10-21T22:40:00Z"
 capabilityId: "CAP-7"
 provider: "mori://shinzui/shoko"
 status: "shipped"
@@ -29,7 +29,7 @@ evidence:
 
 A finite event query fixes its stream or category, event type, correlation strategy, decoding, and page/request limits. A fresh reader captures existing scoped occurrence IDs before actions and repeatedly scans the bounded scope in read-only repeatable-read transactions. Stable source-scoped occurrence identities avoid double counting across polls and preserve late lower-position commits.
 
-Both backends provide business-key correlation. Kiroku also supports exact UUID execution metadata; Message DB does not advertise exact execution-ID correlation. Raw event payloads and transport diagnostics are excluded from public evidence.
+Both backends provide business-key correlation from a payload field. Kiroku also supports exact UUID execution metadata; Message DB does not advertise exact execution-ID correlation. Handler construction rejects a Kafka topic scope with `UnsupportedEventScope` and record-key or header correlation with `UnsupportedCorrelationSource` before any reader is allocated. Raw event payloads and transport diagnostics are excluded from public evidence.
 
 ## Limits
 

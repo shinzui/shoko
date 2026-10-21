@@ -44,6 +44,16 @@ writer/reader roles, and the public core runner. `just test-event-stores` requir
 both stores; `just test-event-store kiroku` and `just test-event-store message-db`
 select one explicitly. Its Unix-only cluster is owned by that invocation, and
 checkpoint rows must remain unchanged. No staging access is required.
+`just test-kafka` boots an owned single-node Apache Kafka 4.3.1 broker (from
+`pkgs.apacheKafka` in the shell) on two free loopback ports, seeds an inactive
+`application-worker` group, runs `kafka-adapter-test`, and checks that no
+`shoko-observer-` group, no topic outside the `fixture-` prefix, and no change to
+the application's committed offsets resulted. Sanitized broker log tails from a
+failed run are kept under the ignored `.dev/kafka-tests/`. The suite's scanner
+groups use a controlled read-committed topic model; the client-backed reader
+waits for the `hw-kafka-client` fork (see [dependency evidence](dependencies.md)).
+That binding will also need `nix.kafka = true` for librdkafka, and every
+executable linking it must use `-threaded`.
 First-party code treats warnings as errors through `cabal.project` and the Nix
 package definition. Dependencies retain their own warning policy. CI invokes the
 same commands on Ubuntu; local acceptance is also checked on Apple Silicon macOS.
