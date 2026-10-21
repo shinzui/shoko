@@ -35,7 +35,8 @@ def main():
     def construction(cause):
         return preflight({"code": "handler-construction-failed", "id": "operation", "cause": cause})
 
-    for code in ("endpoint-not-allowlisted", "observation-method-not-get", "observation-scope-missing"):
+    for code in ("endpoint-not-allowlisted", "observation-method-not-get", "observation-scope-missing",
+                 "unsupported-event-scope", "unsupported-correlation-source"):
         valid = {"code": code, "id": "endpoint"}
         validator.validate(construction(valid))
         for malformed in ({"code": code}, valid | {"unknown": True}):

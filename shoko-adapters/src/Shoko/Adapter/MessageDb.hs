@@ -32,11 +32,12 @@ newtype MessageDb a = MessageDb (Reader a)
 messageDb :: Text -> SourceId -> EventQuery a -> IO (Either Text (MessageDb a))
 messageDb settings source query@(EventQuery _ _ _ mode _ _)
   | mode == ExecutionMetadata = pure (Left "message-db-requires-business-key-correlation")
-  | otherwise = fmap MessageDb <$> newReader settings "message_store" source query fetch
+  | otherwise = fmap MessageDb <$> newSqlReader settings "message_store" source query fetch
   where
     fetch scope cursor size = Session.statement (scopeName scope, cursor + 1, fromIntegral size) (statement scope)
     scopeName (StreamScope name) = name
     scopeName (CategoryScope name) = name
+    scopeName (TopicScope name) = name
     statement scope = preparable (sql scope) params (D.rowList row)
     params =
       contramap (\(name, _, _) -> name) (E.param (E.nonNullable E.text))
@@ -44,9 +45,9 @@ messageDb settings source query@(EventQuery _ _ _ mode _ _)
         <> contramap (\(_, _, size) -> size) (E.param (E.nonNullable E.int8))
     sql scope =
       "SELECT id::text, type::text, "
-        <> (case scope of StreamScope _ -> "position"; CategoryScope _ -> "global_position")
+        <> (case scope of StreamScope _ -> "position"; _ -> "global_position")
         <> "::bigint, time AT TIME ZONE 'UTC', data::jsonb, metadata::jsonb FROM "
-        <> (case scope of StreamScope _ -> "get_stream_messages($1::varchar, $2, $3, NULL)"; CategoryScope _ -> "get_category_messages($1::varchar, $2, $3, NULL, NULL, NULL, NULL)")
+        <> (case scope of StreamScope _ -> "get_stream_messages($1::varchar, $2, $3, NULL)"; _ -> "get_category_messages($1::varchar, $2, $3, NULL, NULL, NULL, NULL)")
     row =
       make
         <$> D.column (D.nonNullable D.text)
@@ -55,7 +56,7 @@ messageDb settings source query@(EventQuery _ _ _ mode _ _)
         <*> D.column (D.nonNullable D.timestamptz)
         <*> D.column (D.nonNullable D.jsonb)
         <*> D.column (D.nullable D.jsonb)
-    make key tag pos timestamp body metadata = StoreEvent key tag pos timestamp body Nothing (metadata >>= cause)
+    make key tag pos timestamp body metadata = StoreEvent key tag pos timestamp (Right body) Nothing Nothing (metadata >>= cause)
     cause (Object fields) = case KeyMap.lookup "causationMessageId" fields of
       Just (String value) -> UUID.toText <$> UUID.fromText value
       _ -> Nothing
@@ -64,7 +65,7 @@ messageDb settings source query@(EventQuery _ _ _ mode _ _)
 messageDbObservation :: SourceId -> EventQuery a -> Either HandlerBuildError (Handler (MessageDb a) (EventEvidence a))
 messageDbObservation label query@(EventQuery _ _ _ mode _ _)
   | mode == ExecutionMetadata = Left ExecutionMetadataUnsupported
-  | otherwise = Right (focus (\(MessageDb reader) -> reader) (readerHandler label query))
+  | otherwise = focus (\(MessageDb reader) -> reader) (readerHandler label query) <$ sqlHandlerSupport query
 
 observeMessageDb :: CallContext -> MessageDb a -> IO (ObservationOutcome (EventEvidence a))
 observeMessageDb call (MessageDb reader) = observeEvents call reader

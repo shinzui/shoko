@@ -502,6 +502,8 @@ handlerErrorValue (EndpointNotAllowlisted key) = identified "endpoint-not-allowl
 handlerErrorValue (ObservationMethodNotGet key) = identified "observation-method-not-get" key
 handlerErrorValue (ObservationScopeMissing key) = identified "observation-scope-missing" key
 handlerErrorValue ExecutionMetadataUnsupported = object ["code" .= ("execution-metadata-unsupported" :: Text)]
+handlerErrorValue (UnsupportedEventScope key) = identified "unsupported-event-scope" key
+handlerErrorValue (UnsupportedCorrelationSource key) = identified "unsupported-correlation-source" key
 
 parseHandlerError :: Value -> Parser HandlerBuildError
 parseHandlerError = withObject "handler-error" $ \o -> do
@@ -513,6 +515,8 @@ parseHandlerError = withObject "handler-error" $ \o -> do
     "endpoint-not-allowlisted" -> identifiedCause EndpointNotAllowlisted
     "observation-method-not-get" -> identifiedCause ObservationMethodNotGet
     "observation-scope-missing" -> identifiedCause ObservationScopeMissing
+    "unsupported-event-scope" -> identifiedCause UnsupportedEventScope
+    "unsupported-correlation-source" -> identifiedCause UnsupportedCorrelationSource
     "execution-metadata-unsupported" -> do
       unless (KeyMap.keys o == ["code"]) (fail "unknown field")
       pure ExecutionMetadataUnsupported

@@ -22,6 +22,8 @@ data HandlerBuildError
   | ObservationMethodNotGet !Text
   | ObservationScopeMissing !Text
   | ExecutionMetadataUnsupported
+  | UnsupportedEventScope !Text
+  | UnsupportedCorrelationSource !Text
   deriving stock (Eq, Show, Generic)
 
 data CorrelationRequirement = RequiresBusinessKey !BusinessKeyName | RequiresExecutionId

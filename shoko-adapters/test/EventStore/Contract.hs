@@ -72,7 +72,7 @@ openQuery :: Store -> Text.Text -> EventQuery Bool -> IO Backend
 openQuery store settings query = case store of
   KirokuStore -> do
     resource <- Kiroku.kiroku settings "kiroku" (SourceId "event-fixture") query >>= right
-    let handler = focus (const resource) (Kiroku.kirokuObservation (SourceId "event-fixture") query)
+    handler <- either (fail . show) (pure . focus (const resource)) (Kiroku.kirokuObservation (SourceId "event-fixture") query)
     pure (Backend (captureForTest handler) (\call -> Kiroku.observeKiroku call resource) handler)
   MessageDbStore -> do
     resource <- MessageDb.messageDb settings (SourceId "event-fixture") query >>= right
@@ -266,7 +266,9 @@ tests = do
               ]
           mapM_
             ( \allocated -> case store of
-                KirokuStore -> assertDescriptorMismatch (Kiroku.kirokuObservation (SourceId "event-fixture") original) (Kiroku.kiroku readSettings "kiroku" (SourceId "event-fixture") allocated >>= right)
+                KirokuStore -> do
+                  handler <- either (fail . show) pure (Kiroku.kirokuObservation (SourceId "event-fixture") original)
+                  assertDescriptorMismatch handler (Kiroku.kiroku readSettings "kiroku" (SourceId "event-fixture") allocated >>= right)
                 MessageDbStore -> do
                   handler <- either (fail . show) pure (MessageDb.messageDbObservation (SourceId "event-fixture") original)
                   assertDescriptorMismatch handler (MessageDb.messageDb readSettings (SourceId "event-fixture") allocated >>= right)
@@ -277,7 +279,9 @@ tests = do
           scope <- right (categoryScope category)
           query <- right (eventQuery bounded scope AppendOnlyDuringRun (BusinessKeyField (BusinessKeyName "accountId")) "Happened" (const (Right True)))
           case store of
-            KirokuStore -> deniedBeforeAllocation (Kiroku.kirokuObservation (SourceId "event-fixture") query) (Kiroku.kiroku readSettings "kiroku" (SourceId "event-fixture") query >>= right)
+            KirokuStore -> do
+              metadata <- either (fail . show) pure (Kiroku.kirokuObservation (SourceId "event-fixture") query)
+              deniedBeforeAllocation metadata (Kiroku.kiroku readSettings "kiroku" (SourceId "event-fixture") query >>= right)
             MessageDbStore -> do
               metadata <- either (fail . show) pure (MessageDb.messageDbObservation (SourceId "event-fixture") query)
               deniedBeforeAllocation metadata (MessageDb.messageDb readSettings (SourceId "event-fixture") query >>= right),
@@ -326,7 +330,7 @@ tests = do
           reader <- case store of
             KirokuStore -> do
               r <- Kiroku.kiroku readSettings "kiroku" (SourceId "event-fixture") query >>= right
-              let h = focus (const r) (Kiroku.kirokuObservation (SourceId "event-fixture") query)
+              h <- either (fail . show) (pure . focus (const r)) (Kiroku.kirokuObservation (SourceId "event-fixture") query)
               pure (Backend (captureForTest h) (\c -> Kiroku.observeKiroku c r) h)
             MessageDbStore -> do
               r <- MessageDb.messageDb readSettings (SourceId "event-fixture") query >>= right

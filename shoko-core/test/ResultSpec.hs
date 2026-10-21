@@ -93,6 +93,8 @@ tests =
                 IncompatibleCorrelation "op" (CorrelationId "other"),
                 InconsistentSource (SourceId "source"),
                 HandlerConstructionFailed "op" ExecutionMetadataUnsupported,
+                HandlerConstructionFailed "scope-op" (UnsupportedEventScope "topic"),
+                HandlerConstructionFailed "source-op" (UnsupportedCorrelationSource "record-key"),
                 ProductionUnsupported,
                 InvalidBindingIdentifier,
                 InvalidLogicalInput

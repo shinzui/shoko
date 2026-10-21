@@ -3,6 +3,7 @@ module Shoko.Adapter.EventStore
   ( EventScope (..),
     streamScope,
     categoryScope,
+    topicScope,
     Limits,
     limits,
     CorrelationMode (..),

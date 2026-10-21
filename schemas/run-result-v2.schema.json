@@ -1225,6 +1225,38 @@
           "type": "object",
           "properties": {
             "code": {
+              "const": "unsupported-event-scope"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "unsupported-correlation-source"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
               "const": "execution-metadata-unsupported"
             }
           },

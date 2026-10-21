@@ -155,7 +155,7 @@ tests =
                     expect $ eventually "check" (correlatedBy handle $ observe "yes" (InR (Broken cause)) id)
               resolveScenario testEnvironment testOptions (combineBindings "combined" (probeBinding calls) (probeBinding calls)) source `isErrors` [HandlerConstructionFailed "broken" cause]
           )
-          [EndpointNotAllowlisted "public", ObservationMethodNotGet "write", ObservationScopeMissing "scope", ExecutionMetadataUnsupported]
+          [EndpointNotAllowlisted "public", ObservationMethodNotGet "write", ObservationScopeMissing "scope", ExecutionMetadataUnsupported, UnsupportedEventScope "topic", UnsupportedCorrelationSource "record-key"]
         evalIO (readIORef calls) >>= (=== 0),
       check "typed construction causes survive preflight and closed JSON" $ do
         calls <- evalIO (newIORef 0)
@@ -168,7 +168,7 @@ tests =
               resolveScenario testEnvironment testOptions (adjustHandlers (\_ _ -> id) (probeBinding calls)) source `isErrors` expected
               decodeRunResult (encodeRunResult (PreflightFailure expected)) === Right (PreflightFailure expected)
           )
-          [EndpointNotAllowlisted "public-endpoint", ObservationMethodNotGet "write", ObservationScopeMissing "unscoped", ExecutionMetadataUnsupported]
+          [EndpointNotAllowlisted "public-endpoint", ObservationMethodNotGet "write", ObservationScopeMissing "unscoped", ExecutionMetadataUnsupported, UnsupportedEventScope "topic", UnsupportedCorrelationSource "record-key"]
         assert (either (const True) (const False) (decodeRunResult "{\"schemaVersion\":1,\"kind\":\"preflight-error\",\"errors\":[]}")),
       check "focus projects baseline capture and execution to the same resource" $ do
         captured <- evalIO (newIORef False)
