@@ -16,6 +16,11 @@ provenance:
       at: 2026-10-21T17:17:48Z
       mode: "update"
       note: "Validate released Kafka client APIs; record dependency blockers and correct EOF, visibility, lifecycle, and milestone guidance"
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-10-21T22:09:29Z
+      mode: "implement"
+      note: "Record the fork decision and IR-2 blocker; implement client-independent work"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -96,6 +101,13 @@ and its public close operation does not explicitly destroy the client. Do not be
 mark this plan implementation-ready until M1 records a released, supported solution and the
 corresponding dependency bounds. The fixture and reproduction work in M1 can proceed.
 
+Blocker (2026-10-21): the client is the `mori://shinzui/hw-kafka-client` fork (see Decision
+Log). Every step that calls the Kafka client — the M1 spike, the client binding of the Kafka
+scanner port, and the real-broker contract groups of M2/M3 — waits for
+[IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2) to land as a
+tagged fork commit. All client-independent work is implemented in this session; see the
+handoff note after the milestones once it is recorded.
+
 
 ## Surprises & Discoveries
 
@@ -130,6 +142,15 @@ test-workflow-contract` (8 contract and 17 identity tests), and `nix develop --c
 python3 scripts/check-result-schema.py` (7 examples). The host Python lacks `jsonschema`;
 use the managed shell for the Python validation commands. No Kafka runtime acceptance was
 run: the adapter, fixture, and test target do not yet exist.
+
+Recheck on 2026-10-21 (implementation session): Hackage `preferred.json` still lists 5.3.0 as
+newest, and the 5.3.0 tarball's library stanza lists `Kafka.Internal.RdKafka` and
+`Kafka.Consumer.Convert` under `other-modules`, so no public escape hatch exists. The fork
+`mori://shinzui/hw-kafka-client` (branch `fix/async-consumer-fatal-observability`, head
+`6caed636898a78e9f6e5a9c93eeb5562cbb2580a`) already contains upstream's empty-subscription
+skip but still drops message-error origin in `fromMessagePtr` and destroys the client only
+from the concurrent finalizer registered in `newRdKafkaT`; running that finalizer with
+`finalizeForeignPtr` is the deterministic-destroy route proposed in IR-2.
 
 
 ## Decision Log
@@ -198,6 +219,37 @@ run: the adapter, fixture, and test target do not yet exist.
   `kirokuObservation` changes signature accordingly.
   Rationale: a Kiroku binding given a `TopicScope` must fail in preflight as
   `HandlerConstructionFailed`, never as an acquisition failure after fixtures start.
+  Date: 2026-10-21
+
+- Decision: The Kafka client is the owner's fork `mori://shinzui/hw-kafka-client`
+  (https://github.com/shinzui/hw-kafka-client), pinned by immutable commit through a
+  `source-repository-package` stanza in `cabal.project` and the matching Nix override, the
+  convention `mori://shinzui/kafka-effectful` already uses for this fork. The fork must first
+  carry [IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2):
+  assign-only construction without `subscribe` (upstream commit
+  `56be4a6f61f17f91eeb1c7d0feac4084bd10ce93`, unreleased), partition-attributed per-message
+  errors including partition EOF, deterministic client destruction, and a pinned
+  read-committed watermark test. The plan is blocked on that tagged commit. This is an
+  owner-authorized, scoped exception to ADR 0001's released-dependency rule; it ends when a
+  released version (the owner's later "proper fork" or upstream) carries the same API.
+  Rationale: rechecked on 2026-10-21, Hackage's newest `hw-kafka-client` is still 5.3.0 and no
+  other Hackage package is viable (`librdkafka` and `kafka` are 0.0.0.0 placeholders,
+  `kafka-client` dates from 2015, `haskakafka` from 2016 against librdkafka 0.9, and
+  `kafka-interchange` only encodes the wire protocol). The owner chose the fork over a
+  Shōko-owned librdkafka FFI binding and over waiting for an upstream release.
+  Date: 2026-10-21
+
+- Decision: While blocked, implement everything that does not call the client. The Kafka
+  scanner is written against an internal port — a record of IO functions for topic metadata,
+  per-partition watermarks, and reading one partition from an offset to its end under a
+  deadline — so the offset bookkeeping, sticky history loss, partition-set checks, record
+  normalization, correlation selection, and every runner-level honesty check run now against
+  a controlled in-memory port. The public `kafka` constructor, which needs the client binding
+  of that port, is added when the fork lands. `Shoko.Adapter.Kafka.Internal` is an exposed
+  module so the suite can supply the controlled port; hosts use only `Shoko.Adapter.Kafka`.
+  Rationale: the plan already requires a controlled scanner test for sticky history loss; the
+  port is that seam made explicit, and it keeps the client binding a small, separately
+  verifiable step once IR-2 lands.
   Date: 2026-10-21
 
 
@@ -833,11 +885,14 @@ Scripts and environment: `scripts/test-kafka` (owned broker, before/after snapsh
 `kafka-adapter-test` suite; `just test-kafka`; `flake.module.nix` adds `pkgs.apacheKafka` to
 the dev shell and the adapter derivation.
 
-Dependencies: `hw-kafka-client` (`mori://haskell-works/hw-kafka-client/packages/hw-kafka-client`)
-has no accepted implementation version yet. Hackage 5.3.0 is the verified reproduction
-baseline; the originally proposed `>=5.3 && <5.4` bound and 5.3.0 freeze are not approved
-for the observer. M1 must replace this paragraph with a released version, bound, immutable
-upstream revision, and explicit assignment/teardown API evidence before M2. The currently
+Dependencies: `hw-kafka-client` comes from the fork `mori://shinzui/hw-kafka-client`,
+pinned by an immutable commit that carries
+[IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2); that commit
+does not exist yet, so the library does not depend on the client in this revision. Hackage
+5.3.0 remains the reproduction baseline; the originally proposed `>=5.3 && <5.4` Hackage
+bound and 5.3.0 freeze are not approved for the observer. When the fork lands, record the
+commit, its tag, the `source-repository-package` stanza, the Nix override, and explicit
+assignment/teardown API evidence here before wiring the client binding. The currently
 planned native dependency is librdkafka 2.15.0
 (`mori://confluentinc/librdkafka/packages/librdkafka`, supplied by the pinned Nixpkgs through the Seihou
 `nix.kafka` option), Apache Kafka 2.13-4.3.1 with JRE 17.0.19 as a development and test tool
