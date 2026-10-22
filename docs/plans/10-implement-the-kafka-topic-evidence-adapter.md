@@ -21,6 +21,11 @@ provenance:
       at: 2026-10-21T22:09:29Z
       mode: "implement"
       note: "Record the fork decision and IR-2 blocker; implement client-independent work"
+    - model: "claude-fable-5-1"
+      harness: "claude-code"
+      at: 2026-10-22T03:50:32Z
+      mode: "update"
+      note: "Replace the hw-kafka-client fork with the released rdkafka-hs 1.0.0.0 pin, name its observer API, and unblock the client-dependent milestones"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -72,12 +77,12 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
 
 ## Progress
 
-- [ ] M1 — Toolchain and broker fixture accepted: librdkafka is in the Seihou-managed dev
-  shell, a released client meeting the observer contract is selected in Cabal and Nix, `scripts/test-kafka`
-  boots an owned KRaft broker, and the spike checks prove assign-based reading without
-  subscription, partition-EOF detection, watermark offsets, header/key/timestamp decoding,
-  read-committed visibility, and zero observer groups, both locally and in `nix flake check`
-  on Linux CI.
+- [ ] M1 — Toolchain and broker fixture accepted: librdkafka and `c2hs` are in the
+  Seihou-managed dev shell, `rdkafka-hs` 1.0.0.0 is pinned by commit in `cabal.project` and
+  `flake.module.nix`, `scripts/test-kafka` boots an owned KRaft broker, and the spike checks
+  prove assign-only reading without subscription, partition-attributed EOF, watermark
+  offsets, header/key/timestamp decoding, read-committed visibility, deterministic
+  teardown, and zero observer groups, both locally and in `nix flake check` on Linux CI.
 - [ ] M2 — Store-neutral scan refactor and Kafka reader: the shared finite-scan state
   machine is separated from Hasql, `TopicScope` and record-key/header correlation sources
   exist, `Shoko.Adapter.Kafka` passes the first contract slice (descriptor mismatch, denied
@@ -92,25 +97,26 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
 - [ ] M4 — Contract, documentation, and catalog integration: the workflow schema and offline
   validator accept a `kafka` adapter and `kafka://` endpoints with tests; `docs/adapters.md`,
   `docs/development.md`, `docs/dependencies.md`, `README.md`, and `mori.dhall` describe the
-  reader; CAP-11 is recorded; ADR 0001, 0003, and 0004 carry the durable decisions; `just
-  check-docs` passes.
+  reader; the Kafka capability is recorded under the next free handle (CAP-12 at this
+  revision); ADR 0001, 0003, and 0004 carry the durable decisions; `just check-docs` passes.
 
-Validation handoff (2026-10-21): M1 is blocked on client selection. Hackage 5.3.0 cannot
-construct the proposed empty-subscription consumer, its EOF errors omit partition identity,
-and its public close operation does not explicitly destroy the client. Do not begin M2 or
-mark this plan implementation-ready until M1 records a released, supported solution and the
-corresponding dependency bounds. The fixture and reproduction work in M1 can proceed.
+Blocker history: on 2026-10-21 M1 was blocked because Hackage `hw-kafka-client` 5.3.0 could
+not construct an assign-only consumer, its EOF errors omitted partition identity, and its
+close did not destroy the client; the work then waited for the owner's fork to carry IR-2.
 
-Blocker (2026-10-21): the client is the `mori://shinzui/hw-kafka-client` fork (see Decision
-Log). Every step that calls the Kafka client — the M1 spike, the client binding of the Kafka
-scanner port, and the real-broker contract groups of M2/M3 — waits for
-[IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2) to land as a
-tagged fork commit. All client-independent work is implemented in this session; see the
-handoff note below.
+Unblocked (2026-10-22): the fork shipped as the renamed successor package `rdkafka-hs`
+1.0.0.0 (`mori://shinzui/rdkafka-hs`, tag `v1.0.0.0`, commit
+`63031a21d070819fe89afbacb6ce76238816748f`), and
+[IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2) is `completed`
+there with that release as its resolution. Every client-dependent step — the M1 pin and
+spike, the client binding of `KafkaPort`, the public `kafka` constructor, and the
+real-broker contract groups of M2/M3 — may now proceed in the order M1 → M2 → M3 → M4. See
+the Decision Log entries dated 2026-10-22 for the pin and the Cross-repository references
+for the API.
 
-Handoff (2026-10-21, client-independent work done; every milestone stays open until the
-fork lands). The owner directed implementation of everything that does not call the client
-ahead of the M1 gate.
+Handoff (2026-10-21, client-independent work done; every milestone stayed open pending the
+fork, which landed on 2026-10-22 as `rdkafka-hs`). The owner directed implementation of
+everything that does not call the client ahead of the M1 gate.
 
 - Done for M1: `pkgs.apacheKafka` is in the dev shell and the adapter derivation;
   `scripts/test-kafka` and `just test-kafka` exist; the adapter `checkPhase` runs the script.
@@ -119,9 +125,9 @@ ahead of the M1 gate.
   fails on a new `shoko-observer-` group and on a moved application offset. `nix build
   .#checks.aarch64-darwin.shoko-adapters` ran the same script in the derivation's
   `checkPhase` and printed `Accepted real broker: apache-kafka 4.3.1`, so no platform gate
-  is needed on macOS. Remaining: the
-  `nix.kafka` Seihou toggle (deferred, see Decision Log), the fork pin, the spike, and Linux
-  CI.
+  is needed on macOS. Remaining: the `nix.kafka` Seihou toggle (deferred to this step, see
+  Decision Log), `c2hs` in the shell, the `rdkafka-hs` 1.0.0.0 pin in Cabal and Nix, the
+  spike, and Linux CI.
 - Done for M2: `Scanner`/`Scan` split from Hasql in `EventStore/Internal.hs`; `TopicScope`,
   `topicScope`, `BusinessKeyRecordKey`, `BusinessKeyHeader`, the two `HandlerBuildError`
   causes with codec/schema/tests, `kirokuObservation :: … -> Either HandlerBuildError …`;
@@ -129,8 +135,8 @@ ahead of the M1 gate.
   `observeKafka`) and `Shoko.Adapter.Kafka.Internal` (`KafkaPort`, `kafkaReader`, the
   scanner). The first contract slice passes through the public runner over the controlled
   port in `shoko-adapters/test/Kafka/Controlled.hs`; `just test-event-stores` still passes
-  all 19 groups per store. Remaining: the fork-backed `KafkaPort`, the public `kafka`
-  constructor, and the same slice against the real broker.
+  all 19 groups per store. Remaining: the `rdkafka-hs`-backed `KafkaPort`, the public
+  `kafka` constructor, and the same slice against the real broker.
 - Done for M3: every honesty group in the plan except those needing a real client runs
   over the controlled port (30 groups), and `test-kafka` is part of `just check`. A mutation
   check (non-sticky loss, ignored end regression) made two groups fail as intended.
@@ -140,8 +146,12 @@ ahead of the M1 gate.
 - Done for M4: workflow schema, validator, and tests (10 contract tests); `docs/adapters.md`,
   `docs/development.md`, `docs/dependencies.md`, `README.md`, the workflow guide, and
   `mori.dhall`; TERM-2, TERM-16, and CAP-7 refreshed; ADR 0001, 0003, and 0004 revised;
-  `just check-docs` passes. Remaining: CAP-11 and the `mori.dhall` dependency entries,
-  added when hosts can allocate a client-backed reader.
+  `just check-docs` passes. Remaining: the Kafka capability record (CAP-12 at this
+  revision) and the `mori.dhall` dependency entries, added when hosts can allocate a
+  client-backed reader; and a refresh of `docs/dependencies.md`, `docs/adapters.md`,
+  `docs/development.md`, and ADR 0001, which still name the `shinzui/hw-kafka-client` fork
+  and its IR-2 handle rather than `rdkafka-hs` (done in the M1 pin step, because the pin
+  changes the dependency record).
 
 
 ## Surprises & Discoveries
@@ -196,6 +206,46 @@ skip but still drops message-error origin in `fromMessagePtr` and destroys the c
 from the concurrent finalizer registered in `newRdKafkaT`; running that finalizer with
 `finalizeForeignPtr` is the deterministic-destroy route proposed in IR-2.
 
+Fork outcome (2026-10-22): the fork did not land as a tagged commit of
+`shinzui/hw-kafka-client`. It shipped as a renamed successor package, `rdkafka-hs` 1.0.0.0
+(https://github.com/shinzui/rdkafka-hs, annotated tag `v1.0.0.0` at
+`e499013e3a8a84328834bb0b0755332263c4cdee` peeling to commit
+`63031a21d070819fe89afbacb6ce76238816748f`), whose history starts from hw-kafka-client 5.3.0
+plus upstream's twelve unreleased `main` commits and the fatal-error fix `6caed63`. The
+package keeps the `Kafka.*` module namespace, type names, and record fields, so only the
+dependency name and bounds change. It is not on Hackage (its `preferred.json` returns 404)
+and is distributed only as the tag; its ADR-7 records that a Hackage upload is a separate
+decision. It requires GHC 9.12 or newer and librdkafka 2.15 or newer (a build-time `#error`
+on `RD_KAFKA_VERSION`), and generates its FFI with the `c2hs` build tool. The pinned
+Nixpkgs provides `rdkafka` 2.15.0 and `haskell.packages.ghc9124.c2hs` 0.28.8, so no
+package-set change is needed. The IR-2 copy in the old fork repository still reads
+`status: proposed`; the authoritative, completed record is the one in `rdkafka-hs`.
+
+Two of the plan's earlier assumptions about conventions were wrong. `kafka-effectful` pins
+the old fork only in `cabal.project` and adds `pkgs.rdkafka` to its shell; it has no Nix
+Haskell override for the fork and, as of 2026-10-22, still depends on `hw-kafka-client`.
+Shōko therefore writes its own override in `flake.module.nix` (see M1). And the Mori
+registry entry for `mori://shinzui/rdkafka-hs` was registered before the release: its
+checkout lagged `origin/master` by 431 commits and listed no OKF bundles, so `mori registry
+show`, `mori path` for its artifacts, and on-disk reads must follow a `git fetch` and
+fast-forward plus `mori register --local` in that repository before they reflect 1.0.0.0.
+
+What the release changes for this plan: `newAssignedConsumer` never calls subscribe;
+`pollMessageAttributed` returns `ConsumerMessageError` with `cmeTopic`, `cmePartition`, and
+`cmeOffset`, so partition EOF is attributed and the one-consumer-per-partition workaround is
+no longer needed for correctness; `destroyConsumer` frees the client synchronously and
+exactly once (the release's integration test measured the accepted connection closed 49 ms
+after the call against a silent listener), so `bracket` around it does establish the
+bounded socket-release guarantee; and `partitionWatermarkOffsets` under `read_committed` is
+pinned by a test to stop at the last stable offset. `Kafka.Topic.createTopic` and
+`deleteTopic` exist, so the "no admin module" rationale for `kafka-topics.sh` in the suite
+no longer holds; the suite keeps the CLI so the fixture does not depend on the client under
+test (see Decision Log).
+
+Catalog handle (2026-10-22): `CAP-11`, which this plan reserved for the Kafka capability,
+was allocated to declarative scenario catalog inspection by later work. The Kafka capability
+takes the next free handle, `CAP-12` at this revision; M4 re-checks it with `okf id next`.
+
 
 ## Decision Log
 
@@ -234,6 +284,7 @@ from the concurrent finalizer registered in `newRdKafkaT`; running that finalize
   differed from the corpus was incorrect. M1 must resolve construction and deterministic
   teardown through a released supported API before selection is final.
   Date: 2026-10-21
+  Superseded: 2026-10-22, by the `rdkafka-hs` decision below.
 
 - Decision: The fixture broker is Apache Kafka 4.3.1 (`pkgs.apacheKafka`, KRaft single node on
   loopback with a run-owned data directory) for both `just test-kafka` and the native Nix
@@ -282,6 +333,8 @@ from the concurrent finalizer registered in `newRdKafkaT`; running that finalize
   `kafka-interchange` only encodes the wire protocol). The owner chose the fork over a
   Shōko-owned librdkafka FFI binding and over waiting for an upstream release.
   Date: 2026-10-21
+  Superseded: 2026-10-22, by the `rdkafka-hs` decision below; the fork completed IR-2 as
+  the successor package rather than as a tagged `hw-kafka-client` commit.
 
 - Decision: While blocked, implement everything that does not call the client. The Kafka
   scanner is written against an internal port — a record of IO functions for topic metadata,
@@ -304,7 +357,8 @@ from the concurrent finalizer registered in `newRdKafkaT`; running that finalize
   linked, so the upgrade and its pin reverification belong to that step.
   Date: 2026-10-21
 
-- Decision: Do not record CAP-11 until hosts can allocate a client-backed Kafka reader.
+- Decision: Do not record the Kafka capability (planned as CAP-11, now CAP-12; see
+  Surprises & Discoveries) until hosts can allocate a client-backed Kafka reader.
   Rationale: the capabilities profile permits only `shipped`, `deprecated`, or `withdrawn`
   ("whether a consumer can use this capability right now"); without the public `kafka`
   constructor no consumer can. CAP-7 is refreshed for the SQL readers' new typed rejections.
@@ -319,6 +373,44 @@ from the concurrent finalizer registered in `newRdKafkaT`; running that finalize
   Rationale: these keep the plan's fixed-reason rule for cases the plan did not name, and SQL
   output is unchanged because SQL scanners always report intact history.
   Date: 2026-10-21
+
+- Decision: The Kafka client is `rdkafka-hs` 1.0.0.0 (`mori://shinzui/rdkafka-hs`,
+  https://github.com/shinzui/rdkafka-hs), the maintained successor of the owner's
+  `hw-kafka-client` fork, pinned in `cabal.project` by a `source-repository-package` stanza
+  whose `tag` is the immutable commit `63031a21d070819fe89afbacb6ce76238816748f` (what the
+  annotated tag `v1.0.0.0` peels to), with `rdkafka-hs >=1.0 && <1.1` in every component
+  that uses it, and built in Nix from the same commit through `fetchFromGitHub` and
+  `callCabal2nix` in `flake.module.nix`. This supersedes both earlier client decisions. The
+  owner-authorized exception to ADR 0001's released-dependency rule continues in narrowed
+  form: the dependency is a published, tagged release with a changelog and a GitHub
+  release, but not a Hackage release; the exception ends when `rdkafka-hs` (or upstream) is
+  on Hackage with the same API.
+  Rationale: IR-2 is completed and its acceptance criteria are covered by the release's own
+  integration tests (`AssignOnlyTest`, `AttributedErrorTest`, `DestroyTest`,
+  `ReadCommittedTest`, `ObserverTest`, all passing in both callback poll modes). Pinning the
+  commit rather than the tag name keeps the resolution reproducible even though the
+  project promises never to move a published tag. Cabal and Nix must build the same code,
+  and the managed Nix package set has no `rdkafka-hs`, so an explicit hashed source
+  override is the only coherent selection.
+  Date: 2026-10-22
+
+- Decision: Keep the per-partition `KafkaPort.readPartition` seam and bind it with one
+  `newAssignedConsumer` per call, assigned exactly one partition; use
+  `pollMessageAttributed` and accept EOF only when `cmePartition` names that partition and
+  `cmeOffset` is present; release with `destroyConsumer` in `bracket`.
+  Rationale: the port and the thirty controlled contract groups already exist and pass;
+  changing the port to a multi-partition read would reopen tested code for an optimization
+  no requirement needs yet. Attributed EOF is still used so the end of a partition is
+  proven by identity rather than counted. Consolidating partitions onto one consumer per
+  scan is a later, port-level change if connection count becomes a problem.
+  Date: 2026-10-22
+
+- Decision: The fixture keeps creating topics with `kafka-topics.sh` through
+  `System.Process` even though `Kafka.Topic.createTopic` now exists.
+  Rationale: the topic-list check in `scripts/test-kafka` proves the observer never creates
+  topics; a fixture that created topics through the client under test would blur that
+  evidence.
+  Date: 2026-10-22
 
 
 ## Outcomes & Retrospective
@@ -389,15 +481,19 @@ that runs a broker without ZooKeeper.
 
 ### Current state of the repository
 
-There is no Kafka code. `.seihou/config.dhall` records `nix.kafka = "false"` and
-`nix.redpanda = "false"`, so the dev shell has no librdkafka. `flake.nix` already declares
-the module-owned `redpanda-container` input, unused while the option is off.
-`schemas/workflow-v1.schema.json` enumerates `http`, `postgresql`, `kiroku`, and `message-db`
-for `requiredAdapters` and `source.adapter`; `scripts/workflow_contract.py` accepts only
-`http`, `https`, and `postgresql` endpoint schemes and ties `durable-history` coverage to
-Kiroku or Message DB. The capability catalog's next free handle is `CAP-11` (checked with
-`okf id next docs/capabilities --profile docs/capabilities/profile.dhall CAP`), and the
-terminology catalog's is `TERM-50`.
+When this plan was written there was no Kafka code. As of 2026-10-22 the client-independent
+Kafka code exists (`Shoko.Adapter.Kafka`, `Shoko.Adapter.Kafka.Internal`,
+`Shoko.Adapter.Kafka.Evidence`, the `kafka-adapter-test` suite with its controlled port,
+`scripts/test-kafka`, and `pkgs.apacheKafka` in the shell and adapter checks; see Progress),
+but no package depends on a Kafka client. `.seihou/config.dhall` still records `nix.kafka =
+"false"` and `nix.redpanda = "false"`, so the dev shell has no librdkafka headers and no
+`c2hs`. `flake.nix` already declares the module-owned `redpanda-container` input, unused
+while the option is off. `schemas/workflow-v1.schema.json` and `scripts/workflow_contract.py`
+already accept `kafka` adapters and `kafka://` endpoints (M4 progress). The capability
+catalog's next free handle is `CAP-12` (checked on 2026-10-22 with `okf id next
+docs/capabilities --profile docs/capabilities/profile.dhall CAP`; `CAP-11` went to
+declarative scenario catalog inspection after this plan was written), and the terminology
+catalog's is `TERM-50`.
 
 ### Relevant ADRs
 
@@ -431,25 +527,42 @@ continuous Observe, and Replay remain deferred. M4 records that revision.
 
 ### Cross-repository references
 
-The Kafka client is [hw-kafka-client](mori://haskell-works/hw-kafka-client/packages/hw-kafka-client),
-whose [consumer guide](mori://haskell-works/hw-kafka-client/docs/consumer-best-practices) and
-source were inspected. The relevant API is `Kafka.Consumer` (`newConsumer`, `assign`,
-`pollMessage`, `closeConsumer`, `ConsumerRecord` with `crTopic`, `crPartition`, `crOffset`,
-`crTimestamp`, `crHeaders`, `crKey`, `crValue`), `Kafka.Consumer.ConsumerProperties`
-(`brokersList`, `groupId`, `noAutoCommit`, `noAutoOffsetStore`, `extraProp`, `clientId`,
-`callbackPollMode`), `Kafka.Metadata` (`topicMetadata`, `watermarkOffsets`), `Kafka.Producer`
-and `Kafka.Transaction` for fixtures, and `Kafka.Types` (`TopicName`, `PartitionId`, `Offset`,
-`Timeout`, `Headers`, `headersToList`, `KafkaError`). The local corpus is newer than the
-release and must not be treated as its API contract; use the release tarball for M1.
-Hackage lists 5.3.0 as the latest
-release (uploaded 2023-08-05); it links `-lrdkafka`. The C library is
+The Kafka client is [rdkafka-hs](mori://shinzui/rdkafka-hs/packages/rdkafka-hs) 1.0.0.0,
+the maintained successor of
+[hw-kafka-client](mori://haskell-works/hw-kafka-client/packages/hw-kafka-client), published
+as tag `v1.0.0.0` of https://github.com/shinzui/rdkafka-hs (commit
+`63031a21d070819fe89afbacb6ce76238816748f`, released 2026-10-22) and not on Hackage. Its
+`README.md` sections "Reading partitions without joining a group" and "Shutting down a
+consumer" and its `CHANGELOG.md` describe the observer API; the completed request is
+[IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2), and the durable
+decisions are its ADR-1 (consumer queue and teardown ownership) and ADR-7 (first release
+scope and distribution) in the `adrs` bundle of `mori://shinzui/rdkafka-hs`. The module
+namespace is unchanged from hw-kafka-client. The relevant API is `Kafka.Consumer`
+(`newAssignedConsumer`, `assign`, `pollMessageAttributed`, `destroyConsumer`,
+`closeConsumer`, `consumerFatalError`; `ConsumerRecord` with `crTopic`, `crPartition`,
+`crOffset`, `crTimestamp`, `crHeaders`, `crKey`, `crValue`; `TopicPartition` with
+`tpTopicName`, `tpPartition`, `tpOffset`; the re-exported `RdKafkaRespErrT` constructors
+such as `RdKafkaRespErrPartitionEof` and `RdKafkaRespErrTimedOut`),
+`Kafka.Consumer.Types.ConsumerMessageError` (`cmeError`, `cmeTopic`, `cmePartition`,
+`cmeOffset`; the last three are `Nothing` only for a poll timeout or a raised fatal error),
+`Kafka.Consumer.ConsumerProperties` (`brokersList`, `groupId`, `noAutoCommit`,
+`noAutoOffsetStore`, `extraProp`, `clientId`, `callbackPollMode`, `setCallback` with
+`errorCallback` and `logCallback` from `Kafka.Callbacks`), `Kafka.Metadata`
+(`topicMetadata`, `partitionWatermarkOffsets` returning `WatermarkOffsets` with
+`woLowWatermark` and `woHighWatermark`), `Kafka.Version` (`librdkafkaVersion`),
+`Kafka.Producer`, `Kafka.Transaction`, and `Kafka.Topic` (`createTopic`, `deleteTopic`) for
+fixtures, and `Kafka.Types` (`TopicName`, `PartitionId`, `Offset`, `Timeout`, `Headers`,
+`headersToList`, `KafkaError`). The package requires GHC 9.12 or newer, librdkafka 2.15 or
+newer with headers (enforced at build time), and the `c2hs` build tool declared in its
+`build-tool-depends`; every executable linking it must be `-threaded`. The C library is
 [librdkafka](mori://confluentinc/librdkafka); its `CONFIGURATION.md` documents the consumer
 defaults used below (`allow.auto.create.topics` false for consumers, `isolation.level`
 `read_committed`, `enable.partition.eof` false, `enable.auto.commit` true), and
 `src/rdkafka.c` creates the consumer group handle only when `group.id` is non-empty. The
-pinned Nixpkgs revision `d5dfd8e6716dde34398bc14bc87c10dece9c8c68` provides
-`haskell.packages.ghc9124.hw-kafka-client` 5.3.0 (not broken; Linux and Apple Silicon),
-`rdkafka` 2.15.0, and `apacheKafka` 2.13-4.3.1 with JRE 17.0.19; it has no Redpanda server.
+pinned Nixpkgs revision `d5dfd8e6716dde34398bc14bc87c10dece9c8c68` provides `rdkafka`
+2.15.0, `haskell.packages.ghc9124.c2hs` 0.28.8, and `apacheKafka` 2.13-4.3.1 with JRE
+17.0.19; it has no `rdkafka-hs` and no Redpanda server. Hackage `hw-kafka-client` 5.3.0
+remains only the reproduction baseline recorded in Surprises & Discoveries.
 
 The dev-shell toggle is documented by the
 [Seihou nix-haskell-flake template](mori://shinzui/seihou-modules/templates/nix-haskell-flake):
@@ -480,15 +593,16 @@ is a consumer-group adapter and is precedent only, not a dependency.
 
 This milestone de-risks the two uncertain interfaces: the C-backed Kafka client inside the
 managed Nix environment, and a JVM broker inside both the dev shell and the Nix build
-sandbox. At its end the dev shell links `hw-kafka-client`, `scripts/test-kafka` owns a broker,
-and a small spike suite documents how librdkafka behaves for an assign-only observer.
-First reproduce the release defects recorded above. An empty subscription is known to fail
-with 5.3.0. A non-empty `subscribe` fallback is not permitted: even if no group survives
-shutdown, it cannot establish that the observer never joined a group. Resolve this through
-a verified released client API and update the dependency selection and exact construction
-calls here. If no released option meets the contract, leave M1 blocked and retain the
-reproducer; do not patch or vendor unpublished dependency code, weaken the guarantee, or
-expand into dependency development as part of this plan validation.
+sandbox. At its end the dev shell links `rdkafka-hs`, `scripts/test-kafka` owns a broker,
+and a small spike suite documents how librdkafka behaves for an assign-only observer. The
+broker-fixture half is already done (see Progress). The client half was blocked until
+2026-10-22 and is now resolved by `rdkafka-hs` 1.0.0.0, so the 5.3.0 reproducer is no
+longer required; the recorded defects stand as history. A `subscribe` call of any kind
+remains forbidden in observer code: even if no group survives shutdown, it cannot
+establish that the observer never joined a group. If 1.0.0.0 fails any spike check below,
+file an improvement request in `mori://shinzui/rdkafka-hs` and pin its next release; do not
+patch or vendor dependency code, weaken the guarantee, or widen this plan into client
+development.
 
 Enable the client library through Seihou rather than by editing generated files. From the
 repository root run `seihou run nix-haskell-flake --var nix.kafka=true --dry-run --no-commands`
@@ -500,25 +614,68 @@ with the rdkafka block and shell exports. A same-version toggle keeps `flake.loc
 an actual module upgrade may replace the managed lock. In that case inspect the generated
 pin changes and reverify every package version below before proceeding; never restore an old
 lock over the new template or hand-edit it. Run `seihou diff`
-afterwards and record the resulting module version in `docs/development.md`. Add
-`pkgs.apacheKafka` to `haskellProject.extraDevPackages` in `flake.module.nix` so
-`kafka-storage.sh`, `kafka-server-start.sh`, `kafka-topics.sh`, `kafka-consumer-groups.sh`,
-`kafka-console-producer.sh`, `kafka-console-consumer.sh`, and `kafka-delete-records.sh` are
-on the dev-shell `PATH`.
+afterwards and record the resulting module version in `docs/development.md`. The toggle is
+what gives `cabal build` in the dev shell the librdkafka headers that `rdkafka-hs` checks at
+build time. Also add `pkgs.haskellPackages.c2hs` to `haskellProject.extraDevPackages` in
+`flake.module.nix`, as `rdkafka-hs`'s own flake module does, so Cabal finds the `c2hs`
+build tool on `PATH` instead of building it from Hackage. `pkgs.apacheKafka` is already in
+`extraDevPackages`, which puts `kafka-storage.sh`, `kafka-server-start.sh`,
+`kafka-topics.sh`, `kafka-consumer-groups.sh`, `kafka-console-producer.sh`,
+`kafka-console-consumer.sh`, and `kafka-delete-records.sh` on the dev-shell `PATH`.
 
-Select the dependency per ADR 0001 only after the release gate above is resolved. Confirm the Hackage release listing and the upstream
-`v5.3.0` tag revision (`git ls-remote --tags https://github.com/haskell-works/hw-kafka-client`),
-use 5.3.0 only for the reproducer, then record the accepted released version and compatible
-bound in the `constraints` block of `cabal.project` and the `shoko-adapters` library
-`build-depends`. Regenerate
-`cabal.project.freeze` with `nix develop --command cabal freeze` after `cabal update`, and
-confirm Cabal and Nix select the same accepted release. Use the managed package when it
-matches; a newer released selection must follow the existing documented, hashed
-`callHackageDirect` convention in `flake.module.nix`.
-Record release, upload date, upstream revision, librdkafka 2.15.0, and Apache Kafka 4.3.1
-with JRE 17.0.19 in `docs/dependencies.md`. Note in that file that `hw-kafka-client` requires
-`-threaded` executables for its callback machinery; all adapter test suites already pass
-`-threaded`, and the scenario-host guide must tell hosts the same.
+Pin the dependency. First confirm the release: `git ls-remote --tags
+https://github.com/shinzui/rdkafka-hs 'refs/tags/v1.0.0.0*'` must list the annotated tag
+`e499013e3a8a84328834bb0b0755332263c4cdee` peeling (`^{}`) to
+`63031a21d070819fe89afbacb6ce76238816748f`, and `gh release view v1.0.0.0 --repo
+shinzui/rdkafka-hs` must show a published, non-draft release. Then add to `cabal.project`,
+after the `constraints` block, a stanza pinned by that commit, with a comment saying it is
+what `v1.0.0.0` peels to and that the package is distributed only as a tag:
+
+```cabal
+source-repository-package
+  type: git
+  location: https://github.com/shinzui/rdkafka-hs.git
+  tag: 63031a21d070819fe89afbacb6ce76238816748f
+```
+
+Add `rdkafka-hs >=1.0 && <1.1` to the `shoko-adapters` library `build-depends` and to the
+`kafka-adapter-test` suite in `shoko-adapters/shoko-adapters.cabal`. No `constraints` line
+is needed: a source-repository package is selected by the stanza, and `cabal freeze` does
+not record it. Still regenerate `cabal.project.freeze` with `nix develop --command cabal
+freeze` after `cabal update`, because `rdkafka-hs` brings `bifunctors` into the plan. On the
+Nix side add, inside the `overrides` of `flake.module.nix` beside the `callHackageDirect`
+entries, a hashed source override built from the same commit:
+
+```nix
+rdkafka-hs = hself.callCabal2nix "rdkafka-hs"
+  (pkgs.fetchFromGitHub {
+    owner = "shinzui";
+    repo = "rdkafka-hs";
+    rev = "63031a21d070819fe89afbacb6ce76238816748f";
+    hash = "<the hash printed by nix flake prefetch>";
+  })
+  { };
+```
+
+Compute the hash with `nix flake prefetch
+github:shinzui/rdkafka-hs/63031a21d070819fe89afbacb6ce76238816748f --json` and copy its
+`hash` field. `callCabal2nix` maps the package's `extra-libraries: rdkafka` to `pkgs.rdkafka`
+2.15.0 and its `build-tool-depends: c2hs:c2hs` to the package set's `c2hs`; its unit suite
+is broker-free, so do not add `dontCheck`. Confirm Cabal and Nix build the same commit:
+`nix develop --command cabal build shoko-adapters` and `nix build .#shoko-adapters` both
+succeed, and the Cabal log shows `rdkafka-hs-1.0.0.0` fetched from that commit.
+
+Record in `docs/dependencies.md`: `rdkafka-hs` 1.0.0.0, GitHub release `v1.0.0.0` of
+2026-10-22, the tag object and commit, "not on Hackage; tag-only distribution per the
+project's ADR-7", the narrowed ADR 0001 exception, the GHC 9.12 and librdkafka 2.15 floors,
+`c2hs`, librdkafka 2.15.0 and `c2hs` 0.28.8 from the pinned Nixpkgs, and Apache Kafka 4.3.1
+with JRE 17.0.19. Note in that file that `rdkafka-hs` requires `-threaded` executables for
+its callback machinery; all adapter test suites already pass `-threaded`, and the
+scenario-host guide must tell hosts the same. In the same change replace every mention of
+the `shinzui/hw-kafka-client` fork and its IR-2 handle in `docs/dependencies.md`,
+`docs/adapters.md`, `docs/development.md`, and ADR 0001 with `rdkafka-hs` and
+`mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2`, keeping the 5.3.0
+findings as history.
 
 Write `scripts/test-kafka` as a Python sibling of `scripts/test-event-stores`. It reserves
 two free loopback ports, writes a `server.properties` with `node.id=1`,
@@ -552,42 +709,47 @@ member IDs, lag, or whitespace from CLI output. Finally stop the broker and remo
 output goes under `.dev/kafka-tests/`. `--binaries dist/build` runs compiled test binaries
 exactly as `test-event-stores` does.
 
-Add `test-kafka` to `justfile` in M1. Register the `kafka-adapter-test` Cabal suite with
-`-threaded`, `hw-kafka-client`, `aeson`, `async`, `network`, `process`, `time`, `uuid`,
-`shoko-adapters`, and the existing Tasty/Hedgehog test dependencies as needed. Add
-`pkgs.apacheKafka` to the adapter derivation's `nativeBuildInputs` and
-`python ${./scripts/test-kafka} --binaries dist/build` to its `checkPhase` in M1, so this
-milestone's own acceptance commands exist. M3 adds the completed suite to `just check`.
+`test-kafka` is already in `justfile`, the `kafka-adapter-test` suite already exists with
+`-threaded`, `aeson`, `hedgehog`, `process`, `time`, `tasty`, and `tasty-hedgehog`, and the
+adapter derivation already has `pkgs.apacheKafka` in `nativeBuildInputs` and runs `python
+${./scripts/test-kafka} --binaries dist/build` in its `checkPhase`. Extend the suite's
+`build-depends` with `rdkafka-hs >=1.0 && <1.1` and, as the spike groups need them, the
+already frozen `async`, `network`, and `uuid`.
 
-Add the `kafka-adapter-test` suite (`shoko-adapters/test/KafkaMain.hs` and
-`shoko-adapters/test/Kafka/Contract.hs`) and start it with the spike groups, written directly
-against `hw-kafka-client` because the adapter does not exist yet. The suite creates one fresh
-topic per test with `kafka-topics.sh --bootstrap-server <bootstrap> --create --topic
-fixture-<unique> --partitions N --replication-factor 1`
-through `System.Process` (the 5.3.0 release has no admin module), using the `LOG_DIR` the
-script supplied. The spike must establish, with evidence recorded in Surprises & Discoveries:
-that a consumer built with `brokersList`, `groupId (ConsumerGroupId "shoko-observer-<uuid>")`,
-`noAutoCommit`, `noAutoOffsetStore`, `extraProp "enable.partition.eof" "true"`,
-`extraProp "allow.auto.create.topics" "false"`, `extraProp "isolation.level" "read_committed"`,
-`callbackPollMode CallbackPollModeSync`, and a supported assignment-only constructor can
-`assign` explicit partition offsets. The intended `topics []` call is a failing reproducer
-on 5.3.0, not that constructor. Use one consumer assigned to one partition at a time, freshly
-allocated for that partition, so an anonymous `KafkaResponseError RdKafkaRespErrPartitionEof`
-has an unambiguous owner. Do not count anonymous EOFs from a multi-partition assignment.
-Poll with at most a 100 millisecond `Timeout`, capped by remaining request time, and read key, headers,
-value, and `CreateTime`/`LogAppendTime` timestamps; that `watermarkOffsets` returns low and
-committed-visible end offsets per partition, including when the transaction is already open
-before capture; that after deterministic teardown the broker lists no
-`shoko-observer-` group; that assigning a nonexistent topic yields an error rather than a
-created topic; and that with an open transaction holding a record in a partition, a later
-committed record in the same partition is invisible to a `read_committed` consumer until the
-transaction commits, after which both appear at their original offsets. Include two empty
-partitions and one busy partition, and test EOF after aborted transactions/control records.
-Prove the 80 millisecond stalled-broker deadline and socket-release criterion from M3 already
-in this spike. `closeConsumer` alone is not an explicit destroy API; the accepted release
-must supply supported deterministic teardown, without forced GC, hidden-module imports,
-or detached cleanup threads. Discard a client choice that cannot pass these checks and keep
-M1 blocked pending a released alternative. Promote only a passing spike into M2.
+Add spike groups to the existing `kafka-adapter-test` suite (a new
+`shoko-adapters/test/Kafka/Spike.hs` module listed in its `other-modules`), written directly
+against `rdkafka-hs` because the client binding does not exist yet. The suite creates one
+fresh topic per test with `kafka-topics.sh --bootstrap-server <bootstrap> --create --topic
+fixture-<unique> --partitions N --replication-factor 1` through `System.Process`, using the
+`LOG_DIR` the script supplied (the Decision Log records why the client's `Kafka.Topic` is
+not used here). The spike must establish, with evidence recorded in Surprises & Discoveries:
+that a consumer built with `newAssignedConsumer` from `brokersList`, `groupId
+(ConsumerGroupId "shoko-observer-<uuid>")`, `noAutoCommit`, `noAutoOffsetStore`, `extraProp
+"enable.partition.eof" "true"`, `extraProp "allow.auto.create.topics" "false"`, `extraProp
+"isolation.level" "read_committed"`, `callbackPollMode CallbackPollModeSync`, and
+`setCallback` with no-op `errorCallback` and `logCallback` can `assign` a `TopicPartition`
+at an explicit `PartitionOffset` and receive records; that `pollMessageAttributed` reports
+each partition's end as a `ConsumerMessageError` whose `cmeError` is `KafkaResponseError
+RdKafkaRespErrPartitionEof`, whose `cmePartition` is `Just` that partition, and whose
+`cmeOffset` equals that partition's visible end, exactly once per assigned partition, also
+when several partitions are assigned to one consumer; and that a poll timeout arrives as
+`RdKafkaRespErrTimedOut` with no origin and is never treated as an end. Poll with at most a
+100 millisecond `Timeout`, capped by remaining request time, and read key, headers, value,
+and `CreateTime`/`LogAppendTime` timestamps. Establish that `partitionWatermarkOffsets`
+returns `woLowWatermark` and a committed-visible `woHighWatermark` per partition, including
+when the transaction is already open before capture; that after `destroyConsumer` the
+broker lists no `shoko-observer-` group; that assigning a nonexistent topic yields an error
+rather than a created topic; and that with an open transaction holding a record in a
+partition, a later committed record in the same partition is invisible to a
+`read_committed` consumer until the transaction commits, after which both appear at their
+original offsets. Include two empty partitions and one busy partition, and test EOF after
+aborted transactions/control records. Prove the 80 millisecond stalled-broker deadline and
+socket-release criterion from M3 already in this spike: against a loopback listener that
+accepts and never answers, `destroyConsumer` returns and the accepted connection reaches
+end-of-file within one second, with no forced GC, no hidden-module import, and no detached
+cleanup thread (the release's own `DestroyTest` measured 49 ms; record the figure observed
+here). Promote only a passing spike into M2; a failing check becomes an improvement request
+in `mori://shinzui/rdkafka-hs`, not a local patch.
 
 Acceptance: `nix develop --command just test-kafka` passes locally on macOS; `nix flake
 check` builds the adapter derivation with the Kafka script in its `checkPhase` on Linux CI.
@@ -669,15 +831,19 @@ source query` performs no broker IO; it returns `Left` for a non-topic scope or
 (EventEvidence a))` by focusing the shared `readerHandler`, and `observeKafka` exposes the
 observation for direct tests.
 
-The Kafka scanner uses the assignment-only constructor and deterministic teardown accepted
-in M1 inside `bracket`, with one fresh consumer per partition per baseline/scan. The whole
+The client binding of `KafkaPort` (`topicPartitions`, `partitionWatermarks`, and
+`readPartition` in `shoko-adapters/src/Shoko/Adapter/Kafka/Internal.hs`) uses
+`newAssignedConsumer` and `destroyConsumer` inside `bracket`, with one fresh consumer per
+`readPartition` call assigned exactly one partition, and accepts that partition's end only
+from an attributed EOF naming it. The whole
 baseline or scan shares one deadline, `min requestDeadline (started + budget)`, rather than
 receiving a new budget for each partition. Recompute remaining time before metadata,
 `partitionWatermarkOffsets`, assignment, and polling; cap each timed foreign call by that
 remaining time and polling by 100 milliseconds. A timeout is unavailable evidence, never
 EOF. `Clock.bounded` alone cannot guarantee prompt cancellation of foreign calls or masked
-cleanup, which is why M1 must prove the complete lifecycle. Install no-op error/log callbacks
-before client creation so raw broker addresses and secrets cannot escape to stderr;
+cleanup, which is why M1 must prove the complete lifecycle. Install no-op `errorCallback`
+and `logCallback` values through `setCallback` before client creation so raw broker
+addresses and secrets cannot escape to stderr;
 discard raw library error text from return values as well. It fetches `topicMetadata` for the
 topic; a missing topic is `kafka-topic-missing`, more than 64 partitions is
 `kafka-partition-limit`. Reject topic/partition metadata errors, compare the exact partition-ID
@@ -715,7 +881,8 @@ messages, which may contain broker addresses, are discarded.
 Replace the spike groups in `shoko-adapters/test/Kafka/Contract.hs` with the first contract
 slice, mirroring `EventStore/Contract.hs`: descriptor mismatches (other limits, scope,
 history policy, correlation source, event type) reject before fixtures; a denied environment
-never allocates a consumer (count `newConsumer` calls through the test's acquire function);
+never allocates a consumer (count `newAssignedConsumer` calls through the test's acquire
+function);
 produce then `exactlyOnce` passes across repeated one-record pages with more than one poll;
 two distinct records fail cardinality; a complete empty read passes `never` and fails
 `eventually`; unrelated keys cannot satisfy the query; a record produced before capture is
@@ -778,15 +945,16 @@ example, settings, correlation sources, semantics, limits, and `just test-kafka`
 `docs/development.md` (the rdkafka shell block, `apacheKafka` in the shell, the Kafka suite,
 and the `-threaded` requirement), in `docs/dependencies.md`, in the `README.md` status line,
 and in `mori.dhall` (package description and dependencies naming
-`haskell-works/hw-kafka-client:hw-kafka-client` and `confluentinc/librdkafka:librdkafka`, with
-matching `dependencyRefs`). Add `docs/capabilities/bounded-kafka-topic-evidence.md` as
-CAP-11 after confirming the handle with `okf id next`, with interface `Shoko.Adapter.Kafka`,
+`shinzui/rdkafka-hs:rdkafka-hs` and `confluentinc/librdkafka:librdkafka`, with matching
+`dependencyRefs`). Add `docs/capabilities/bounded-kafka-topic-evidence.md` under the next
+free handle (`CAP-12` at this revision) after confirming it with `okf id next`, with
+interface `Shoko.Adapter.Kafka`,
 evidence `shoko-adapters/test/Kafka/Contract.hs` and `scripts/test-kafka`, and explicit
 limits; add its index row and a dated entry in `docs/capabilities/log.md`. Update the
 terminology anchors for `durable-history` and `append-only-during-run` to name Kafka
 retention and compaction as the deletion hazards; allocate `TERM-50` only if a new term of
-art is introduced. Revise ADR 0001 (Kafka client enabled; selected releases; Redpanda still
-disabled), ADR 0003 (Kafka visibility bound, last-stable-offset behavior, retention and
+art is introduced. Revise ADR 0001 (Kafka client `rdkafka-hs` 1.0.0.0 enabled under the
+narrowed exception; selected releases; Redpanda still disabled), ADR 0003 (Kafka visibility bound, last-stable-offset behavior, retention and
 compaction under `AppendOnlyDuringRun`), and ADR 0004 (bounded read-only Kafka observation in
 scope; destructive consumers still deferred). Acceptance: `just check-docs`, `mori validate`,
 `just test-workflow-contract`, and `just check` pass, and `git diff --check` is clean.
@@ -794,18 +962,26 @@ scope; destructive consumers still deferred). Acceptance: `just check-docs`, `mo
 
 ## Concrete Steps
 
-All commands run from the repository root. This is an implementation sequence after the
-M1 release blocker is resolved, except for the discovery and reproducer work. Discover the
-dependencies and the template first:
+All commands run from the repository root. The M1 release blocker is resolved; this is the
+implementation sequence for the remaining client-dependent work. Discover the dependencies
+and the template first. The Mori-registered `rdkafka-hs` checkout may lag the release, so
+fetch it, fast-forward it, and refresh the registry before reading it:
 
 ```bash
-mori registry show haskell-works/hw-kafka-client --full
-mori registry docs haskell-works/hw-kafka-client
+mori registry show shinzui/rdkafka-hs --full
+git -C "$(mori path mori://shinzui/rdkafka-hs)" fetch --tags origin
+git -C "$(mori path mori://shinzui/rdkafka-hs)" merge --ff-only origin/master
+(cd "$(mori path mori://shinzui/rdkafka-hs)" && mori register --local)
 mori registry show confluentinc/librdkafka --full
 mori registry show shinzui/seihou-modules --full
-curl -fsSL https://hackage.haskell.org/package/hw-kafka-client/preferred.json
-git ls-remote --tags https://github.com/haskell-works/hw-kafka-client 'refs/tags/v5.3.0*'
+git ls-remote --tags https://github.com/shinzui/rdkafka-hs 'refs/tags/v1.0.0.0*'
+gh release view v1.0.0.0 --repo shinzui/rdkafka-hs
+nix flake prefetch github:shinzui/rdkafka-hs/63031a21d070819fe89afbacb6ce76238816748f --json
 ```
+
+Expected: the tag listing shows `e499013e3a8a84328834bb0b0755332263c4cdee refs/tags/v1.0.0.0`
+and `63031a21d070819fe89afbacb6ce76238816748f refs/tags/v1.0.0.0^{}`; the release is not a
+draft; the prefetch prints the `hash` to copy into `flake.module.nix`.
 
 Enable the client in the managed shell and verify the generated changes:
 
@@ -819,12 +995,14 @@ git diff --stat -- .seihou/config.dhall nix/haskell.nix flake.lock
 If `seihou run` refuses because of pending migrations, substitute
 `seihou update nix-haskell-flake --var nix.kafka=true --dry-run` and then the same command
 without `--dry-run`; a same-version toggle preserves the lock, while an upgrade requires
-the managed-pin review described in M1. Once a supported release is selected, rebuild:
+the managed-pin review described in M1. After the `rdkafka-hs` pin is in `cabal.project`,
+`shoko-adapters.cabal`, and `flake.module.nix`, rebuild through both toolchains:
 
 ```bash
 nix develop --command cabal update
 nix develop --command cabal freeze
 nix develop --command cabal build all
+nix build .#shoko-adapters
 ```
 
 Run the Kafka fixture and the existing suites:
@@ -880,7 +1058,7 @@ outside the fixture prefix compared with the warmed-up baseline, and unchanged c
 offsets for the `application-worker` group. Source/API inspection must additionally prove
 no group-joining subscription is used; before/after snapshots alone cannot prove that.
 
-The early representative interaction check is the M1 spike: real `hw-kafka-client` against
+The early representative interaction check is the M1 spike: real `rdkafka-hs` against
 the real broker, assign-only, before any adapter code exists. Its findings on partition EOF,
 watermarks, and read-committed visibility are recorded in Surprises & Discoveries and govern
 the M2 design.
@@ -889,7 +1067,8 @@ This acceptance does not prove staging access-control: read-only enforcement for
 observer is a broker ACL contract owned by the environment, recorded as a workflow
 prerequisite, because the fixture broker runs without an authorizer. It does not prove Keiro
 execution-id propagation, Redpanda compatibility, or detection of compaction, which the topic
-owner excludes through `AppendOnlyDuringRun`. Those remain explicit limits in CAP-11.
+owner excludes through `AppendOnlyDuringRun`. Those remain explicit limits in the Kafka
+capability record.
 
 
 ## Idempotence and Recovery
@@ -953,28 +1132,42 @@ Scripts and environment: `scripts/test-kafka` (owned broker, before/after snapsh
 `kafka-adapter-test` suite; `just test-kafka`; `flake.module.nix` adds `pkgs.apacheKafka` to
 the dev shell and the adapter derivation.
 
-Dependencies: `hw-kafka-client` comes from the fork `mori://shinzui/hw-kafka-client`,
-pinned by an immutable commit that carries
-[IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2); that commit
-does not exist yet, so the library does not depend on the client in this revision. Hackage
-5.3.0 remains the reproduction baseline; the originally proposed `>=5.3 && <5.4` Hackage
-bound and 5.3.0 freeze are not approved for the observer. When the fork lands, record the
-commit, its tag, the `source-repository-package` stanza, the Nix override, and explicit
-assignment/teardown API evidence here before wiring the client binding. The currently
-planned native dependency is librdkafka 2.15.0
-(`mori://confluentinc/librdkafka/packages/librdkafka`, supplied by the pinned Nixpkgs through the Seihou
-`nix.kafka` option), Apache Kafka 2.13-4.3.1 with JRE 17.0.19 as a development and test tool
-only (`pkgs.apacheKafka`; Mori has no registered project, so the Nixpkgs attribute is the
-reference), and the already frozen `network` 3.2.9.0 and `process` 1.6.26.1 for test fixtures.
-Core gains two `HandlerBuildError` constructors and their codec and schema entries.
+Dependencies: the Kafka client is `rdkafka-hs` 1.0.0.0
+(`mori://shinzui/rdkafka-hs/packages/rdkafka-hs`), the maintained successor of the
+`mori://shinzui/hw-kafka-client` fork, which completed
+[IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2). It is consumed as
+the commit `63031a21d070819fe89afbacb6ce76238816748f` (annotated tag `v1.0.0.0`, tag object
+`e499013e3a8a84328834bb0b0755332263c4cdee`, GitHub release of 2026-10-22) through the
+`source-repository-package` stanza and the `fetchFromGitHub`/`callCabal2nix` override given
+in M1, with `rdkafka-hs >=1.0 && <1.1` bounds; it is not on Hackage. API evidence for the
+observer contract: `newAssignedConsumer` (never subscribes; `AssignOnlyTest`),
+`pollMessageAttributed` with `ConsumerMessageError` (partition-attributed EOF;
+`AttributedErrorTest`), `destroyConsumer` (synchronous, exactly-once destroy with sockets
+closed on return; `DestroyTest`), and `partitionWatermarkOffsets` under `read_committed`
+stopping at the last stable offset (`ReadCommittedTest`), all under the release's
+`test-integration/Kafka/Integration/` and passing in both callback poll modes. No Shōko
+package depends on it until the M1 pin step lands. Hackage `hw-kafka-client` 5.3.0 remains
+only the reproduction baseline; its `>=5.3 && <5.4` bound is not approved for the observer.
+The native dependency is librdkafka 2.15.0
+(`mori://confluentinc/librdkafka/packages/librdkafka`, supplied by the pinned Nixpkgs through
+the Seihou `nix.kafka` option; `rdkafka-hs` refuses anything older than 2.15 at build time),
+the `c2hs` 0.28.8 build tool from the same Nixpkgs, Apache Kafka 2.13-4.3.1 with JRE 17.0.19
+as a development and test tool only (`pkgs.apacheKafka`; Mori has no registered project, so
+the Nixpkgs attribute is the reference), and the already frozen `network` 3.2.9.0 and
+`process` 1.6.26.1 for test fixtures. Core gains two `HandlerBuildError` constructors and
+their codec and schema entries.
 
 Release evidence checked on 2026-10-21: the
 [Hackage release listing](https://hackage.haskell.org/package/hw-kafka-client/preferred.json)
 and [5.3.0 source archive](https://hackage.haskell.org/package/hw-kafka-client-5.3.0/hw-kafka-client-5.3.0.tar.gz)
-were compared with upstream tags. Apache Kafka tag 4.3.1 peels to
-`26b251a451ce941d3d7a55e6487bcb7f16b5ad48`. Recheck availability when resolving M1;
-the original package-set versions above describe the current lock, not a guarantee after
-a Seihou upgrade.
+were compared with upstream tags. Checked on 2026-10-22: `git ls-remote --tags
+https://github.com/shinzui/rdkafka-hs` lists `refs/tags/v1.0.0.0` at
+`e499013e3a8a84328834bb0b0755332263c4cdee` peeling to
+`63031a21d070819fe89afbacb6ce76238816748f`; `rdkafka-hs.cabal` at that commit declares
+`version: 1.0.0.0`; and https://hackage.haskell.org/package/rdkafka-hs/preferred.json
+returns 404. Apache Kafka tag 4.3.1 peels to `26b251a451ce941d3d7a55e6487bcb7f16b5ad48`.
+Re-run the tag check when pinning; the package-set versions above describe the current
+lock, not a guarantee after a Seihou upgrade.
 
 Prerequisites: `docs/plans/3-implement-inspectable-scenarios-and-the-bounded-verification-runner.md`,
 `docs/plans/4-implement-postgresql-and-http-evidence-bindings.md`, and
@@ -982,7 +1175,8 @@ Prerequisites: `docs/plans/3-implement-inspectable-scenarios-and-the-bounded-ver
 `docs/plans/8-compose-verifications-from-reusable-scenario-vocabulary-and-binding-blocks.md`
 supplied the handler constructors this plan extends. This plan owns `Shoko.Adapter.Kafka*`,
 `shoko-adapters/test/Kafka/`, `scripts/test-kafka`, the Kafka sections of the guides, and
-CAP-11; it extends `Shoko.Adapter.EventStore.Internal`, `shoko-adapters.cabal`,
+the Kafka capability record; it extends `Shoko.Adapter.EventStore.Internal`,
+`shoko-adapters.cabal`,
 `flake.module.nix`, `justfile`, and the workflow schema and validator, whose registration
 example stays unchanged. The staging host that selects this reader, its topic names, ACL
 credentials, and append-only promise belong to the bounded context and the environment owner.
@@ -992,3 +1186,14 @@ sources, and the actual released client. Recorded construction and teardown bloc
 corrected partition EOF attribution, committed-visible baselines, persistent history-loss
 state, secret-safe diagnostics, fixture readiness and offset snapshots, and M1 build wiring.
 The four implementation milestones remain incomplete; this revision changes only the plan.
+
+Revision 2026-10-22: the client blocker is resolved. The owner's fork shipped as the
+successor package `rdkafka-hs` 1.0.0.0 (tag `v1.0.0.0`, commit `63031a2…`), not as a tagged
+`shinzui/hw-kafka-client` commit, and IR-2 is completed there. This revision replaces the
+client selection with that pin (a commit-pinned `source-repository-package` stanza plus a
+`fetchFromGitHub`/`callCabal2nix` Nix override), names the released observer API
+(`newAssignedConsumer`, `pollMessageAttributed`, `destroyConsumer`,
+`partitionWatermarkOffsets`), drops the 5.3.0 reproducer and the anonymous-EOF workaround
+rationale, adds `c2hs` to the toolchain, moves the Kafka capability to the next free handle
+(CAP-12), brings the repository orientation up to date, and schedules the refresh of the
+four documents that still name the old fork. Milestones are unchanged and remain open.
