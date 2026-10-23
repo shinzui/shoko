@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""Delegate configuration, secrets, policy and provider IO to the compiled host."""
+from pathlib import Path
+import subprocess
+import sys
+
+
+def main():
+    try:
+        located = subprocess.run(["cabal", "list-bin", "exe:shoko-email-smoke"],
+                                 capture_output=True, check=True, text=True)
+        executable = Path(located.stdout.strip())
+        if not executable.is_absolute() or not executable.is_file():
+            raise ValueError("unavailable executable")
+        return subprocess.run([str(executable), *sys.argv[1:]]).returncode
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        print("email-smoke-executable-unavailable", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

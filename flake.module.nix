@@ -78,6 +78,7 @@
             nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.python3 pkgs.postgresql pkgs.apacheKafka ];
             checkPhase = ''
               runHook preCheck
+              SHOKO_TEST_SMOKE_WRAPPER=${./scripts/smoke-email} SHOKO_TEST_EMAIL_HOST_CHECK=${./scripts/test-email-host} python ${./scripts/test-email} --binaries dist/build
               python ${./scripts/test-adapters} --binaries dist/build
               python ${./scripts/test-event-stores} --binaries dist/build
               python ${./scripts/test-kafka} --binaries dist/build

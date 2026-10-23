@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Exercise the real smoke host offline and the wrapper with owned stand-ins."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+host = Path(sys.argv[1]).resolve()
+wrapper = Path(sys.argv[2]).resolve()
+base = dict(os.environ)
+for name in ("SHOKO_EMAIL_RESEND_API_KEY", "SHOKO_EMAIL_RECEIVING_DOMAIN", "SHOKO_EMAIL_SENDER"):
+    base.pop(name, None)
+# Bound test config independently of any developer's operational overrides.
+for name in list(base):
+    if name.startswith("SHOKO_EMAIL_"):
+        base.pop(name)
+
+
+def run(command, expected, env=base):
+    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=5)
+    if (result.returncode == 0) != expected:
+        raise RuntimeError("email host process contract failed")
+    if any(x in result.stdout + result.stderr for x in ("CREDENTIAL-PRIVATE", "FROM-PRIVATE", "URL-PRIVATE")):
+        raise RuntimeError("email host leaked private input")
+    return result.stdout + result.stderr
+
+
+if "email-inspection-valid" not in run([str(host), "--inspect"], True):
+    raise RuntimeError("email inspection failed")
+if "email-policy-denied" not in run([str(host)], False):
+    raise RuntimeError("email consent preflight failed")
+if "email-private-inputs-unavailable" not in run([str(host), "--allow-synthetic"], False):
+    raise RuntimeError("email missing input failed open")
+if "email-private-inputs-unavailable" not in run([str(host), "--receive-only", "--allow-synthetic"], False):
+    raise RuntimeError("receiving-only missing input failed open")
+with tempfile.TemporaryDirectory(prefix="shoko-email-host-", dir="/tmp") as temporary:
+    owned = Path(temporary)
+    config = owned / "config.yaml"
+    config.write_text("bounds:\n  pageSize: 20\n")
+    run([str(host), "--inspect", "--config", str(config)], True)
+    invalid = dict(base, SHOKO_EMAIL_PAGE_SIZE="CREDENTIAL-PRIVATE")
+    if "email-configuration-invalid" not in run([str(host), "--inspect", "--config", str(config)], False, invalid):
+        raise RuntimeError("invalid winning override fell back")
+    config.write_text("unknown: URL-PRIVATE\n")
+    run([str(host), "--inspect", "--config", str(config)], False)
+    # The fake Cabal and host are scoped to this one wrapper invocation.
+    standin = owned / "host"
+    receipt = owned / "delegated.json"
+    standin.write_text("#!" + sys.executable + "\nimport json,sys\nfrom pathlib import Path\nPath(" + repr(str(receipt)) + ").write_text(json.dumps(sys.argv[1:]))\nraise SystemExit(7)\n")
+    standin.chmod(0o700)
+    cabal = owned / "cabal"
+    cabal.write_text("#!" + sys.executable + "\nimport sys\nassert sys.argv[1:] == ['list-bin', 'exe:shoko-email-smoke']\nprint(" + repr(str(standin)) + ")\n")
+    cabal.chmod(0o700)
+    env = dict(base, PATH=str(owned) + os.pathsep + base.get("PATH", ""), SHOKO_EMAIL_RESEND_API_KEY="CREDENTIAL-PRIVATE")
+    args = ["--inspect", "--config", str(config)]
+    result = subprocess.run([sys.executable, str(wrapper), *args], env=env, capture_output=True, text=True, timeout=5)
+    if result.returncode != 7 or json.loads(receipt.read_text()) != args or result.stdout or result.stderr:
+        raise RuntimeError("smoke wrapper did not delegate once and preserve the exit")
+print("Email smoke inspection, missing inputs, private diagnostics and wrapper delegation passed (offline).")

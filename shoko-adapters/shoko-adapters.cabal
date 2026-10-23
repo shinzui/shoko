@@ -11,6 +11,7 @@ category: Testing
 build-type: Simple
 tested-with: ghc ==9.12.4
 extra-source-files:
+  test/Email/Fixture/server.py
   test/EventStore/Fixture/kiroku/LICENSE
   test/EventStore/Fixture/kiroku/migrations/*.sql
   test/EventStore/Fixture/kiroku/migrations/manifest
@@ -45,6 +46,8 @@ library
   import: common
   hs-source-dirs: src
   exposed-modules:
+    Shoko.Adapter.Email
+    Shoko.Adapter.Email.Resend
     Shoko.Adapter.EventStore
     Shoko.Adapter.Http
     Shoko.Adapter.Http.Evidence
@@ -60,7 +63,10 @@ library
     Shoko.Adapter.Postgres.Evidence
     Shoko.Adapter.Postgres.Query
 
-  other-modules: Shoko.Adapter.EventStore.Internal
+  other-modules:
+    Shoko.Adapter.Email.Internal
+    Shoko.Adapter.EventStore.Internal
+
   build-depends:
     aeson >=2.2 && <2.3,
     http-client >=0.7.19 && <0.8,
@@ -152,3 +158,53 @@ test-suite kafka-adapter-test
 source-repository head
   type: git
   location: https://github.com/shinzui/shoko
+
+test-suite email-adapter-test
+  import: common
+  type: exitcode-stdio-1.0
+  hs-source-dirs:
+    test
+    src
+    example
+
+  main-is: EmailMain.hs
+  other-modules:
+    Email.Config
+    Email.Contract
+    Email.Sending
+    EmailSmoke.Config
+    EmailSmoke.Scenario
+    Shoko.Adapter.Email
+    Shoko.Adapter.Email.Internal
+    Shoko.Adapter.Email.Resend
+
+  ghc-options: -threaded
+  build-depends:
+    aeson >=2.2 && <2.3,
+    hedgehog >=1.5 && <1.8,
+    http-client >=0.7.19 && <0.8,
+    http-client-tls >=0.3.6.4 && <0.4,
+    http-types >=0.12.4 && <0.13,
+    settei ==0.2.0.0,
+    settei-env ==0.2.0.0,
+    settei-yaml ==0.2.0.0,
+    shoko-adapters,
+    tasty >=1.5.4 && <1.6,
+    tasty-hedgehog >=1.4.0.2 && <1.5,
+    time >=1.12 && <1.15,
+    uuid >=1.3 && <1.4,
+
+executable shoko-email-smoke
+  import: common
+  hs-source-dirs: example
+  main-is: EmailSmoke.hs
+  other-modules:
+    EmailSmoke.Config
+    EmailSmoke.Scenario
+
+  ghc-options: -threaded
+  build-depends:
+    settei ==0.2.0.0,
+    settei-env ==0.2.0.0,
+    settei-yaml ==0.2.0.0,
+    shoko-adapters,

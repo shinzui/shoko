@@ -11,6 +11,9 @@ test:
 test-adapters:
     python3 scripts/test-adapters
 
+test-email:
+    python3 scripts/test-email
+
 test-event-stores:
     python3 scripts/test-event-stores
 
@@ -49,7 +52,7 @@ check-docs:
     mori capabilities validate --path .
     mori terms validate --path .
 
-check: build test test-adapters test-event-stores test-kafka test-cli test-scenario-catalog test-workflow-contract
+check: build test test-email test-adapters test-event-stores test-kafka test-cli test-scenario-catalog test-workflow-contract
     python3 scripts/test-core-types
     python3 scripts/check-result-schema.py
     nix flake check

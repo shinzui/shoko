@@ -16,6 +16,22 @@ provenance:
       at: 2026-10-23T21:34:40Z
       mode: "discuss"
       note: "Make Settei the host configuration and deferred secret-resolution boundary for email and smoke consumers"
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-10-23T21:40:37Z
+      mode: "update"
+      note: "Fix sampled exactlyOnce claim, public baseline cursor, gap rule, paths, Settei pins, Inboxes API and retention sizing"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-23T22:03:55Z
+      mode: "implement"
+      note: "Implement bounded Resend evidence, controlled sending, host configuration and contract validation"
+  reviews:
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-10-23T21:40:37Z
+      verdict: "comments"
+      note: "Verified core/runner, HTTP, Settei, Nix and Resend claims; findings applied in the same-session update revision"
 ---
 
 # Add API-backed email sending and inbox evidence
@@ -52,24 +68,57 @@ the outstanding registration staging acceptance gate.
 
 ## Progress
 
-- [ ] M1 — Inbox evidence works through the public runner and actual HTTP transport:
-  a new matching message passes, while pre-existing and unrelated messages cannot satisfy it.
-- [ ] M2 — Bounded observation, concurrent readers, policy, and privacy controls pass;
-  unavailable or incomplete reads cannot establish absence or exactly-once success.
-- [ ] M3 — Controlled sending and send-to-receive verification pass, with explicit
-  capabilities, destination checks, stable idempotency keys, and no automatic mutation retry.
+- [x] M1 — 2026-10-23: Actual HTTP list/detail reads and the public runner pass a fresh
+  application welcome message; old and unrelated messages cannot satisfy it.
+  `nix develop --command just test-email` passed the initial five consumer controls.
+- [x] M2 — 2026-10-23: Bounded scans, isolation, policy, privacy, real socket cancellation,
+  and fake-clock cutoff controls pass. Unavailable reads remain inconclusive; sampled
+  `never`/`exactlyOnce` never Pass. Existing PostgreSQL/HTTP suites also pass.
+- [x] M3 — 2026-10-23: Controlled sends, independent receipt, inbound ticket input,
+  denied destinations, stable/conflicting keys, and one-attempt mutation timeout pass.
+  `just test-email` passes 50 contracts plus offline smoke-host/wrapper process checks.
 - [ ] M4 — The email checks run in local and native Nix validation, public documentation
   and a separately invoked live smoke path exist, and implemented claims have catalog evidence.
 
-Implementation has not started. Intention: the authoritative ID is in frontmatter.
+M1–M3 are verified. M4 documentation and native/repository integration validation remain.
+Core acceptance: all 78 tests pass; existing PostgreSQL/HTTP consumer suites pass.
+The authoritative intention ID remains in frontmatter.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+2026-10-23 (implementation): Hackage now lists Settei 0.3.0.0. This work retains the
+workspace-pinned 0.2.0.0 as planned; the smoke host compiles and passes against that release.
+No dependency upgrade or bounds waiver is needed.
+
+2026-10-23 (review): the runner never accumulates occurrence IDs for a `SampledState` source.
+In `shoko-core/src/Shoko/Runner.hs`, `runExpectation` merges IDs only when both the batch and
+the source are durable; otherwise the ID set stays empty. `exactlyOnce` therefore closes as
+`CoverageIncomplete`/Unknown and can never Fail through this adapter, even when two distinct
+matching messages are observed. Only `never` can Fail, on a witness that finishes by cutoff.
+
+```haskell
+( if durable then merged else ids, ...
+ExactlyOnce | Set.size nextIds > 1 -> final next Mismatch Fail
+```
+
+2026-10-23 (review): `Baseline.cursor` is serialized into encoded results by `baselineValue`
+in `shoko-core/src/Shoko/Result/Json.hs`, so whatever the adapter puts there is public.
+
+2026-10-23 (review): Resend now documents an Inboxes API. `GET /inboxes/{inbox_id}/threads`
+is scoped to one inbox (by ID or address) and returns threads, most recently active first.
+`GET /emails/receiving` remains team-wide with no recipient filter, and its page does not
+document ordering. The general pagination page says forward pagination runs newer to older.
+The received-email detail response also carries nullable `raw` and `authentication` objects.
 
 
 ## Decision Log
+
+2026-10-23 (implementation): Smoke inspection/preflight uses safe placeholder private
+addresses, then resolves Secret values and repeats preflight with the actual descriptors
+before acquisition. Explicit `--allow-synthetic` supplies per-run consent for execution;
+`--inspect` performs no acquisition or private-value lookup. The shared compiled scenario
+and configuration tests exercise the same host helpers. See [ADR 0006](../adr/0006-bound-email-evidence-and-separate-submission-from-receipt.md).
 
 2026-10-23: Use one ExecPlan. This is an additive adapter with one provider and one shared
 fixture; it needs no new core execution mode, provider SDK, or independently released service.
@@ -81,7 +130,10 @@ in the discussion leading to this plan. A send response must never satisfy a rec
 2026-10-23: Advertise `SampledState` coverage, meaning evidence from particular reads rather
 than complete history over an interval. No provider retention, deletion exclusion, or
 visibility-to-host-clock proof has been established. `never` and `exactlyOnce` therefore
-cannot Pass with this adapter; observed violations may still Fail under existing core rules.
+cannot Pass with this adapter. A `never` witness observed by the cutoff still Fails. An
+`exactlyOnce` expectation always ends Unknown, even with two distinct matching messages,
+because the core runner does not accumulate IDs for sampled sources (see Surprises).
+Changing that is a core change and is out of scope here.
 
 2026-10-23: Use an explicitly approved test account/listing scope and a fresh recipient per
 run. Resend's receiving list is team-wide; local recipient filtering is part of the declared
@@ -100,6 +152,22 @@ CLI's two-phase configuration/credential resolution. The adapter accepts validat
 values; it does not read process environment variables, parse configuration files, or
 depend on Settei. Settings resolution cannot grant sending permission.
 
+2026-10-23 (review): Keep the team-wide `GET /emails/receiving` listing for the first version.
+The inbox-scoped Inboxes API needs an inbox per fresh recipient, which means mailbox
+provisioning (excluded here). It also returns a thread model, and threads are excluded too.
+Revisit it as a separate decision if per-run inbox creation is approved.
+
+2026-10-23 (review): Each baseline and poll scans the whole team listing, and messages are
+never deleted. So the approved test account works only while its retained received count
+fits within `pageSize × maxPages`. Beyond that, baselines fail before any action, which is
+conservative and correct. The guide must state this retention-sizing requirement. Stopping
+a scan early at the newest baseline ID would need a documented ordering guarantee for the
+receiving list. Resend does not document one, so early stopping is deferred.
+
+2026-10-23 (review): The smoke host resolves defaults, one optional `--config` YAML file,
+and explicitly bound environment variables. It has no Settei command-line overrides, so it
+needs only `settei`, `settei-env`, and `settei-yaml`, not `settei-optparse-applicative`.
+
 
 ## Outcomes & Retrospective
 
@@ -115,13 +183,23 @@ evidence reader with a baseline captured before actions. A baseline identifies w
 already present so old messages cannot satisfy occurrence checks for this run.
 
 `shoko-core/src/Shoko/Binding.hs` exposes `actionHandler`, `observationHandler`, `newSource`,
-`resolveInput`, `guardCorrelation`, `sourceBaseline`, `requestDeadline`, `callClock`, and
-`focus`. Handler descriptions must be constructed without allocating resources; their
+`sampledSource`, `resolveInput`, `guardCorrelation`, `sourceBaseline`, `requestDeadline`,
+`evidenceUntil`, `callClock`, and `focus`. `sampledSource` captures only a timestamp with no
+cursor. That is not enough here, so the email source uses
+`newSource label SampledState capture` with its own ID-set capture. Handler descriptions
+must be constructed without allocating resources; their
 contracts participate in preflight before acquisition. A `BusinessKeyName` is the logical
 kind of an identifier; an explicit correlation handle selects one particular instance of
-that key. `shoko-core/src/Shoko/Observation.hs` defines `Baseline`, `Occurrence`, `Coverage`,
-and `ObservationOutcome`. `shoko-core/src/Shoko/Runner.hs` distinguishes positive sampled
-evidence from durable interval coverage. `shoko-core/src/Shoko/Action.hs` defines typed
+that key. `shoko-core/src/Shoko/Observation.hs` defines `Baseline` (`source`, `capturedAt`,
+and an optional `cursor` text that is serialized into reports), `Occurrence`, `Coverage`
+(`strength`, `fromMicros`, `throughMicros`, `complete`), and `ObservationOutcome`.
+`shoko-core/src/Shoko/Runner.hs` distinguishes positive sampled evidence from durable
+interval coverage. For a sampled `eventually` expectation, the runner works as follows.
+Each request deadline is the cutoff. A matching batch that finishes by the cutoff Passes.
+At the cutoff, the result is Fail only if every poll returned a valid complete batch. A
+single unavailable poll or incomplete batch sets a sticky gap flag, and the result becomes
+Unknown. The runner rejects any coverage whose `throughMicros` is later than the poll's
+finish time. `shoko-core/src/Shoko/Action.hs` defines typed
 action results and accepted outcome tags. `shoko-core/src/Shoko/Environment.hs` already has
 `SendHttp`, `ReadState`, `WriteState`, `ExternalSideEffect`, and `SyntheticResource`.
 
@@ -162,8 +240,12 @@ pre-action baselines, finite budgets, private values, and honest Pass/Fail/Unkno
 and [ADR 0004](../adr/0004-gate-parity-on-real-workflows-and-context-owned-vocabulary.md),
 which keeps vocabulary and real staging acceptance owned by the consuming context. In
 particular, successful local adapter checks do not establish registration readiness or
-an approved OTP acquisition facility. There is no existing email-specific ADR. Preserve
-the plain filesystem ADR convention; add or revise durable decisions during implementation.
+an approved OTP acquisition facility.
+[ADR 0005](../adr/0005-version-generic-readiness-without-relabeling-registration.md) keeps
+workflow v1/v2 manifests and result v2 unchanged. This plan follows it and does not extend
+the manifest schema. There is no existing email-specific ADR. Preserve the plain
+filesystem ADR convention. The next free number is `0006`. Add or revise durable decisions
+during implementation.
 
 Provider research checked on 2026-10-23: the
 [receiving guide](https://resend.com/docs/dashboard/receiving/introduction) supports a
@@ -174,12 +256,15 @@ Resend-managed receiving domain or a configured custom domain. The
 receiving: supply `limit` (1–100), inspect `has_more`, and use the last ID as `after`.
 Without `limit`, this older list endpoint can return all messages, so always set it.
 No recipient filter is established by these references. These three references establish
-the provider setup, list scope, and page traversal used here.
+the provider setup, list scope, and page traversal used here. The receiving list page does
+not document sort order, so correctness must not depend on it. A separate Inboxes API
+(`GET /inboxes/{inbox_id}/threads`) is inbox-scoped but is not used; see the Decision Log.
 
 The [detail endpoint](https://resend.com/docs/api-reference/emails/retrieve-received-email)
 is `GET /emails/receiving/{id}` and supplies text, HTML, headers, and attachment metadata.
 Request `html_format=cid` to retain inline-image references rather than embedding images;
-still enforce response limits. The [send endpoint](https://resend.com/docs/api-reference/emails/send-email)
+still enforce response limits. The response's own `html_format` may differ from the request.
+Ignore the nullable `raw` and `authentication` objects: never follow, store, or expose them. The [send endpoint](https://resend.com/docs/api-reference/emails/send-email)
 is `POST /emails`, returning a provider ID. Its
 [idempotency contract](https://resend.com/docs/dashboard/emails/idempotency-keys) deduplicates
 the same request key for 24 hours; this does not prove exactly-once delivery. Recheck these
@@ -195,9 +280,13 @@ Create `shoko-adapters/src/Shoko/Adapter/Email.hs` for provider-neutral descript
 non-renderable content values, and handlers; create
 `shoko-adapters/src/Shoko/Adapter/Email/Resend.hs` for Resend configuration and construction,
 and `shoko-adapters/src/Shoko/Adapter/Email/Internal.hs` for private transport and reader
-state. Add a `email-adapter-test` suite with `test/EmailMain.hs`,
-`test/Email/Contract.hs`, and `test/Email/Fixture/server.py`, and an owned fixture runner
-`scripts/test-email` exposed as `just test-email`. The fixture implements real list/detail
+state. Add an `email-adapter-test` suite to `shoko-adapters/shoko-adapters.cabal`, shaped
+like `http-adapter-test` (`hs-source-dirs: test`, `-threaded`). Its files are
+`shoko-adapters/test/EmailMain.hs`, `shoko-adapters/test/Email/Contract.hs`, and
+`shoko-adapters/test/Email/Fixture/server.py`. List the fixture under `extra-source-files`
+now, as `test/Fixture/server.py` already is. Add an owned fixture runner
+`scripts/test-email`, modelled on `scripts/test-adapters`, and expose it as
+`just test-email`. The fixture implements real list/detail
 requests with pagination plus a distinct fixture-application trigger. The scenario triggers
 that application over the existing HTTP adapter and observes the email via the new adapter.
 It must traverse the production Resend decoder and transport, not only a fake Haskell callback.
@@ -206,8 +295,10 @@ Construct a pure inbox descriptor with a public source ID, approved test-account
 scope, approved recipient domain/prefix, semantic business-key name, page size/count,
 detail-request cap, byte limits, and per-request limit. Secrets enter the acquired reader
 only. Capture the bounded list of all existing provider message IDs before actions; retain
-it in run-owned memory behind an opaque baseline token. A baseline that cannot finish
-within limits fails before any application mutation. No baseline timestamps or provider
+it in run-owned memory behind an opaque baseline token. The token goes in `Baseline.cursor`,
+which is public in reports. It must therefore be a fresh random run-local handle that
+encodes no provider ID, count, or address. A baseline that cannot finish within limits
+fails before any application mutation. No baseline timestamps or provider
 sequence numbers stand in for the complete ID set.
 
 Use fresh random opaque tokens as public mailbox business keys, for example the semantic
@@ -250,8 +341,11 @@ with `has_more`, malformed bodies, or exhausted page/detail/byte budgets. Baseli
 prevents actions. An incomplete poll returns `ObservationUnavailable`, even if one partial
 page contained a candidate: the initial implementation favors a simple conservative
 contract over mixing partial witnesses with incomplete scans. A complete sample with no
-match may be a conclusive sampled non-match. Thus an `eventually` deadline with only
-successful non-matching samples returns Fail; unresolved source errors produce Unknown.
+match is a conclusive sampled non-match. Report each complete scan as
+`Coverage SampledState pollStart pollFinish True`, with both times read from `callClock`
+and `pollFinish` no later than the time the batch is returned. Thus an `eventually`
+deadline with only successful non-matching samples returns Fail. Any one unavailable poll
+before the cutoff makes the result Unknown, unless a later poll finds a match and Passes.
 Neither outcome claims continuous absence. Do not set durable coverage or invent a new
 runner result schema. `never` and `exactlyOnce` cannot succeed without durable coverage;
 tests must show Unknown when no decisive violating witness exists.
@@ -329,7 +423,9 @@ Update Cabal module/fixture packaging and run existing core/HTTP checks after in
 Document acquisition, pure handler construction, token-to-recipient correlation, sampled
 semantics, allowed sending effects, and private content decoding in `docs/adapters.md`.
 Add `docs/workflows/email-verification.md` with a compiling context-owned example, required
-test account and recipient controls, baseline/scan sizing, retention disposition, and how
+test account and recipient controls, and baseline/scan sizing. The sizing section must
+state that the retained received count has to stay within `pageSize × maxPages`, or every
+run ends Unknown at baseline. Also cover retention disposition and how
 to distinguish acceptance from receipt. Explicitly document that an observation predicate
 cannot feed an OTP into a later action under the current runner. Update `README.md`,
 `docs/development.md`, and `docs/dependencies.md` only for implemented surfaces and checks.
@@ -341,18 +437,22 @@ Add `shoko-adapters/example/EmailSmoke.hs` as the `shoko-email-smoke` Cabal exec
 using a small context-owned vocabulary and the public runner for submission and receipt.
 Add `shoko-adapters/example/EmailSmoke/Config.hs` for the example host's typed Settei
 declarations and source resolution, with executable-only dependencies on the already
-workspace-pinned Settei packages. Keep Settei out of the adapter library and core. Use
-the existing declaration, environment-binding, and Secret patterns from
-`shoko-cli/src/Shoko/Cli/Config.hs`; this work requires no Settei upgrade.
+workspace-pinned Settei packages: `settei ==0.2.0.0`, `settei-env ==0.2.0.0`, and
+`settei-yaml ==0.2.0.0`, matching `shoko-cli/shoko-cli.cabal` and the `cabal.project`
+constraints. The `shoko-adapters` package derivation gains these build inputs, but its
+library does not. Keep Settei out of the adapter library and core. `shoko-cli` does not
+depend on `shoko-adapters`, and the adapter package must not depend on `shoko-cli`. So copy,
+rather than import, the declaration, environment-binding, and Secret patterns from
+`shoko-cli/src/Shoko/Cli/Config.hs`. This work requires no Settei upgrade.
 
 The host resolves provider selection, account/source labels, recipient domain/prefix,
 page/detail/byte bounds, and request/run/poll budgets through Settei before constructing
 adapter descriptors. Credential settings contain environment-variable references, never
 raw API keys in YAML or command-line arguments. For sending, private sender-address
 values follow the same protected-value path so configuration provenance cannot expose
-mailbox addresses. Ordinary settings use declared defaults, one explicit config file
-when supplied, explicitly bound operational environment variables, and supported named
-options in that precedence order. Reject unknown configuration keys, invalid winning
+mailbox addresses. Ordinary settings use declared defaults, then one explicit
+`--config` file when supplied, then explicitly bound operational environment variables, in
+that precedence order. There are no Settei command-line overrides. Reject unknown configuration keys, invalid winning
 values, missing required fields, and empty credentials without falling back. Validate
 relationships such as request limits fitting within execution budgets before acquisition.
 Settei resolves operational values; approved destinations, capability grants, and synthetic
@@ -368,9 +468,12 @@ parallel environment/config parser.
 
 Provide `scripts/smoke-email` as a separately invoked Python wrapper which locates that
 executable through `cabal list-bin exe:shoko-email-smoke` and delegates without printing
-inputs. Define its input contract in the new guide: `SHOKO_EMAIL_RESEND_API_KEY` is a secret,
-`SHOKO_EMAIL_SENDER` is an already approved and verified sender, and
-`SHOKO_EMAIL_RECEIVING_DOMAIN` is an approved receiving test domain. Use a 30-second
+inputs. Define its input contract in the new guide. These are the default names of the
+environment variables that the credential and private-value references point to.
+Configuration may rename a reference but never holds a value. `SHOKO_EMAIL_RESEND_API_KEY`
+is a secret. `SHOKO_EMAIL_SENDER` is an already approved and verified sender.
+`SHOKO_EMAIL_RECEIVING_DOMAIN` is an approved receiving test domain. All three are resolved
+through Secret declarations after preflight, and receiving-only runs skip the sender. Use a 30-second
 execution budget, a 20-second receipt window, 1-second polling, and 3-second request limits
 as finite smoke defaults, validated if the host exposes overrides. These values are test
 budgets, not provider delivery promises. A new random token supplies the run's recipient
@@ -382,7 +485,10 @@ for a real receiving inbox. Keep this outside CI and run it only with session au
 and supplied live inputs. No such inputs were supplied when this plan was created.
 
 Add an implemented capability record under `docs/capabilities/` using the next available
-handle from `okf id next`, not a guessed CAP number. Preserve its profile and log convention
+handle printed by
+`okf id next docs/capabilities CAP --profile docs/capabilities/profile.dhall`, not a guessed
+CAP number. At review time it printed `CAP-12`; rerun it, because another plan may claim it
+first. Add the row to `docs/capabilities/index.md`. Preserve its profile and log convention
 and cite actual consumer evidence. Update `mori.dhall` package descriptions and doc entries
 if appropriate without claiming a Resend SDK dependency. Record durable adapter boundaries
 and coverage decisions in a new local ADR or relevant existing ADRs. M4 acceptance requires
@@ -439,7 +545,7 @@ same directory, with secret values already set privately in the environment:
 
 ```bash
 nix develop --command cabal build exe:shoko-email-smoke
-nix develop --command python3 scripts/smoke-email
+nix develop --command python3 scripts/smoke-email --allow-synthetic
 ```
 
 The guide documents the environment variables named in M4 and the command must report Pass
@@ -460,13 +566,15 @@ ensure A cannot consume it. Include candidates appearing during the action, repe
 across pages/polls, nullable text/HTML, and attachment metadata. A content mismatch with
 otherwise conclusive samples produces Fail at the sampled deadline; a source failure or
 limit breach that prevents a conclusion produces Unknown. An unsuccessful baseline leaves
-the fixture application's mutation counter at zero. Repeated runs use fresh resources
+the fixture application's mutation counter at zero. One fixture-injected 429 followed by
+conclusive non-matching polls ends Unknown, not Fail. Repeated runs use fresh resources
 and tokens; composed correlations using the same semantic key still select separate mail.
 
 For evidence limits, `never` over an empty inbox and `exactlyOnce` over one received message
-return Unknown because this source advertises sampled coverage. A second distinct matching
-occurrence may establish an exactly-once violation under the existing runner; repeated
-reads of one ID do not. Exercise positive reads completing after cutoff and cancellation
+return Unknown because this source advertises sampled coverage. `exactlyOnce` over two
+distinct matching messages also returns Unknown, because the runner does not accumulate
+sampled IDs. Assert this explicitly so that a later core change shows up as a deliberate
+test update. A `never` expectation with a matching message observed by the cutoff Fails. Exercise positive reads completing after cutoff and cancellation
 of a blocked request using controlled clock tests where possible and actual HTTP delay
 tests for socket cleanup. Responses exceeding configured limits never become successful
 non-matches. Detail/list disagreement, missing identity, authorization failure, 429,
@@ -568,7 +676,8 @@ Neither `Shoko.Adapter.Email` nor `Shoko.Adapter.Email.Resend` imports Settei or
 ambient configuration discovery.
 
 The library reuses existing `aeson`, `bytestring`, `containers`, `text`, `time`,
-`http-client`, and `http-client-tls` dependencies. The HTTP client was located through Mori
+`http-client`, `http-client-tls`, and `http-types` dependencies. Fresh run tokens and
+baseline handles use the already-declared `uuid` package (`Data.UUID.V4.nextRandom`). The HTTP client was located through Mori
 as [mori://snoyberg/http-client/packages/http-client](mori://snoyberg/http-client/packages/http-client).
 Its public API defines scoped responses, manager retry policy, proxy overrides, and idle
 connection settings. For source lookup, the owning project is
@@ -591,3 +700,10 @@ Conventional Commits on the current branch.
 Revision 2026-10-23: make Settei ownership explicit for all email settings, deferred API
 keys, and the smoke host; add configuration precedence, redaction, validation, and
 receiving-only credential checks while preserving the adapter's typed boundary.
+
+Revision 2026-10-23 (review against the working tree and Resend docs): correct the
+`exactlyOnce` claim (sampled IDs are not accumulated, so it is always Unknown). Make the
+public `Baseline.cursor`, the sticky gap rule, and the coverage construction explicit. Name
+full test paths and fixture packaging. Record the Inboxes API and the retention-sizing
+limit of full listing scans. Drop smoke command-line overrides, and pin the Settei build
+inputs. Give the exact `okf id next` command, and cite ADR 0005.
