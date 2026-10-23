@@ -136,3 +136,7 @@ Its shared context-owned scenario is exercised through real loopback HTTP in
 execution checks policy before resolving private values and acquiring the reader.
 See [email verification](workflows/email-verification.md) for the explicit live command,
 finite budgets and approved test-account requirements.
+
+Hosts using `Shoko.Adapter.Kafka` must build executables with `ghc-options: -threaded`
+for the `rdkafka-hs` callback machinery. The managed shell supplies librdkafka headers
+and libraries; see [dependency evidence](dependencies.md#kafka-selection).

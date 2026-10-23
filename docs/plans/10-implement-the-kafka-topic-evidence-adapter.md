@@ -26,6 +26,11 @@ provenance:
       at: 2026-10-22T03:50:32Z
       mode: "update"
       note: "Replace the hw-kafka-client fork with the released rdkafka-hs 1.0.0.0 pin, name its observer API, and unblock the client-dependent milestones"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-23T22:32:33Z
+      mode: "implement"
+      note: "Bind the released Kafka client and verify broker-backed observer contracts"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -97,24 +102,67 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
 - [ ] M4 — Contract, documentation, and catalog integration: the workflow schema and offline
   validator accept a `kafka` adapter and `kafka://` endpoints with tests; `docs/adapters.md`,
   `docs/development.md`, `docs/dependencies.md`, `README.md`, and `mori.dhall` describe the
-  reader; the Kafka capability is recorded under the next free handle (CAP-12 at this
+  reader; the Kafka capability is recorded under the next free handle (CAP-13 at this
   revision); ADR 0001, 0003, and 0004 carry the durable decisions; `just check-docs` passes.
+
+Current handoff (2026-10-23): M1 is blocked again, now on
+[IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3).
+The released-client spike proves that 1.0.0.0 reverses consumed header wire order,
+so last-duplicate event-type and correlation selection would be wrong. Per M1,
+do not promote this client into M2, patch the dependency, or compensate inside
+Shōko. Resume by verifying and pinning the next tagged release that resolves IR-3,
+then rerun the spike and continue M2 → M3 → M4. All four milestones remain open.
+
+The M1 toolchain is now in place: Seihou 0.35.0 enables `nix.kafka`, the shell
+supplies `c2hs`, Cabal and Nix pin `rdkafka-hs` 1.0.0.0 at the same immutable
+commit, and `cabal build all` succeeds. `Kafka.Fixture` and `Kafka.Spike` provide
+real-broker checks. The local Kafka run reports 36 passing groups and one failing
+ordered-duplicate-header group (37 total). Assign-only reading, per-partition EOF
+and watermarks, keys/values/timestamps, committed-visible transaction bounds,
+aborted-transaction EOF, missing-topic metadata, and silent-broker socket release
+pass. The 80 ms request returned in about 70 ms and its accepted socket reached
+EOF within the additional one-second bound. No public `kafka` constructor has
+been added. The guides and ADR 0001 now name the released successor and this
+blocker; `mori.dhall` records the actual client and C-library dependencies.
+CAP-12 was allocated to email evidence; `okf id next` reports CAP-13,
+which remains unallocated until the adapter can ship.
+
+Validation on 2026-10-23: `just build test test-email test-adapters
+test-event-stores test-cli test-scenario-catalog test-workflow-contract` passes
+in the managed shell, including all 38 real-store groups. `scripts/test-core-types`
+and the seven result-schema examples pass. `just check-docs`, `mori validate`,
+`git diff --check`, and `seihou diff` pass. The full native `nix flake check`
+is not green: eight workflow-identity subprocess probes reached their ten-second
+test timeout during concurrent native compilation, cancelling the adapter check.
+The same 17 identity tests pass in the shell. The focused command
+`nix build .#checks.aarch64-darwin.shoko-adapters --no-link -L --max-jobs 1 --cores 2`
+compiles the library and every test executable, passes the packaged email,
+SQL/HTTP, and 38 event-store groups, then reproduces only the ordered-header
+failure (36/37 Kafka groups pass). Its silent-broker request plus destruction
+finishes in about 150 ms, with the socket closed within the required bound.
+The fixture still completes its snapshots and prints
+`kafka: group/topic/offset non-interference passed`; captured suite stderr contains
+no fixture address or secret. The native adapter derivation deliberately exits
+nonzero on IR-3. Neither the workflow timeouts nor IR-3 are waived for completion;
+Linux CI acceptance remains outstanding.
 
 Blocker history: on 2026-10-21 M1 was blocked because Hackage `hw-kafka-client` 5.3.0 could
 not construct an assign-only consumer, its EOF errors omitted partition identity, and its
 close did not destroy the client; the work then waited for the owner's fork to carry IR-2.
 
-Unblocked (2026-10-22): the fork shipped as the renamed successor package `rdkafka-hs`
+Earlier unblock (2026-10-22; superseded by the IR-3 gate above): the fork shipped
+as the renamed successor package `rdkafka-hs`
 1.0.0.0 (`mori://shinzui/rdkafka-hs`, tag `v1.0.0.0`, commit
 `63031a21d070819fe89afbacb6ce76238816748f`), and
 [IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2) is `completed`
-there with that release as its resolution. Every client-dependent step — the M1 pin and
-spike, the client binding of `KafkaPort`, the public `kafka` constructor, and the
-real-broker contract groups of M2/M3 — may now proceed in the order M1 → M2 → M3 → M4. See
+there with that release as its resolution. That release initially permitted the
+M1 pin and spike to proceed; IR-3 now gates
+the client binding of `KafkaPort`, the public `kafka` constructor, and the
+real-broker contract groups of M2/M3 behind the same M1 → M2 → M3 → M4 order. See
 the Decision Log entries dated 2026-10-22 for the pin and the Cross-repository references
 for the API.
 
-Handoff (2026-10-21, client-independent work done; every milestone stayed open pending the
+Historical handoff (2026-10-21, client-independent work done; every milestone stayed open pending the
 fork, which landed on 2026-10-22 as `rdkafka-hs`). The owner directed implementation of
 everything that does not call the client ahead of the M1 gate.
 
@@ -245,6 +293,41 @@ test (see Decision Log).
 Catalog handle (2026-10-22): `CAP-11`, which this plan reserved for the Kafka capability,
 was allocated to declarative scenario catalog inspection by later work. The Kafka capability
 takes the next free handle, `CAP-12` at this revision; M4 re-checks it with `okf id next`.
+
+
+Released-client spike (2026-10-23): `Kafka.Internal.Shared.readHeaders` in
+`mori://shinzui/rdkafka-hs` at the pinned 1.0.0.0 commit (project-relative
+`src/Kafka/Internal/Shared.hs`, artifact-level URI pending) visits header indices
+in ascending order, prepends to an accumulator, and returns it without reversing.
+The real-broker ordered-duplicate roundtrip therefore fails:
+
+```text
+wire header order preserves last duplicate selection: FAIL
+mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3: decoded headers reverse wire order; last-duplicate correlation is unsafe
+1 out of 37 tests failed
+```
+
+The request is [IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3).
+It asks for ordered roundtrips through both polling APIs and callback modes and
+a tagged release. Existing upstream header tests compare unique names as sets and
+did not establish this contract. Shōko keeps the regression in the normal suite.
+A missing topic can accept local `assign` before metadata arrives; the spike
+therefore verifies metadata reports it missing and the topic list stays unchanged,
+rather than treating a poll timeout as either a record or EOF.
+
+Managed-environment integration (2026-10-23): Seihou advanced from 0.31.0 to
+0.35.0. Its combined update initially rolled back with
+`changed_after_migration_command`; applying `seihou migrate nix-haskell-flake`
+first and retrying `seihou update ... --var nix.kafka=true --json` succeeded.
+The migration makes `.envrc` tracked. Save `nix.kafka=true` in
+`.seihou/config.dhall` as well; the update records the override in its manifest
+but does not save the config. `seihou diff` then reports no drift. The managed
+Nixpkgs remains `d5dfd8e6716dde34398bc14bc87c10dece9c8c68`; GHC 9.12.4,
+librdkafka 2.15.0, c2hs 0.28.8, Kafka 4.3.1, and its JRE 17.0.19 are unchanged.
+Nix supplies network 3.2.8.0 while Cabal freezes 3.2.9.0; the fixture uses their
+shared API with a `>=3.2.8 && <3.3` bound. Cabal freeze does record the source
+package version and flags, contrary to the earlier M1 assumption; its immutable
+source identity remains the `source-repository-package` commit.
 
 
 ## Decision Log
@@ -413,9 +496,26 @@ takes the next free handle, `CAP-12` at this revision; M4 re-checks it with `okf
   Date: 2026-10-22
 
 
+- Decision: Treat the 1.0.0.0 pin as the reproducible M1 baseline while IR-3 is
+  open; the client-backed constructor and shipped capability remain gated on a
+  fixed tagged release. Preserve the failing ordered-header spike in all normal
+  Kafka gates, rather than reversing headers locally or marking it expected-fail.
+  Rationale: M1 explicitly requires an upstream request and next-release pin for
+  client defects. Header order is necessary to the accepted correlation contract.
+  Date: 2026-10-23
+
+
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Partial outcome, 2026-10-23: the reproducible client pin, managed Kafka toolchain,
+and real-client spike are implemented. The spike exposed a new released-client
+correctness blocker, recorded as IR-3, before the adapter could select incorrect
+business-key correlation. The plan is not complete: a fixed tagged client release,
+the actual KafkaPort binding, real adapter contracts, capability publication, and
+green local/native/Linux gates remain. Build and local regression checks pass;
+the native adapter reproduces the same single Kafka defect and verifies broker
+non-interference. The dependency-selection constraint and
+header-order gate are distilled in ADR 0001.
 
 
 ## Context and Orientation
@@ -481,19 +581,16 @@ that runs a broker without ZooKeeper.
 
 ### Current state of the repository
 
-When this plan was written there was no Kafka code. As of 2026-10-22 the client-independent
-Kafka code exists (`Shoko.Adapter.Kafka`, `Shoko.Adapter.Kafka.Internal`,
-`Shoko.Adapter.Kafka.Evidence`, the `kafka-adapter-test` suite with its controlled port,
-`scripts/test-kafka`, and `pkgs.apacheKafka` in the shell and adapter checks; see Progress),
-but no package depends on a Kafka client. `.seihou/config.dhall` still records `nix.kafka =
-"false"` and `nix.redpanda = "false"`, so the dev shell has no librdkafka headers and no
-`c2hs`. `flake.nix` already declares the module-owned `redpanda-container` input, unused
-while the option is off. `schemas/workflow-v1.schema.json` and `scripts/workflow_contract.py`
-already accept `kafka` adapters and `kafka://` endpoints (M4 progress). The capability
-catalog's next free handle is `CAP-12` (checked on 2026-10-22 with `okf id next
-docs/capabilities --profile docs/capabilities/profile.dhall CAP`; `CAP-11` went to
-declarative scenario catalog inspection after this plan was written), and the terminology
-catalog's is `TERM-50`.
+As of 2026-10-23 the client-independent Kafka scanner, descriptors, handler,
+controlled suite, owned broker fixture, and normal check wiring exist. Cabal and
+Nix now pin `rdkafka-hs` 1.0.0.0 for the M1 spike; Seihou 0.35.0 enables
+`nix.kafka=true` and keeps `nix.redpanda=false`. `c2hs` and Apache Kafka are dev-shell
+tools. The public `kafka` constructor does not exist because the released-client
+ordered-header spike fails (IR-3). The workflow schema already accepts `kafka`
+and `kafka://`; this is a declaration, not evidence that a live host can use it.
+The next free capability handle is CAP-13 (recheck on resumption); no Kafka
+capability may be published until the client-backed adapter is usable.
+
 
 ### Relevant ADRs
 
@@ -568,8 +665,8 @@ The dev-shell toggle is documented by the
 [Seihou nix-haskell-flake template](mori://shinzui/seihou-modules/templates/nix-haskell-flake):
 `nix.kafka=true` adds `pkgs.rdkafka` and `pkgs.rdkafka.dev` to the generated shell and exports
 `CPATH`, `LIBRARY_PATH`, and `PKG_CONFIG_PATH` so GHC links `-lrdkafka`. The installed module
-version is 0.31.0 (`docs/development.md`); the registry has moved on, so reconfiguration may
-involve an update.
+version is now 0.35.0 (`docs/development.md`); the managed upgrade and Kafka
+toggle have landed. Use Seihou for any subsequent regeneration.
 
 The first real topic is `registration.completed.v1`, published by
 [registration-service-v2](mori://tan/registration-service-v2) (project-relative
@@ -595,9 +692,10 @@ This milestone de-risks the two uncertain interfaces: the C-backed Kafka client 
 managed Nix environment, and a JVM broker inside both the dev shell and the Nix build
 sandbox. At its end the dev shell links `rdkafka-hs`, `scripts/test-kafka` owns a broker,
 and a small spike suite documents how librdkafka behaves for an assign-only observer. The
-broker-fixture half is already done (see Progress). The client half was blocked until
-2026-10-22 and is now resolved by `rdkafka-hs` 1.0.0.0, so the 5.3.0 reproducer is no
-longer required; the recorded defects stand as history. A `subscribe` call of any kind
+broker-fixture half is already done (see Progress). The client half was initially unblocked on
+2026-10-22 by `rdkafka-hs` 1.0.0.0, but its new header-order spike fails (IR-3).
+Verify and pin a fixed tagged release before promotion into M2. The 5.3.0
+reproducer is no longer required; the recorded defects stand as history. A `subscribe` call of any kind
 remains forbidden in observer code: even if no group survives shutdown, it cannot
 establish that the observer never joined a group. If 1.0.0.0 fails any spike check below,
 file an improvement request in `mori://shinzui/rdkafka-hs` and pin its next release; do not
@@ -639,9 +737,9 @@ source-repository-package
 ```
 
 Add `rdkafka-hs >=1.0 && <1.1` to the `shoko-adapters` library `build-depends` and to the
-`kafka-adapter-test` suite in `shoko-adapters/shoko-adapters.cabal`. No `constraints` line
-is needed: a source-repository package is selected by the stanza, and `cabal freeze` does
-not record it. Still regenerate `cabal.project.freeze` with `nix develop --command cabal
+`kafka-adapter-test` suite in `shoko-adapters/shoko-adapters.cabal`. No additional `constraints` line
+is needed: a source-repository package is selected by the stanza. `cabal freeze`
+records its version and flags, while the stanza fixes the commit. Regenerate `cabal.project.freeze` with `nix develop --command cabal
 freeze` after `cabal update`, because `rdkafka-hs` brings `bifunctors` into the plan. On the
 Nix side add, inside the `overrides` of `flake.module.nix` beside the `callHackageDirect`
 entries, a hashed source override built from the same commit:
@@ -947,7 +1045,7 @@ and the `-threaded` requirement), in `docs/dependencies.md`, in the `README.md` 
 and in `mori.dhall` (package description and dependencies naming
 `shinzui/rdkafka-hs:rdkafka-hs` and `confluentinc/librdkafka:librdkafka`, with matching
 `dependencyRefs`). Add `docs/capabilities/bounded-kafka-topic-evidence.md` under the next
-free handle (`CAP-12` at this revision) after confirming it with `okf id next`, with
+free handle (`CAP-13` at this revision) after confirming it with `okf id next`, with
 interface `Shoko.Adapter.Kafka`,
 evidence `shoko-adapters/test/Kafka/Contract.hs` and `scripts/test-kafka`, and explicit
 limits; add its index row and a dated entry in `docs/capabilities/log.md`. Update the
@@ -962,8 +1060,10 @@ scope; destructive consumers still deferred). Acceptance: `just check-docs`, `mo
 
 ## Concrete Steps
 
-All commands run from the repository root. The M1 release blocker is resolved; this is the
-implementation sequence for the remaining client-dependent work. Discover the dependencies
+All commands run from the repository root. The earlier IR-2 blocker is resolved,
+but IR-3 now blocks promotion. The 1.0.0.0 commands below reproduce the failed
+spike; verify a new tagged release resolving IR-3 before continuing the
+client-dependent sequence. Discover the dependencies
 and the template first. The Mori-registered `rdkafka-hs` checkout may lag the release, so
 fetch it, fast-forward it, and refresh the registry before reading it:
 
@@ -1145,8 +1245,7 @@ observer contract: `newAssignedConsumer` (never subscribes; `AssignOnlyTest`),
 `AttributedErrorTest`), `destroyConsumer` (synchronous, exactly-once destroy with sockets
 closed on return; `DestroyTest`), and `partitionWatermarkOffsets` under `read_committed`
 stopping at the last stable offset (`ReadCommittedTest`), all under the release's
-`test-integration/Kafka/Integration/` and passing in both callback poll modes. No Shōko
-package depends on it until the M1 pin step lands. Hackage `hw-kafka-client` 5.3.0 remains
+`test-integration/Kafka/Integration/` and passing in both callback poll modes. The M1 pin is now present; it remains a reproduction baseline until IR-3 is fixed. Hackage `hw-kafka-client` 5.3.0 remains
 only the reproduction baseline; its `>=5.3 && <5.4` bound is not approved for the observer.
 The native dependency is librdkafka 2.15.0
 (`mori://confluentinc/librdkafka/packages/librdkafka`, supplied by the pinned Nixpkgs through
@@ -1197,3 +1296,9 @@ client selection with that pin (a commit-pinned `source-repository-package` stan
 rationale, adds `c2hs` to the toolchain, moves the Kafka capability to the next free handle
 (CAP-12), brings the repository orientation up to date, and schedules the refresh of the
 four documents that still name the old fork. Milestones are unchanged and remain open.
+
+Revision 2026-10-23: implemented the M1 pin, Seihou-managed toolchain upgrade,
+and real-client spike. Recorded the released header-order defect as IR-3, kept
+all milestones open behind the existing M1 gate, refreshed dependency/host
+documentation and ADR 0001, corrected the network compatibility floor and freeze
+behavior, and noted CAP-13 as the next free handle. Acceptance is unchanged.

@@ -54,6 +54,8 @@ in  Schema.Project::{
           , Schema.Dependency.ByName "haskell-hvr/uuid:uuid"
           , Schema.Dependency.ByName "haskell/vector:vector"
           , Schema.Dependency.ByName "shinzui/kiroku:kiroku-store"
+          , Schema.Dependency.ByName "shinzui/rdkafka-hs:rdkafka-hs"
+          , Schema.Dependency.ByName "confluentinc/librdkafka:librdkafka"
           , Schema.Dependency.ByName "hasql/hasql:postgresql-connection-string"
           , Schema.Dependency.ByName "hasql/hasql:hasql"
           , Schema.Dependency.ByName "snoyberg/http-client:http-client"
@@ -86,6 +88,18 @@ in  Schema.Project::{
       ]
     , dependencyRefs =
       [ Schema.MoriRef::{
+        , namespace = "shinzui"
+        , name = "rdkafka-hs"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "rdkafka-hs"
+        }
+      , Schema.MoriRef::{
+        , namespace = "confluentinc"
+        , name = "librdkafka"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "librdkafka"
+        }
+      , Schema.MoriRef::{
         , namespace = "effectful"
         , name = "effectful"
         , kind = Some Schema.MoriArtifactKind.Package

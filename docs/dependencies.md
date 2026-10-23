@@ -224,27 +224,40 @@ other Hackage package is viable: `librdkafka` and `kafka` are 0.0.0.0 placeholde
 `kafka-client` dates from 2015, `haskakafka` from 2016, and `kafka-interchange`
 only encodes the wire protocol.
 
-The owner selected the fork [shinzui/hw-kafka-client](mori://shinzui/hw-kafka-client),
-pinned by immutable commit through a `source-repository-package` stanza, the
-convention [kafka-effectful](mori://shinzui/kafka-effectful) already uses. This is a
-scoped, owner-authorized exception to the released-dependency rule in ADR 0001. It
-applies only once the fork carries
-[IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2), and it
-ends when a released version carries the same API. Until then no Shōko package
-depends on a Kafka client, the managed shell keeps `nix.kafka = false`, and
-librdkafka is not linked. Enabling `nix.kafka` currently forces a
-`nix-haskell-flake` upgrade from 0.31.0 to 0.34.0 that replaces the managed
-`flake.lock`. That upgrade is deferred to the client binding step, where the
-regenerated pins must be reverified.
+The selected client is [rdkafka-hs](mori://shinzui/rdkafka-hs/packages/rdkafka-hs)
+**1.0.0.0**, released on GitHub on 2026-10-22. Reverified on 2026-10-23, annotated
+tag `v1.0.0.0` (`e499013e3a8a84328834bb0b0755332263c4cdee`) peels to
+`63031a21d070819fe89afbacb6ce76238816748f`. Cabal's `source-repository-package`
+and the hashed Nix `callCabal2nix` override select that same immutable commit;
+component bounds are `>=1.0 && <1.1`. It is not on Hackage (`preferred.json`
+returns 404): distribution is tag-only per
+[ADR-7](mori://shinzui/rdkafka-hs/okf/adrs/concepts/ADR-7). The narrowed,
+owner-authorized ADR 0001 exception lasts until a Hackage release supplies the
+same observer API. No working-tree patches, branch pins, or relaxed bounds are used.
+
+[IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2) is
+completed: `newAssignedConsumer` skips subscription, `pollMessageAttributed`
+retains partition EOF origin, and `destroyConsumer` frees sockets synchronously.
+The client requires GHC 9.12 or newer and librdkafka 2.15 or newer, enforced by
+its build-time header check. The Seihou 0.35.0 shell enables `nix.kafka`, supplies
+**librdkafka 2.15.0**, and exports its header, library, and pkg-config paths.
+The shell also supplies **c2hs 0.28.8**, the client's FFI generator. The Cabal
+freeze includes this build tool and its transitive dependencies. Private Redpanda
+remains disabled. The Shōko spike found reversed header wire order in 1.0.0.0;
+[IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3) blocks
+promotion into the client-backed adapter. The pin currently serves reproduction
+and toolchain validation, and must advance to a fixed tagged release.
 
 The development and test tool **Apache Kafka 2.13-4.3.1** (JRE 17.0.19) comes from
 the pinned Nixpkgs revision `d5dfd8e6716dde34398bc14bc87c10dece9c8c68` as
 `pkgs.apacheKafka`, in the dev shell and the adapter derivation's checks. Upstream
 tag `4.3.1` peels to `26b251a451ce941d3d7a55e6487bcb7f16b5ad48`; Mori has no
 registered project, so the Nixpkgs attribute is the reference. The
-`kafka-adapter-test` suite adds only the already frozen **process 1.6.26.1**.
-When the client lands, every executable linking it must be built with
-`-threaded` for its callback machinery; all adapter test suites already are.
+`kafka-adapter-test` suite reuses the frozen **process 1.6.26.1**, **network
+3.2.9.0** (Nix supplies 3.2.8.0; both fit the tested `>=3.2.8 && <3.3` bound),
+**async 2.2.6**, and **uuid 1.3.16.1** packages. Every executable linking
+the client must use `-threaded` for its callback machinery; all adapter test
+suites already do.
 
 
 The email adapter reuses the existing HTTP/TLS, Aeson and UUID dependencies; it adds no

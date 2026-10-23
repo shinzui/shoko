@@ -41,7 +41,8 @@ def main():
         env.setdefault("KAFKA_HEAP_OPTS", "-Xmx512m -Xms256m")
 
         def run(command, timeout=120, **kwargs):
-            return subprocess.run(command, env=env, cwd=root, check=True, timeout=timeout, **kwargs)
+            kwargs.setdefault("check", True)
+            return subprocess.run(command, env=env, cwd=root, timeout=timeout, **kwargs)
 
         def tool(name, *arguments, stdin=None, timeout=60):
             result = run([name, "--bootstrap-server", bootstrap, *arguments], timeout=timeout, input=stdin,
@@ -112,9 +113,11 @@ def main():
             print(f"Real kafka: apache-kafka {version} at {bootstrap}", flush=True)
             if args.binaries:
                 binary = root / args.binaries / "kafka-adapter-test/kafka-adapter-test"
-                run([str(binary.resolve())], timeout=600)
+                suite = run([str(binary.resolve())], timeout=600, check=False,
+                            text=True, stderr=subprocess.PIPE)
             else:
-                run(["cabal", "test", "kafka-adapter-test", "--test-show-details=direct"], timeout=1800)
+                suite = run(["cabal", "test", "kafka-adapter-test", "--test-show-details=direct"],
+                            timeout=1800, check=False, text=True, stderr=subprocess.PIPE)
 
             groups_after = set(tool("kafka-consumer-groups.sh", "--list").split())
             topics_after = set(tool("kafka-topics.sh", "--list").split())
@@ -128,6 +131,12 @@ def main():
                 raise RuntimeError("topics outside the fixture prefix changed: " + ", ".join(unexpected))
             if application_offsets(tool) != offsets_before:
                 raise RuntimeError("observation changed application committed offsets")
+            print("kafka: group/topic/offset non-interference passed", flush=True)
+            if SECRET_SENTINEL in suite.stderr or "127.0.0.1:" in suite.stderr:
+                raise RuntimeError("Kafka suite leaked a fixture address or secret to stderr")
+            if suite.stderr:
+                print(suite.stderr, file=sys.stderr, end="")
+            suite.check_returncode()
             print("kafka: public runner, finite partition scans, correlation, cardinality, visibility, and "
                   "group/topic non-interference passed", flush=True)
             accepted = True

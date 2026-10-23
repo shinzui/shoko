@@ -37,17 +37,21 @@ that conflict with unpublished source edits or relaxed bounds. Pinned upstream
 SQL fixtures retain licenses and per-file source hashes and exercise actual
 stores in both Cabal and native Nix checks. See [dependency evidence](../dependencies.md).
 
-Kafka client selection, 2026-10-21: no released Haskell Kafka client can build a
-read-only observer (see [dependency evidence](../dependencies.md#kafka-selection)).
-The owner authorized one scoped exception to the released-dependency rule: the
-Kafka client is the [owner's hw-kafka-client fork](mori://shinzui/hw-kafka-client),
-pinned by immutable commit through a `source-repository-package` stanza and the
-matching Nix override, the convention its other consumers already use. Nothing may
-depend on it until the fork carries
-[IR-2](mori://shinzui/hw-kafka-client/okf/improvement-requests/concepts/IR-2), and
-the exception ends when a released version carries the same API. It does not
-permit copying working-tree edits, branch pins, or blanket bounds waivers. Apache
-Kafka itself is a development and test tool supplied by the pinned Nixpkgs through
-`flake.module.nix`. `nix.kafka` stays disabled until the client is linked, because
-enabling it now forces a managed template upgrade whose regenerated pins must be
-reverified. Private Redpanda remains disabled.
+Kafka client selection, revised 2026-10-23: enable the managed `nix.kafka`
+option through Seihou 0.35.0. The selected client is
+[rdkafka-hs](mori://shinzui/rdkafka-hs/packages/rdkafka-hs) 1.0.0.0, the maintained
+successor to hw-kafka-client. Its published GitHub tag completes
+[IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2), providing
+assign-only construction, partition-attributed EOF, synchronous destruction, and
+read-committed visibility bounds. The owner-authorized exception to the
+released-dependency rule is limited to tag-only distribution until a Hackage
+release supplies these APIs. Pin the tag's immutable commit in Cabal and the
+matching hashed Nix source override. No branch pins, copied working-tree edits,
+or bounds waivers are permitted. Apache Kafka is a development/test fixture;
+private Redpanda stays disabled. See [dependency evidence](../dependencies.md).
+
+Promote a Kafka client into the public adapter only after its broker-backed
+spike passes, including ordered duplicate headers. Version 1.0.0.0 reverses
+consumed header order; [IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3)
+requests the fix and a tagged release. Keep the failing contract visible;
+do not compensate by reversing headers inside Shōko or patching the dependency.

@@ -523,7 +523,7 @@ controlledTests bounded =
   ]
 
 -- | Plumbing checks against the owned broker; the client-backed reader groups
--- wait for the hw-kafka-client fork named in docs/plans/10.
+-- wait for a released client passing the spike named in docs/plans/10.
 brokerTests :: String -> String -> [TestTree]
 brokerTests bootstrap logDir =
   [ test "the owned broker accepts fixture topics through the managed tools" $ do

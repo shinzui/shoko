@@ -54,11 +54,13 @@ checkpoint rows must remain unchanged. No staging access is required.
 `application-worker` group, runs `kafka-adapter-test`, and checks that no
 `shoko-observer-` group, no topic outside the `fixture-` prefix, and no change to
 the application's committed offsets resulted. Sanitized broker log tails from a
-failed run are kept under the ignored `.dev/kafka-tests/`. The suite's scanner
-groups use a controlled read-committed topic model; the client-backed reader
-waits for the `hw-kafka-client` fork (see [dependency evidence](dependencies.md)).
-That binding will also need `nix.kafka = true` for librdkafka, and every
-executable linking it must use `-threaded`.
+failed run are kept under the ignored `.dev/kafka-tests/`. The suite combines
+controlled scanner checks and a direct released-client spike against the real
+broker. The spike currently fails on reversed header wire order in `rdkafka-hs`
+1.0.0.0 ([IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3));
+the client-backed reader remains gated on a fixed release. The shell enables
+`nix.kafka = true` for librdkafka and adds `c2hs` for the client's FFI build. Every executable linking
+`rdkafka-hs` must use `-threaded` (see [dependency evidence](dependencies.md)).
 First-party code treats warnings as errors through `cabal.project` and the Nix
 package definition. Dependencies retain their own warning policy. CI invokes the
 same commands on Ubuntu; local acceptance is also checked on Apple Silicon macOS.
@@ -76,13 +78,13 @@ each package, including consistency with the managed Nix package set.
 
 The environment comes from
 [Seihou nix-haskell-flake](mori://shinzui/seihou-modules/templates/nix-haskell-flake)
-0.31.0, published in the upstream registry at immutable revision
-`cc1b70c70eddeec5155c1a5a723b63a4cfaba6d6`. Upstream has no release tags for
-this module; the registry entry and module descriptor declare its release.
-The installed descriptor matches that revision byte for byte. GHC is 9.12.4;
-the managed base revision is `206ecd25bcb4a07581210bdae3e6f43c8fd179d8` of
-[the shared toolchain](mori://shinzui/haskell-nix-dev). All transitive Nix pins live
-in the generated `flake.lock`.
+0.35.0. The module descriptor in the installed registry declares that version;
+upstream has no module release tags. GHC remains 9.12.4. The managed base revision
+is `21933607e80ec4660a28a125a6f4c0707e358caf` of
+[the shared toolchain](mori://shinzui/haskell-nix-dev); the managed Haskell runtime
+revision is `d13245db8a3e2c1c559185c0adf87285259b7ab2` of
+[the shared runtime](mori://shinzui/haskell-nix). All transitive Nix pins live in
+the generated `flake.lock`. The 0.35.0 migration makes `.envrc` trackable.
 
 Seihou owns `flake.nix`, `flake.lock`, `nix/`, `fourmolu.yaml`, the example module,
 and local service scaffolding. `flake.module.nix` defines Shōko's packages and

@@ -3,7 +3,6 @@
 .seihou/manifest.json.tmp
 CLAUDE.local.md
 .codex/
-.envrc
 .envrc.local
 dist
 dist-*
@@ -13,4 +12,12 @@ cabal.project.local
 db/
 result
 result-*
+# Preserve Haskell modules on case-insensitive filesystems.
+!**/src/**/Result/
+!**/src/**/Result/**
+!**/test/**/Result/
+!**/test/**/Result/**
 .pre-commit-config.yaml
+__pycache__/
+.shoko/runs/
+.dev/

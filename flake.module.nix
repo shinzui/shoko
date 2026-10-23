@@ -6,6 +6,14 @@
       sourceIdentity = if self ? rev then "${self.rev}-clean" else self.dirtyRev or "source-unrecorded-dirty-state-unknown";
       hs = pkgs.haskell.packages.ghc9124.override {
         overrides = hself: _hsuper: {
+          rdkafka-hs = hself.callCabal2nix "rdkafka-hs"
+            (pkgs.fetchFromGitHub {
+              owner = "shinzui";
+              repo = "rdkafka-hs";
+              rev = "63031a21d070819fe89afbacb6ce76238816748f";
+              hash = "sha256-ndzJox3LOnVwbFV2qkoB9ii9DDINyLuxvrNLXFTxAwQ=";
+            })
+            { };
           # Released packages newer than the managed all-cabal-hashes snapshot.
           settei = hself.callHackageDirect
             {
@@ -133,7 +141,7 @@
       };
     in
     {
-      haskellProject.extraDevPackages = [ schemaPython pkgs.apacheKafka ];
+      haskellProject.extraDevPackages = [ schemaPython pkgs.apacheKafka pkgs.haskell.packages.ghc9124.c2hs ];
       packages.default = hs.shoko-cli;
       packages.shoko-core = hs.shoko-core;
       packages.shoko-adapters = hs.shoko-adapters;
