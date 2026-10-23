@@ -148,6 +148,14 @@ The validation recommends a capability set: a scenario's required capabilities m
 
 Shōko's scope is application behavior across services. Existing unit tests, property tests, contract tests, load tests, and observability systems remain complementary; Shōko consumes their useful evidence and integrations without owning normal production workflows.
 
+## API-backed email
+
+The [email adapter and workflow guide](docs/workflows/email-verification.md) covers
+Resend receiving evidence, controlled input sending, private content and finite sampled
+semantics. Run `nix develop --command just test-email` for actual loopback HTTP acceptance
+without credentials. The separate live smoke needs approved inputs and authorization;
+fixture acceptance does not establish live delivery or registration readiness.
+
 ## Design documents
 
 - [Capability catalog](docs/capabilities/index.md) — implemented consumer capabilities, evidence, and limits.

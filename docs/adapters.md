@@ -1,4 +1,4 @@
-# SQL, HTTP, durable event, and Kafka topic adapters
+# SQL, HTTP, email, durable event, and Kafka topic adapters
 
 `shoko-adapters` supplies ready-made handlers and IO helpers for context-owned bindings. It
 does not define business operations or infer domain outcomes from status codes.
@@ -278,3 +278,29 @@ stops only its own broker process. Native Nix adapter checks run the same script
 Revision 2026-10-19: replace separate contract/baseline wiring with handler
 constructors, typed source/business-key names, effectful payload builders, descriptor
 consistency checks, and scenario-owned execution-ID transport.
+
+## API-backed email
+
+`Shoko.Adapter.Email` provides pure validated inbox/send descriptors, private typed content,
+and `emailObservationHandler`/`emailActionHandler`. `Shoko.Adapter.Email.Resend` acquires a
+fresh reader with explicitly supplied credentials after policy preflight. Library code
+never reads environment variables or configuration files. The compiled Settei smoke host
+and its shared scenario demonstrate the consumer boundary.
+
+Reads require `SendHttp` and `ReadState`, a selected opaque UUID business key, a complete
+pre-action ID baseline, and finite list/detail/byte/time bounds. Resend's listing is
+team-wide; approve that account scope and filter direct `to` recipients locally. The retained
+received count must fit `pageSize × maxPages`. Baseline cursors and occurrence IDs are
+random run-local handles. Coverage is sampled: `eventually` can Pass on a timely match,
+while `never` and `exactlyOnce` cannot Pass. Incomplete scans and source errors remain
+Unknown; a conclusive sampled mismatch can Fail.
+
+Sending additionally requires `WriteState` and `ExternalSideEffect`, approved sender and
+token-derived recipient destinations, and a stable explicit idempotency key. One POST
+attempt establishes acceptance only; receipt must be observed independently. A timeout
+never retries. Content, addresses, credentials, headers and attachment metadata remain
+non-renderable typed values for private predicates. There is no OTP-to-later-action bridge.
+
+Run `nix develop --command just test-email` for focused loopback acceptance without a
+database, broker or external mail. See the [email workflow guide](workflows/email-verification.md)
+for the compiling example, configuration, sampled semantics, retention and separate live smoke.

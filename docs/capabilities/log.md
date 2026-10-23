@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-23
+* **Addition**: Add CAP-12 for bounded API-backed email evidence and controlled input sending, with compiled loopback consumers and offline smoke-host checks.
+
 ## 2026-10-21
 * **Update**: Extend CAP-9 and CAP-10 with generic workflow v2 validation and the shared bounded read-only target-observation gate; preserve v1 registration compatibility.
 * **Addition**: Add strict catalog inspection and explicit compiled-host dispatch with real consumer process evidence.

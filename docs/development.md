@@ -103,3 +103,12 @@ entering the shell. It does not start the server. Core checks never connect to i
 `just test-adapters` creates its own temporary Unix-only cluster and HTTP server,
 without depending on the generated `process-compose.yaml` or any running database.
 It provisions only owned local fixture data and cleans up on test failure.
+
+
+`just test-email` is a focused loopback check requiring Python and the compiled Haskell
+components, with no PostgreSQL, Kafka or live credentials. It tests receiving, controlled
+sending, sampled coverage, isolation, cancellation, Settei configuration and offline
+smoke-host/wrapper processes. It is included in `just check` and the native adapter
+`checkPhase`; `scripts/test-email --binaries dist/build` uses packaged test and smoke
+executables. The wrapper locates `exe:shoko-email-smoke` with Cabal for explicit live use.
+See [email verification](workflows/email-verification.md). External mail is never part of CI.

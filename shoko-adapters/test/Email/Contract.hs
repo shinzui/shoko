@@ -142,7 +142,7 @@ expectVerdict expected result = do
   mapM_ (\sentinel -> check (not (sentinel `BS.isInfixOf` encoded))) ["CONTENT-PRIVATE", "HTML-PRIVATE", "HEADER-PRIVATE", "FILENAME-PRIVATE", "URL-PRIVATE", "ERROR-PRIVATE", "FROM-PRIVATE", "fixture.invalid", "CREDENTIAL-PRIVATE"]
 
 newCase :: IO (E.Inbox, Text, Text)
-newCase = (,,) <$> box limits <*> E.freshToken <*> E.freshToken
+newCase = (,,) <$> box limits <*> (("CREDENTIAL-PRIVATE-" <>) <$> E.freshToken) <*> E.freshToken
 
 tests :: TestTree
 tests = testGroup "email contracts" [receivingTests, boundsTests]
@@ -301,12 +301,16 @@ cancellationTest = do
           then pure ()
           else threadDelay 5000 >> awaitPoll
   ready <- timeout 1000000 awaitPoll
-  check (ready == Just ())
+  unless (ready == Just ()) (fail "blocked request did not start")
   killThread thread
-  timeout 500000 (takeMVar done) >>= check . maybe False (const True)
-  threadDelay 450000
-  metrics <- fixture account "/control/" Nothing
-  check (case metrics of Object values -> maybe False (> 0) (lookupNumber "disconnects" values); _ -> False)
+  timeout 500000 (takeMVar done) >>= \stopped -> unless (maybe False (const True) stopped) (fail "cancelled runner did not stop")
+  let awaitDisconnect = do
+        metrics <- fixture account "/control/" Nothing
+        if case metrics of Object values -> maybe False (> 0) (lookupNumber "disconnects" values); _ -> False
+          then pure ()
+          else threadDelay 5000 >> awaitDisconnect
+  closed <- timeout 1500000 awaitDisconnect
+  unless (closed == Just ()) (fail "cancelled response socket stayed open")
   void (fixture account "/control/" (Just (object ["fault" .= ("" :: Text)])))
   execute (scenarioValue token [] "" "Welcome" True) >>= expectVerdict Pass
 

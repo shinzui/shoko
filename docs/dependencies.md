@@ -245,3 +245,20 @@ registered project, so the Nixpkgs attribute is the reference. The
 `kafka-adapter-test` suite adds only the already frozen **process 1.6.26.1**.
 When the client lands, every executable linking it must be built with
 `-threaded` for its callback machinery; all adapter test suites already are.
+
+
+The email adapter reuses the existing HTTP/TLS, Aeson and UUID dependencies; it adds no
+provider SDK or dependency upgrade. Its executable-only configuration inputs are
+[Settei](mori://shinzui/settei/packages/settei),
+[settei-env](mori://shinzui/settei/packages/settei-env) and
+[settei-yaml](mori://shinzui/settei/packages/settei-yaml), retaining the workspace's
+0.2.0.0 release pins. Hackage lists Settei 0.3.0.0 as of 2026-10-23; the tested host needs
+no newer APIs. The upstream v0.2.0.0 tag still resolves to
+`1bf62b0af110b4f42fe2528e9d459e0ccf12d626`. No Settei package enters the adapter library
+or core dependency boundary. The Resend integration follows its authoritative
+[received list](https://resend.com/docs/api-reference/emails/list-received-emails),
+[pagination](https://resend.com/docs/api-reference/pagination),
+[received detail](https://resend.com/docs/api-reference/emails/retrieve-received-email)
+and [send](https://resend.com/docs/api-reference/emails/send-email) HTTP contracts,
+rechecked during implementation. Provider IDs remain validated opaque segments;
+no returned URL is followed.

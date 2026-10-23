@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="shoko-email-host-", dir="/tmp") as temp
     cabal.chmod(0o700)
     env = dict(base, PATH=str(owned) + os.pathsep + base.get("PATH", ""), SHOKO_EMAIL_RESEND_API_KEY="CREDENTIAL-PRIVATE")
     args = ["--inspect", "--config", str(config)]
-    result = subprocess.run([sys.executable, str(wrapper), *args], env=env, capture_output=True, text=True, timeout=5)
+    result = subprocess.run([sys.executable, "-P", str(wrapper), *args], env=env, capture_output=True, text=True, timeout=5)
     if result.returncode != 7 or json.loads(receipt.read_text()) != args or result.stdout or result.stderr:
         raise RuntimeError("smoke wrapper did not delegate once and preserve the exit")
 print("Email smoke inspection, missing inputs, private diagnostics and wrapper delegation passed (offline).")

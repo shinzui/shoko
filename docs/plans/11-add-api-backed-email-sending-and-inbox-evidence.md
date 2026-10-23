@@ -77,15 +77,25 @@ the outstanding registration staging acceptance gate.
 - [x] M3 — 2026-10-23: Controlled sends, independent receipt, inbound ticket input,
   denied destinations, stable/conflicting keys, and one-attempt mutation timeout pass.
   `just test-email` passes 50 contracts plus offline smoke-host/wrapper process checks.
-- [ ] M4 — The email checks run in local and native Nix validation, public documentation
-  and a separately invoked live smoke path exist, and implemented claims have catalog evidence.
+- [x] M4 — 2026-10-23: Focused email checks, the complete `nix develop --command just check`,
+  native aarch64-darwin adapter/flake checks, and `just check-docs` pass. The compiled
+  smoke host and wrapper are tested offline; the public guide, CAP-12 and ADR 0006
+  document implemented behavior and its limits. Live provider acceptance remains untested.
 
-M1–M3 are verified. M4 documentation and native/repository integration validation remain.
-Core acceptance: all 78 tests pass; existing PostgreSQL/HTTP consumer suites pass.
+All four milestones are verified. Final acceptance includes 50 email contracts, 78 core
+tests, the existing real transport/store/broker and CLI/workflow suites, and native flake
+checks. Live delivery and deployed registration staging acceptance remain separate gates.
 The authoritative intention ID remains in frontmatter.
 
 
 ## Surprises & Discoveries
+
+2026-10-23 (native validation): the packaged Python wrapper checks need `-P` to keep
+script-directory import lookup out of startup. The first native provider suite passed
+but its wrapper stand-in timed out; safe-path invocation passed the native host checks.
+The cancellation fixture also needs to accept both socket EOF and connection reset,
+and wait for the close event within a finite bound. It now preserves the prompt
+cancellation assertion and verifies that the same reader remains usable afterward.
 
 2026-10-23 (implementation): Hackage now lists Settei 0.3.0.0. This work retains the
 workspace-pinned 0.2.0.0 as planned; the smoke host compiles and passes against that release.
@@ -171,7 +181,32 @@ needs only `settei`, `settei-env`, and `settei-yaml`, not `settei-optparse-appli
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+2026-10-23: Implemented provider-neutral validated inbox/send descriptors and private
+content types, a fixed-origin Resend transport, run-owned ID baselines, bounded complete
+scans, token correlation, sampled coverage, and one-attempt controlled sending. The
+fixture application proves welcome-mail output through real HTTP and the public runner;
+the shared compiled smoke scenario proves submission followed by independently observed
+receipt. The inbound-ticket consumer demonstrates email as an application input.
+
+Final validation passed `nix develop --command just test-email` (50 contracts plus
+real-host/wrapper offline process checks), all 78 core tests, existing HTTP/PostgreSQL
+suites, and the complete `nix develop --command just check`, including native
+`checks.aarch64-darwin.shoko-adapters`, formatting, CLI, catalogs, result schema and
+workflow gates. `just check-docs` validates 12 capability records and the remaining
+catalogs. The final native run includes the corrected cancellation/reset probe and
+safe-path Python process launch. No core/result/manifest schema change or dependency
+upgrade was necessary.
+
+The [email guide](../workflows/email-verification.md), [CAP-12](../capabilities/api-backed-email-evidence.md),
+and [ADR 0006](../adr/0006-bound-email-evidence-and-separate-submission-from-receipt.md)
+now hold the public example, implemented evidence and durable boundaries. Full-list
+baseline sizing, incomplete-read uncertainty and sampled cardinality are deliberate
+constraints. Settei remains host-owned with deferred private inputs and fixed policy.
+
+No live Resend credentials or approved live inputs were supplied, and no external smoke
+or deployed application staging verification was performed. These remain explicitly
+untested; the completed deliverable is the adapter contract and its executable smoke
+path, not live account readiness or the outstanding registration acceptance gate.
 
 
 ## Context and Orientation
@@ -243,9 +278,9 @@ particular, successful local adapter checks do not establish registration readin
 an approved OTP acquisition facility.
 [ADR 0005](../adr/0005-version-generic-readiness-without-relabeling-registration.md) keeps
 workflow v1/v2 manifests and result v2 unchanged. This plan follows it and does not extend
-the manifest schema. There is no existing email-specific ADR. Preserve the plain
-filesystem ADR convention. The next free number is `0006`. Add or revise durable decisions
-during implementation.
+the manifest schema. [ADR 0006](../adr/0006-bound-email-evidence-and-separate-submission-from-receipt.md)
+now records the email-specific privacy, listing scope, sending and sampled-coverage
+boundaries, preserving the plain filesystem ADR convention.
 
 Provider research checked on 2026-10-23: the
 [receiving guide](https://resend.com/docs/dashboard/receiving/introduction) supports a

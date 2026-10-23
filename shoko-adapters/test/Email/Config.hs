@@ -48,6 +48,7 @@ tests =
             "unknown: true\n",
             "provider: other\n",
             "access:\n  apiKeyEnv: 'not an env'\n",
+            "access:\n  apiKeyEnv: SHOKO_EMAIL_RECEIVING_DOMAIN\n",
             "bounds:\n  responseBytes: 4000000\n"
           ],
       test "missing, empty and invalid secret winners never fall back or leak" $ do

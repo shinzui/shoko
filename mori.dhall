@@ -46,7 +46,7 @@ in  Schema.Project::{
         , language = Schema.Language.Haskell
         , path = Some "shoko-adapters"
         , description = Some
-            "Scoped SQL, HTTP, Kiroku, Message DB, and Kafka topic evidence adapters"
+            "Scoped SQL, HTTP, email, Kiroku, Message DB, and Kafka topic evidence adapters"
         , dependencies =
           [ Schema.Dependency.ByName "shinzui/shoko:shoko-core"
           , Schema.Dependency.ByName "haskell/aeson:aeson"
@@ -154,6 +154,13 @@ in  Schema.Project::{
       ]
     , docs =
       [ Schema.DocRef::{
+        , key = "email-verification"
+        , kind = Schema.DocKind.Guide
+        , audience = Schema.DocAudience.Module
+        , description = Some "Bounded sampled email receipt, controlled input sending and explicit live smoke"
+        , location = Schema.DocLocation.LocalFile "docs/workflows/email-verification.md"
+        }
+      , Schema.DocRef::{
         , key = "generic-staging-contract"
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module
@@ -180,7 +187,7 @@ in  Schema.Project::{
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module
         , description = Some
-            "Scoped SQL/HTTP and finite Kiroku/Message DB evidence readers"
+            "Scoped SQL/HTTP/email and finite Kiroku/Message DB evidence readers"
         , location = Schema.DocLocation.LocalFile "docs/adapters.md"
         }
       , Schema.DocRef::{

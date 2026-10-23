@@ -13,6 +13,7 @@ where
 
 import Data.Char (isAsciiLower, isAsciiUpper)
 import Data.Maybe (catMaybes)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Settei qualified as S
@@ -119,6 +120,9 @@ resolveSources sources = case S.resolve (S.ResolveOptions S.RejectUnknownKeys) s
     if Mail.requestLimit bounds > receipt || Mail.scanLimit bounds > execution || receipt >= execution || poll > receipt
       then Left "email-configuration-invalid"
       else pure ()
+    if Set.size (Set.fromList [apiKeyEnv config, domainEnv config, senderEnv config]) /= 3
+      then Left "email-configuration-invalid"
+      else pure ()
     -- Validate all pure descriptor fields without resolving the private domain.
     _ <- descriptors config "approved.invalid" Nothing
     Right (config, S.renderResolutionText report)
@@ -138,17 +142,19 @@ loadConfig path = do
 resolvePrivateWith :: (String -> IO (Maybe String)) -> Bool -> Config -> IO (Either Text PrivateValues)
 resolvePrivateWith lookupValue sending config = do
   let refs = [("apiKey", apiKeyEnv config), ("domain", domainEnv config)] ++ [("sender", senderEnv config) | sending]
-      bindings = either (error . T.unpack . E.renderEnvErrorsText) id (E.bindings [E.binding (E.EnvName name) (key ("private." <> label)) | (label, name) <- refs])
       required label = S.required (S.secretSetting (key ("private." <> label)) "private email input" (S.parsedDecoder "nonempty private input" (\value -> if T.null value then Left "empty" else Right value)))
       privateDeclaration = (,,) <$> required "apiKey" <*> required "domain" <*> (if sending then Just <$> required "sender" else pure Nothing)
-  values <- catMaybes <$> traverse (\(_, name) -> fmap ((name,) . T.pack) <$> lookupValue (T.unpack name)) refs
-  pure $ case S.resolve (S.ResolveOptions S.RejectUnknownKeys) [E.environmentSource bindings (E.envSnapshot values)] privateDeclaration of
-    S.ResolveResult (Left _) _ _ -> Left "email-private-inputs-unavailable"
-    S.ResolveResult (Right (apiKey, domain, sender)) _ _ -> do
-      credential <- either (const (Left "email-private-inputs-unavailable")) Right (Resend.resendCredentials apiKey)
-      senderAddress <- either (const (Left "email-private-inputs-unavailable")) Right (traverse Mail.address sender)
-      _ <- either (const (Left "email-private-inputs-unavailable")) Right (descriptors config domain senderAddress)
-      Right (PrivateValues credential domain senderAddress)
+  case E.bindings [E.binding (E.EnvName name) (key ("private." <> label)) | (label, name) <- refs] of
+    Left _ -> pure (Left "email-private-inputs-unavailable")
+    Right bindings -> do
+      values <- catMaybes <$> traverse (\(_, name) -> fmap ((name,) . T.pack) <$> lookupValue (T.unpack name)) refs
+      pure $ case S.resolve (S.ResolveOptions S.RejectUnknownKeys) [E.environmentSource bindings (E.envSnapshot values)] privateDeclaration of
+        S.ResolveResult (Left _) _ _ -> Left "email-private-inputs-unavailable"
+        S.ResolveResult (Right (apiKey, domain, sender)) _ _ -> do
+          credential <- either (const (Left "email-private-inputs-unavailable")) Right (Resend.resendCredentials apiKey)
+          senderAddress <- either (const (Left "email-private-inputs-unavailable")) Right (traverse Mail.address sender)
+          _ <- either (const (Left "email-private-inputs-unavailable")) Right (descriptors config domain senderAddress)
+          Right (PrivateValues credential domain senderAddress)
 
 resolvePrivate :: Bool -> Config -> IO (Either Text PrivateValues)
 resolvePrivate = resolvePrivateWith lookupEnv

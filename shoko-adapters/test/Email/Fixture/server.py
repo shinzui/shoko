@@ -120,9 +120,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(429 if fault == "once429" else int(fault), {"message": "ERROR-PRIVATE"})
             if fault == "slow":
                 time.sleep(0.4)
-                if select.select([self.connection], [], [], 0)[0] and self.connection.recv(1, socket.MSG_PEEK) == b"":
-                    with lock:
-                        state["disconnects"] += 1
+                if select.select([self.connection], [], [], 0)[0]:
+                    try:
+                        disconnected = self.connection.recv(1, socket.MSG_PEEK) == b""
+                    except (ConnectionResetError, OSError):
+                        disconnected = True
+                    if disconnected:
+                        with lock:
+                            state["disconnects"] += 1
             if fault == "invalid":
                 return self.reply(200, b'{"ERROR-PRIVATE":', True)
             if fault == "large":

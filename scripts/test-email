@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix="shoko-email-", dir="/tmp") as temporary
             raise SystemExit(result.returncode)
         wrapper = Path(os.environ.get("SHOKO_TEST_SMOKE_WRAPPER", str(root / "scripts/smoke-email")))
         host_check = Path(os.environ.get("SHOKO_TEST_EMAIL_HOST_CHECK", str(root / "scripts/test-email-host")))
-        subprocess.run([sys.executable, str(host_check), str(host), str(wrapper)], check=True, env=env)
+        subprocess.run([sys.executable, "-P", str(host_check), str(host), str(wrapper)], check=True, env=env)
         print("Bounded receiving and controlled sending fixture acceptance passed (loopback only).")
     finally:
         server.terminate()

@@ -127,3 +127,12 @@ builds should not be treated as pinned release builds.
 Revision 2026-10-19: move correlation declarations into scenarios, use handler-based
 compiled bindings, and demonstrate shared concrete workflows in independent and
 combined hosts with v2 reports.
+
+
+The separate native `shoko-email-smoke` example demonstrates typed email bindings and
+Settei declarations without depending on `shoko-cli` or extending workflow manifests.
+Its shared context-owned scenario is exercised through real loopback HTTP in
+`just test-email`. Inspection resolves operational settings and reference names only;
+execution checks policy before resolving private values and acquiring the reader.
+See [email verification](workflows/email-verification.md) for the explicit live command,
+finite budgets and approved test-account requirements.
