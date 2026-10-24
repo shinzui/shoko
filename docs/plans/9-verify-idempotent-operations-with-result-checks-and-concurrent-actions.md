@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-20T14:18:51Z
       mode: "update"
       note: "Apply API review: minimal result-check constraints, bounded evaluation and honest evidence, validated temporals, structured concurrent stages, and separate non-idempotent/race-only controls."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-24T03:15:49Z
+      mode: "implement"
+      note: "Implement sequential idempotency consumer, source-free result checks, concurrent stages, and schema v3 acceptance."
 ---
 
 # Verify idempotent operations with result checks and concurrent actions
@@ -103,7 +108,7 @@ the first claim with a working consumer before any API changes.
 
 ## Progress
 
-- [ ] Milestone 1: an in-memory idempotency consumer proves sequential retry, payload
+- [x] Milestone 1 (2026-10-24; `nix develop --command just test`: all 85 tests passed): an in-memory idempotency consumer proves sequential retry, payload
   conflict, Fail on duplicate effects, and Unknown on unavailable evidence with the
   current API; the response-agreement gap is recorded with a concrete example.
 - [ ] Milestone 2: `holds` and `agreeOn` result checks are inspectable, evaluated after
@@ -116,6 +121,12 @@ the first claim with a working consumer before any API changes.
 
 
 ## Surprises & Discoveries
+
+Implementation, 2026-10-24: the sequential consumer passes all seven idempotency
+cases without changing core. Comparing response IDs works only with a `SameOrder`
+observation, an additional handler, correlation selection, and a fabricated
+`fabricated-comparison` sampled source. Milestone 2 removes this artificial evidence
+and retains the comparison through `agreeOn`.
 
 API review, 2026-10-20: `Input` already carries `Typeable` dictionaries at reference
 leaves, and `evaluateInput` requires no dictionary for the combined result type.

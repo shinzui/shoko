@@ -6,6 +6,7 @@ import CoverageSpec qualified
 import FaultSpec qualified
 import HandlerSpec qualified
 import Hedgehog (property, withTests, (===))
+import IdempotencySpec qualified
 import PolicySpec qualified
 import ResultSpec qualified
 import RuntimeSpec qualified
@@ -24,6 +25,7 @@ main =
           withTests 1 $
             property $
               Shoko.version === "0.2.0.0",
+        IdempotencySpec.tests,
         ScenarioSpec.tests,
         ComposeSpec.tests,
         CorrelationSpec.tests,

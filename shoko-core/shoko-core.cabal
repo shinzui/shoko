@@ -88,11 +88,13 @@ test-suite shoko-core-test
     Consumer.Composed
     Consumer.DeliveryLedger
     Consumer.Hooks
+    Consumer.Idempotency
     CorrelationSpec
     CoverageSpec
     FaultSpec
     GoldenFixtures
     HandlerSpec
+    IdempotencySpec
     PolicySpec
     ResultSpec
     RuntimeSpec
