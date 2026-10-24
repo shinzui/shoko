@@ -88,10 +88,13 @@ tests =
         map (\(ResolvedCorrelation identity _) -> identity) resolved === [CorrelationId "invitee.registration", CorrelationId "account"]
         decodeRunResult (encodeRunResult (Verification report)) === Right (Verification report),
       check "a sibling's input cannot satisfy another instance's selection" $ do
+        crossWindow <- either (fail . show) pure (milliseconds 1)
         let source = scenario "cross-instance" "Explicit isolation" "1" $ do
               (_, first) <- namespace "first" C.registrationBlock
               (second, _) <- namespace "second" C.registrationBlock
-              expectAfterActions $ eventually "cross" $ correlatedBy first $ observe "exists" (C.Registered (fromRef second)) id
+              -- This unavailable sibling advances the shared fake clock. Close
+              -- it before the valid siblings' windows, regardless of scheduling.
+              expectAfterActions $ within crossWindow $ eventually "cross" $ correlatedBy first $ observe "exists" (C.Registered (fromRef second)) id
         VerificationResult {verdict = v, expectations = children} <- evalIO (run C.registrationBinding source)
         v === Unknown
         map (\ExpectationResult {verdict = result} -> result) children === [Pass, Pass, Unknown],

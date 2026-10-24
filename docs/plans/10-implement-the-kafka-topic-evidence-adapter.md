@@ -130,8 +130,11 @@ implementation passed all 63 Kafka groups in Linux Cabal at
 https://github.com/shinzui/shoko/actions/runs/40047314301, then failed the
 existing native workflow fixture because its generated executable used
 `/usr/bin/env`, unavailable inside the Linux sandbox. The fixture now uses
-`sys.executable`; Linux CI must accept that correction. M1 and M3 remain open
-only for the required Linux CI acceptance.
+`sys.executable`. The next run found a scheduling dependency in the existing
+correlation-isolation fixture: its unavailable sibling could advance the shared
+fake clock beyond the valid siblings’ equal deadlines. That check now has a
+shorter window, preserving all three expected verdicts independently of
+scheduling. M1 and M3 remain open only for required full Linux CI acceptance.
 
 Blocker history: on 2026-10-21 M1 was blocked because Hackage `hw-kafka-client` 5.3.0 could
 not construct an assign-only consumer, its EOF errors omitted partition identity, and its
@@ -158,6 +161,15 @@ remain in Surprises & Discoveries; they are not current release blockers.
 
 
 ## Surprises & Discoveries
+
+Correlation fixture discovery (2026-10-24): run
+https://github.com/shinzui/shoko/actions/runs/40049533466 failed the existing
+sibling-isolation test before reaching Kafka. Its intentionally unavailable
+expectation could advance a shared fake clock to the same cutoff used by valid
+siblings, causing one of their first reads to be skipped according to thread
+scheduling. A shorter window on the cross-instance expectation preserves the
+required `[Pass, Pass, Unknown]` result under either ordering. No production
+clock, runner behavior, or timeout was changed.
 
 Linux native fixture discovery (2026-10-24): the second run passed all 63
 Kafka groups and non-interference checks, then failed `checks.workflow-v2`
