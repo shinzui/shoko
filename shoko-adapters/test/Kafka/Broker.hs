@@ -262,7 +262,13 @@ tests broker =
           answer <- readEvents (callFor realClock base (H.plusMicros start 80000) (H.plusMicros start 10000000))
           finished <- now
           check (differenceMicros finished start < 1000000)
-          case answer of ObservationUnavailable "kafka-source-deadline" -> pure (); _ -> fail "silent broker produced evidence"
+          -- A native transport failure can win the race with the host timeout.
+          -- Both contracted outcomes must remain unavailable evidence.
+          case answer of
+            ObservationUnavailable reason -> do
+              putStrLn ("silent-broker result: " <> Text.unpack reason)
+              check (reason == "kafka-source-deadline" || reason == "kafka-source-unavailable")
+            _ -> fail "silent broker produced evidence"
           accepted
           closed,
       test "unreachable bootstrap is Unknown before mutation" $ do

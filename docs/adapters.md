@@ -215,8 +215,8 @@ named header instead. Kafka permits duplicate headers; the last occurrence wins,
 both for the configured header and for the `event-type` header that supplies the
 event type. Only records of the declared type are correlated. A missing or
 non-UTF-8 key or header, or a missing payload field, on such a record makes the
-observation unavailable; it never broadens the query. Record values are parsed
-as JSON only for correlated candidates. Execution-ID correlation is unsupported:
+observation unavailable; it never broadens the query. Malformed values in unrelated records are ignored; correlated candidates
+need valid JSON and the declared payload decoder. Execution-ID correlation is unsupported:
 `kafkaObservation` returns `Left ExecutionMetadataUnsupported`, and a stream or
 category scope returns `Left (UnsupportedEventScope ...)`.
 

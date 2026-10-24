@@ -98,11 +98,12 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
   unverified history, deadline with consumer release, outage before mutation, transactional
   visibility, truncation detection, and group/topic/offset non-interference all pass; CI is
   green.
-- [ ] M4 — Contract, documentation, and catalog integration: the workflow schema and offline
-  validator accept a `kafka` adapter and `kafka://` endpoints with tests; `docs/adapters.md`,
-  `docs/development.md`, `docs/dependencies.md`, `README.md`, and `mori.dhall` describe the
-  reader; the Kafka capability is recorded under the next free handle (CAP-13 at this
-  revision); ADR 0001, 0003, and 0004 carry the durable decisions; `just check-docs` passes.
+- [x] M4 — Contract, documentation, and catalog integration accepted
+  (2026-10-24): Kafka workflow declarations and endpoint validation pass, CAP-13
+  and the guides/ADRs describe the usable reader, and `just check-docs` validates
+  13 capabilities and 49 terms. `mori validate`, workflow tests, `just check`,
+  and `git diff --check` pass locally.
+
 
 Current handoff (2026-10-24): the upstream blocker is resolved by the published
 `rdkafka-hs` 1.0.0.1 release (tag object `33e2ab5f31be57e14c9820d4ad99032d3e9b41f1`,
@@ -123,9 +124,11 @@ and Apache Kafka 4.3.1 with JRE 17.0.19. M4 documentation and the CAP-13 record
 are implemented. The first native full flake run from the preceding checkpoint
 had ten-second workflow-test timeouts during parallel compilation; recheck that
 gate at the final candidate rather than treating the earlier failure as accepted.
-Remaining acceptance is the full broker suite, regression and native gates, and
-Linux CI on the pushed implementation. Milestones stay open until their required
-acceptance evidence is recorded below.
+All local acceptance gates now pass: the full broker suite, regression tests,
+and the native adapter and full flake checks. Linux CI on the pushed
+implementation is being rerun after correcting the portable silent-broker
+assertion; the first run is retained at
+https://github.com/shinzui/shoko/actions/runs/40045067775. M1 and M3 remain open only for the required Linux CI acceptance.
 
 Blocker history: on 2026-10-21 M1 was blocked because Hackage `hw-kafka-client` 5.3.0 could
 not construct an assign-only consumer, its EOF errors omitted partition identity, and its
@@ -152,6 +155,16 @@ remain in Surprises & Discoveries; they are not current release blockers.
 
 
 ## Surprises & Discoveries
+
+Linux fixture discovery (2026-10-24): the first Linux run passed 62 of 63
+Kafka groups and failed the silent-broker test's exact reason assertion. The
+acceptance requires unavailable evidence plus bounded return and socket release;
+a native transport failure may race with the host deadline. The fixture now
+accepts only the two contracted unavailable categories (`kafka-source-deadline`
+or `kafka-source-unavailable`), reports the fixed category, and retains both
+one-second timing/EOF bounds. It still rejects every observed outcome. Linux CI
+must pass this corrected assertion before M1/M3 completion.
+
 
 CI discovery (2026-10-24): repository Actions permissions reported
 `enabled: false`, so pushing the implementation did not schedule Linux checks.
@@ -493,8 +506,11 @@ history. The public reader's first 44-group broker slice passes with this fix.
 
 Implementation resumed on 2026-10-24 with the fixed 1.0.0.1 release. The
 client-backed reader, public runner contracts, and catalog/docs are implemented.
-All 63 Kafka groups and `just check-docs` pass locally; full regression, native
-checks, and Linux CI are being validated. The 1.0.0.0 header-order blocker is resolved,
+All 63 Kafka groups, the native adapter derivation, `just check-docs`, and the
+full local `just check` pass. Linux CI remains in progress. The local full check
+uses `NIX_CONFIG` with `max-jobs = 1` and `cores = 2` to avoid the previously
+observed parallel-build workflow-test contention; no test deadline or production
+request bound was relaxed. The 1.0.0.0 header-order blocker is resolved,
 and the scanner now preserves observed loss even across failed scans. Do not
 mark this plan complete until the full broker, native, regression, and Linux CI
 acceptance below is recorded. Durable client selection and loss semantics are
