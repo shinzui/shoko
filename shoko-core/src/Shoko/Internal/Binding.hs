@@ -38,7 +38,7 @@ data Source resource
       ![Bool]
 
 data Handler resource a
-  = ActionHandler !BindingContract (resource -> CallContext -> IO (ActionOutcome a))
+  = ActionHandler !BindingContract !Bool (resource -> CallContext -> IO (ActionOutcome a))
   | ObservationHandler
       !BindingContract
       !CorrelationRequirement

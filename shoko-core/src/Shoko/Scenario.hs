@@ -8,6 +8,7 @@ module Shoko.Scenario
     act,
     expect,
     namespace,
+    concurrently,
     expectAfterActions,
     hoistScenarioBuilder,
     correlate,
@@ -39,7 +40,7 @@ import Shoko.Observation
 import Shoko.Prelude
 
 data Step op where
-  Step :: (Typeable a) => !Text -> !Bool -> !(Action op a) -> Step op
+  Step :: (Typeable a) => !Text -> !Bool -> !(Maybe Text) -> !(Action op a) -> Step op
 
 data ScenarioBuilder op a where
   Pure :: a -> ScenarioBuilder op a
@@ -49,6 +50,7 @@ data ScenarioBuilder op a where
   AddDeferred :: Expectations op () -> ScenarioBuilder op ()
   AddCorrelation :: CorrelationAlias -> BusinessKeyName -> Input Text -> ScenarioBuilder op CorrelationRef
   AddExecution :: ScenarioBuilder op CorrelationRef
+  Concurrently :: Text -> ScenarioBuilder op a -> ScenarioBuilder op a
   Namespace :: Text -> ScenarioBuilder op a -> ScenarioBuilder op a
 
 instance Functor (ScenarioBuilder op) where
@@ -80,6 +82,11 @@ expect = AddExpectations
 namespace :: Text -> ScenarioBuilder op a -> ScenarioBuilder op a
 namespace = Namespace
 
+-- | Declare independent actions admitted together. Validation rejects other nodes
+-- and dependencies between members; bindings explicitly opt into concurrent calls.
+concurrently :: Text -> ScenarioBuilder op a -> ScenarioBuilder op a
+concurrently = Concurrently
+
 -- | Declare a consequence checked after every action in the finished scenario.
 expectAfterActions :: Expectations op () -> ScenarioBuilder op ()
 expectAfterActions = AddDeferred
@@ -102,7 +109,8 @@ data NodeDescription = NodeDescription
   { nodeId :: !Text,
     fixture :: !Bool,
     operation :: !OperationInfo,
-    acceptedOutcomes :: !(Set Text)
+    acceptedOutcomes :: !(Set Text),
+    group :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -138,31 +146,40 @@ data DefinitionError
   | EmptyExpectations
   | ConflictingOperation !Text
   | InvalidExpectationTemporal !Text
+  | InvalidConcurrentGroup !Text
   deriving stock (Eq, Show, Generic)
 
 -- Internal traversal assigns only symbolic references. It never invokes IO.
-data Entry op = StepEntry (Step op) | ExpectEntry Bool (Expectation op) | DeclarationEntry CorrelationDeclaration | InvalidNamespace
+data Entry op = StepEntry (Step op) | ExpectEntry Bool (Expectation op) | DeclarationEntry CorrelationDeclaration | InvalidNamespace | BeginGroup Text | EndGroup | InvalidGroup Text
 
-collect :: [Text] -> ScenarioBuilder op a -> (a, [Entry op])
-collect _ (Pure a) = (a, [])
-collect prefix (Bind program f) =
-  let (a, first) = collect prefix program
-      (b, second) = collect prefix (f a)
+collect :: [Text] -> Maybe Text -> ScenarioBuilder op a -> (a, [Entry op])
+collect _ _ (Pure a) = (a, [])
+collect prefix group (Bind program f) =
+  let (a, first) = collect prefix group program
+      (b, second) = collect prefix group (f a)
    in (b, first ++ second)
-collect prefix (AddStep key fixture action) =
+collect prefix group (AddStep key fixture action) =
   let qualified = Text.intercalate "." (prefix ++ [key])
-   in (Ref qualified, [InvalidNamespace | Text.null key] ++ [StepEntry (Step qualified fixture action)])
-collect prefix (AddExpectations es) = ((), invalidExpectationNames es ++ map (ExpectEntry True . qualifyExpectation prefix) (expectationList es))
-collect prefix (AddDeferred es) = ((), invalidExpectationNames es ++ map (ExpectEntry False . qualifyExpectation prefix) (expectationList es))
-collect prefix (Namespace label program) =
-  let (a, entries) = collect (prefix ++ [label]) program
+   in (Ref qualified, [InvalidNamespace | Text.null key] ++ forbidden group fixture ++ [StepEntry (Step qualified fixture group action)])
+collect prefix group (AddExpectations es) = ((), forbidden group True ++ invalidExpectationNames es ++ map (ExpectEntry True . qualifyExpectation prefix) (expectationList es))
+collect prefix group (AddDeferred es) = ((), forbidden group True ++ invalidExpectationNames es ++ map (ExpectEntry False . qualifyExpectation prefix) (expectationList es))
+collect prefix group (Namespace label program) =
+  let (a, entries) = collect (prefix ++ [label]) group program
    in (a, [InvalidNamespace | any Text.null (Text.splitOn "." label)] ++ entries)
-collect prefix (AddCorrelation alias key input) =
+collect prefix group (Concurrently label program) =
+  let qualified = Text.intercalate "." (prefix ++ [label])
+      (a, entries) = collect prefix (Just qualified) program
+   in (a, forbidden group True ++ [InvalidNamespace | any Text.null (Text.splitOn "." label)] ++ [BeginGroup qualified] ++ [InvalidGroup qualified | null [() | StepEntry (Step _ _ selected _) <- entries, selected == Just qualified]] ++ entries ++ [EndGroup])
+collect prefix group (AddCorrelation alias key input) =
   let local = correlationAliasText alias
       qualified = CorrelationId (Text.intercalate "." (prefix ++ [local]))
       invalid = local == "execution-id" || any Text.null (Text.splitOn "." local) || Text.null (businessKeyNameText key)
-   in (CorrelationRef qualified, [InvalidNamespace | invalid] ++ [DeclarationEntry (BusinessDeclaration qualified key input)])
-collect _ AddExecution = (CorrelationRef (CorrelationId "execution-id"), [DeclarationEntry ExecutionDeclaration])
+   in (CorrelationRef qualified, forbidden group True ++ [InvalidNamespace | invalid] ++ [DeclarationEntry (BusinessDeclaration qualified key input)])
+collect _ group AddExecution = (CorrelationRef (CorrelationId "execution-id"), forbidden group True ++ [DeclarationEntry ExecutionDeclaration])
+
+forbidden :: Maybe Text -> Bool -> [Entry op]
+forbidden (Just group) True = [InvalidGroup group]
+forbidden _ _ = []
 
 uniqueExecution :: [Entry op] -> [Entry op]
 uniqueExecution = go False
@@ -186,7 +203,7 @@ qualifyExpectation prefix (Expectation key t windows observation) =
 
 scenarioParts :: (Vocabulary op) => Scenario op -> Either [DefinitionError] (Description, [Step op], [Expectation op], [CorrelationDeclaration])
 scenarioParts (Scenario key title revision program) =
-  let (_, collected) = collect [] program
+  let (_, collected) = collect [] Nothing program
       entries = uniqueExecution collected
       declarations = [declaration | DeclarationEntry declaration <- entries]
       correlationDescriptions = [CorrelationDescription (declarationId d) (declarationKey d) (declarationStrategy d) (declarationDependencies d) | d <- declarations]
@@ -194,10 +211,10 @@ scenarioParts (Scenario key title revision program) =
       expectations = [e | ExpectEntry _ e <- entries]
       nodeDescriptions = map describeStep steps
       expectationDescriptions = map describeExpectation expectations
-      identifiers = key : map nodeKey nodeDescriptions ++ map expectationKey expectationDescriptions
+      identifiers = key : map nodeKey nodeDescriptions ++ map expectationKey expectationDescriptions ++ [group | BeginGroup group <- entries]
       errors =
-        validateEntries (Set.fromList (map nodeKey nodeDescriptions)) Set.empty False entries
-          ++ conflictingOperations (map (\(NodeDescription _ _ info _) -> info) nodeDescriptions ++ [info | ExpectationDescription _ _ _ (ObservationSubject info) _ _ <- expectationDescriptions])
+        validateEntries steps (Set.fromList (map nodeKey nodeDescriptions)) Set.empty Nothing False entries
+          ++ conflictingOperations (map (\(NodeDescription _ _ info _ _) -> info) nodeDescriptions ++ [info | ExpectationDescription _ _ _ (ObservationSubject info) _ _ <- expectationDescriptions])
           ++ duplicateErrors identifiers
           ++ duplicateErrors (map (correlationIdText . declarationId) declarations)
           ++ [InvalidIdentifier | any Text.null (title : revision : identifiers)]
@@ -206,14 +223,15 @@ scenarioParts (Scenario key title revision program) =
         then Right (Description key title revision nodeDescriptions expectationDescriptions correlationDescriptions, steps, expectations, declarations)
         else Left errors
   where
-    nodeKey (NodeDescription k _ _ _) = k
+    nodeKey (NodeDescription k _ _ _ _) = k
     expectationKey (ExpectationDescription k _ _ _ _ _) = k
-    describeStep (Step k fixture action) =
+    describeStep (Step k fixture group action) =
       NodeDescription
         k
         fixture
         (describeOperation (actionOperation action))
         (acceptedTags action)
+        group
     describeExpectation (ResultCheck k windows input test) = ExpectationDescription k Immediately windows (ResultSubject (inputDependencies input)) (predicateKey test) Nothing
     describeExpectation (Expectation k t windows observation) =
       ExpectationDescription
@@ -223,31 +241,41 @@ scenarioParts (Scenario key title revision program) =
         (ObservationSubject (describeOperation (observationOperation observation)))
         (predicateId observation)
         (correlationRefId <$> observationCorrelation observation)
-    validateEntries _ _ _ [] = []
-    validateEntries final known afterExpect (entry : rest) = case entry of
-      StepEntry (Step k _ action) ->
+    validateEntries _ _ _ _ _ [] = []
+    validateEntries members final known active afterExpect (entry : rest) = case entry of
+      StepEntry (Step k _ _ action) ->
         let info@(OperationInfo _ _ deps _) = describeOperation (actionOperation action)
          in [ActionAfterExpectations | afterExpect]
               ++ validateOperation info
               ++ [InvalidIdentifier | any Text.null (Set.toList (acceptedTags action))]
               ++ [EmptyOutcomeContract k | Set.null (acceptedTags action)]
-              ++ [UnresolvedReference dep | dep <- deps, Set.notMember dep known]
-              ++ validateEntries final (Set.insert k known) afterExpect rest
+              ++ case active of
+                Nothing -> [UnresolvedReference dep | dep <- deps, Set.notMember dep known]
+                Just (group, before) ->
+                  let memberIds = [identity | Step identity _ (Just selected) _ <- members, selected == group]
+                   in [InvalidConcurrentGroup group | any (`elem` memberIds) deps]
+                        ++ [UnresolvedReference dep | dep <- deps, dep `notElem` memberIds, Set.notMember dep before]
+              ++ validateEntries members final (Set.insert k known) active afterExpect rest
       ExpectEntry strict (ResultCheck _ _ input test) ->
         [InvalidIdentifier | not (validResultPredicate test)]
           ++ [UnresolvedReference dep | dep <- inputDependencies input, Set.notMember dep (if strict then known else final)]
-          ++ validateEntries final known (afterExpect || strict) rest
+          ++ validateEntries members final known active (afterExpect || strict) rest
       ExpectEntry strict (Expectation k temporal _ observation) ->
         let info@(OperationInfo _ _ deps _) = describeOperation (observationOperation observation)
          in validateOperation info
               ++ [InvalidExpectationTemporal k | temporal == Immediately]
               ++ [InvalidIdentifier | not (validPredicate observation)]
               ++ [UnresolvedReference dep | dep <- deps, Set.notMember dep (if strict then known else final)]
-              ++ validateEntries final known (afterExpect || strict) rest
+              ++ validateEntries members final known active (afterExpect || strict) rest
       DeclarationEntry declaration ->
         [UnresolvedReference dep | dep <- declarationDependencies declaration, Set.notMember dep known]
-          ++ validateEntries final known afterExpect rest
-      InvalidNamespace -> InvalidIdentifier : validateEntries final known afterExpect rest
+          ++ validateEntries members final known active afterExpect rest
+      BeginGroup group ->
+        [InvalidConcurrentGroup group | null [() | Step _ _ (Just selected) _ <- members, selected == group]]
+          ++ validateEntries members final known (Just (group, known)) afterExpect rest
+      EndGroup -> validateEntries members final known Nothing afterExpect rest
+      InvalidGroup group -> InvalidConcurrentGroup group : validateEntries members final known active afterExpect rest
+      InvalidNamespace -> InvalidIdentifier : validateEntries members final known active afterExpect rest
     validateOperation (OperationInfo opKey _ _ substeps) =
       [InvalidIdentifier | any Text.null (opKey : map fst substeps)] ++ duplicateErrors (map fst substeps)
     duplicateErrors = go Set.empty
@@ -274,6 +302,7 @@ hoistScenarioBuilder transform (Bind first next) = Bind (hoistScenarioBuilder tr
 hoistScenarioBuilder transform (AddStep key fixture action) = AddStep key fixture (hoistAction transform action)
 hoistScenarioBuilder transform (AddExpectations es) = AddExpectations (hoistExpectations transform es)
 hoistScenarioBuilder transform (AddDeferred es) = AddDeferred (hoistExpectations transform es)
+hoistScenarioBuilder transform (Concurrently label program) = Concurrently label (hoistScenarioBuilder transform program)
 hoistScenarioBuilder transform (Namespace label program) = Namespace label (hoistScenarioBuilder transform program)
 hoistScenarioBuilder _ (AddCorrelation alias key input) = AddCorrelation alias key input
 hoistScenarioBuilder _ AddExecution = AddExecution

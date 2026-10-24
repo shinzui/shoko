@@ -30,6 +30,8 @@ module Shoko.Binding
     sourceId,
     sourceCoverage,
     actionHandler,
+    allowConcurrentCalls,
+    handlerAllowsConcurrentCalls,
     observationHandler,
     focus,
     handlerKind,
@@ -123,34 +125,44 @@ sourceCoverage :: Source resource -> CoverageStrength
 sourceCoverage (Source _ strength _ _) = strength
 
 actionHandler :: BindingContract -> (resource -> CallContext -> IO (ActionOutcome a)) -> Handler resource a
-actionHandler = ActionHandler
+actionHandler contract = ActionHandler contract False
+
+-- | Promise reentrancy and safe coexistence with every opted-in action handler
+-- on this resource. Observation handlers are unchanged and report False.
+allowConcurrentCalls :: Handler resource a -> Handler resource a
+allowConcurrentCalls (ActionHandler contract _ perform) = ActionHandler contract True perform
+allowConcurrentCalls handler@ObservationHandler {} = handler
+
+handlerAllowsConcurrentCalls :: Handler resource a -> Bool
+handlerAllowsConcurrentCalls (ActionHandler _ concurrent _) = concurrent
+handlerAllowsConcurrentCalls ObservationHandler {} = False
 
 observationHandler :: BindingContract -> CorrelationRequirement -> Source resource -> (resource -> CallContext -> IO (ObservationOutcome a)) -> Handler resource a
 observationHandler = ObservationHandler
 
 focus :: (outer -> inner) -> Handler inner a -> Handler outer a
-focus project (ActionHandler contract perform) = ActionHandler contract (perform . project)
+focus project (ActionHandler contract concurrent perform) = ActionHandler contract concurrent (perform . project)
 focus project (ObservationHandler contract requirement (Source label strength capture owner) perform) =
   ObservationHandler contract requirement (Source label strength (capture . project) owner) (perform . project)
 
 handlerKind :: Handler resource a -> HandlerKind
-handlerKind (ActionHandler _ _) = ActionHandlerKind
+handlerKind (ActionHandler _ _ _) = ActionHandlerKind
 handlerKind (ObservationHandler _ _ _ _) = ObservationHandlerKind
 
 handlerSource :: Handler resource a -> Maybe (Source resource)
-handlerSource (ActionHandler _ _) = Nothing
+handlerSource (ActionHandler _ _ _) = Nothing
 handlerSource (ObservationHandler _ _ source _) = Just source
 
 handlerCorrelation :: Handler resource a -> Maybe CorrelationRequirement
-handlerCorrelation (ActionHandler _ _) = Nothing
+handlerCorrelation (ActionHandler _ _ _) = Nothing
 handlerCorrelation (ObservationHandler _ requirement _ _) = Just requirement
 
 handlerContract :: Handler resource a -> BindingContract
-handlerContract (ActionHandler contract _) = contract
+handlerContract (ActionHandler contract _ _) = contract
 handlerContract (ObservationHandler contract _ _ _) = contract
 
 adjustContract :: (BindingContract -> BindingContract) -> Handler resource a -> Handler resource a
-adjustContract f (ActionHandler contract perform) = ActionHandler (f contract) perform
+adjustContract f (ActionHandler contract concurrent perform) = ActionHandler (f contract) concurrent perform
 adjustContract f (ObservationHandler contract requirement source perform) = ObservationHandler (f contract) requirement source perform
 
 binding :: Text -> ((IO Disposition -> IO ()) -> IO resource) -> (resource -> IO Disposition) -> (forall a. OperationRole -> op a -> Either HandlerBuildError (Maybe (Handler resource a))) -> Binding op resource
@@ -186,6 +198,7 @@ data PolicyReport = PolicyReport
 data PreflightError
   = InvalidDefinition ![DefinitionError]
   | MissingHandler !Text
+  | ConcurrentCallsUnsupported !Text
   | MissingSource !Text
   | InconsistentSource !SourceId
   | HandlerConstructionFailed !Text !HandlerBuildError
@@ -291,7 +304,13 @@ resolveScenario
                       required,
                       sources
                     )
-      stepContract declaredCorrelations (Step _ fixture action) = requirements declaredCorrelations (if fixture then FixtureOperation else ActionOperation) (actionOperation action) False Nothing
+      stepContract declaredCorrelations (Step key fixture group action) =
+        let role = if fixture then FixtureOperation else ActionOperation
+            (errors, caps, sources) = requirements declaredCorrelations role (actionOperation action) False Nothing
+            concurrentErrors = case (group, lookupHandler role (actionOperation action)) of
+              (Just _, Right (Just handler)) -> [ConcurrentCallsUnsupported key | not (handlerAllowsConcurrentCalls handler)]
+              _ -> []
+         in (errors ++ concurrentErrors, caps, sources)
       expectationContract _ (ResultCheck _ _ _ _) = ([], Set.empty, [])
       expectationContract declaredCorrelations (Expectation _ _ _ observation) = requirements declaredCorrelations ObservationOperation (observationOperation observation) True (observationCorrelation observation)
       validTarget Nothing = True

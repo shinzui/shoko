@@ -1,12 +1,16 @@
 module Consumer.Idempotency where
 
+import Control.Concurrent.MVar
+import Control.Monad (when)
 import Data.IORef
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Shoko
 import Shoko.Clock
 import Shoko.Prelude (Generic, Text)
+import System.Timeout (timeout)
 import Text.Read (readMaybe)
 
 data Submission = Submission {orderId :: !Text, created :: !Bool}
@@ -28,19 +32,24 @@ data Behavior = Idempotent | NonIdempotent | RaceProne
 data OrdersResource = OrdersResource
   { ledger :: !(IORef (Map.Map Text (Text, Text))),
     history :: !(IORef [Text]),
-    sequenceNumber :: !(IORef Int)
+    sequenceNumber :: !(IORef Int),
+    arrivals :: !(IORef Int),
+    rendezvous :: !(MVar ())
   }
 
 ordersBinding :: Behavior -> Binding Orders OrdersResource
 ordersBinding behavior = ordersBindingWith behavior False
 
 ordersBindingWith :: Behavior -> Bool -> Binding Orders OrdersResource
-ordersBindingWith behavior unavailable = binding "orders" acquire (const (pure Cleaned)) handlers
+ordersBindingWith behavior unavailable = ordersBindingFor behavior unavailable 1
+
+ordersBindingFor :: Behavior -> Bool -> Int -> Binding Orders OrdersResource
+ordersBindingFor behavior unavailable participants = binding "orders" acquire (const (pure Cleaned)) handlers
   where
-    acquire _ = OrdersResource <$> newIORef Map.empty <*> newIORef [] <*> newIORef 0
+    acquire _ = OrdersResource <$> newIORef Map.empty <*> newIORef [] <*> newIORef 0 <*> newIORef 0 <*> newEmptyMVar
     handlers :: OperationRole -> Orders a -> Either HandlerBuildError (Maybe (Handler OrdersResource a))
     handlers FixtureOperation NewKey = Right (Just (actionHandler noRequirements (\_ _ -> pure (ActionObserved "issued" "key-1"))))
-    handlers ActionOperation (Submit key payload) = Right (Just (actionHandler noRequirements (submit key payload)))
+    handlers ActionOperation (Submit key payload) = Right (Just (allowConcurrentCalls (actionHandler noRequirements (submit key payload))))
     handlers ObservationOperation (OrderPlaced key) = Right (Just (observationHandler noRequirements (RequiresBusinessKey (BusinessKeyName "idempotencyKey")) source (poll key)))
     handlers _ _ = Right Nothing
     source = newSource (SourceId "orders.history") DurableHistory $ \resource (Clock now _ _ _) -> do
@@ -53,11 +62,27 @@ ordersBindingWith behavior unavailable = binding "orders" acquire (const (pure C
       case (resolvedKey, resolvedPayload) of
         (Right k, Right p) -> do
           candidate <- atomicModifyIORef' (sequenceNumber resource) (\n -> (n + 1, "order-" <> Text.pack (show n)))
-          (tag, result) <- atomicModifyIORef' (ledger resource) $ \entries ->
-            case (behavior, Map.lookup k entries) of
-              (NonIdempotent, _) -> (entries, ("created", Submission candidate True))
-              (_, Nothing) -> (Map.insert k (p, candidate) entries, ("created", Submission candidate True))
-              (_, Just (previous, original)) -> (entries, (if previous == p then "replayed" else "key-conflict", Submission original False))
+          (tag, result) <-
+            if behavior == RaceProne
+              then do
+                previous <- Map.lookup k <$> readIORef (ledger resource)
+                arrived <- atomicModifyIORef' (arrivals resource) (\n -> (n + 1, n + 1))
+                when (arrived >= participants) $ do
+                  _ <- tryPutMVar (rendezvous resource) ()
+                  pure ()
+                ready <- timeout 1000000 (readMVar (rendezvous resource))
+                case ready of
+                  Nothing -> fail "rendezvous timed out"
+                  Just () -> case previous of
+                    Nothing -> do
+                      atomicModifyIORef' (ledger resource) (\entries -> (Map.insert k (p, candidate) entries, ()))
+                      pure ("created", Submission candidate True)
+                    Just (previousPayload, original) -> pure (if previousPayload == p then "replayed" else "key-conflict", Submission original False)
+              else atomicModifyIORef' (ledger resource) $ \entries ->
+                case (behavior, Map.lookup k entries) of
+                  (NonIdempotent, _) -> (entries, ("created", Submission candidate True))
+                  (_, Nothing) -> (Map.insert k (p, candidate) entries, ("created", Submission candidate True))
+                  (_, Just (previous, original)) -> (entries, (if previous == p then "replayed" else "key-conflict", Submission original False))
           if created result then atomicModifyIORef' (history resource) (\rows -> (rows ++ [k], ())) else pure ()
           pure (ActionObserved tag result)
         _ -> pure (ActionUnavailable "missing-input")
@@ -101,3 +126,13 @@ checkEffect key = do
 
 evidenceWindow :: Duration
 evidenceWindow = either (error . Text.unpack) id (milliseconds 20)
+
+concurrentDuplicates :: Scenario Orders
+concurrentDuplicates = scenario "concurrent-duplicates" "Race duplicate orders" "v1" $ do
+  key <- given "key" (accept ["issued"] NewKey)
+  let attempt n = act ("attempt-" <> n) (accept ["created", "replayed"] (Submit (fromRef key) (pure "basket-1")))
+  (a, b, c) <- concurrently "burst" ((,,) <$> attempt "1" <*> attempt "2" <*> attempt "3")
+  expectAfterActions $ within evidenceWindow $ do
+    agreeOn "same-order" "orderId" orderId a (b :| [c])
+    holds "one-creation" (traverse fromRef (a :| [b, c])) (predicate "single-created" ((== 1) . length . NonEmpty.filter created))
+  checkEffect key

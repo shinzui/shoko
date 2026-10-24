@@ -119,7 +119,7 @@ renderDescription :: Description -> Text
 renderDescription description@(Description key title revision nodes expectations correlations) =
   Text.unlines
     ( ["Scenario " <> key <> " (" <> revision <> ")", title]
-        ++ ["node " <> identity <> ": " <> operation | NodeDescription identity _ (OperationInfo operation _ _ _) _ <- nodes]
+        ++ ["node " <> identity <> ": " <> operation <> maybe "" ("; concurrentGroup=" <>) group | NodeDescription identity _ (OperationInfo operation _ _ _) _ group <- nodes]
         ++ ["correlation " <> correlationIdText identity <> ": key=" <> businessKeyNameText semantic <> "; strategy=" <> Text.pack (show strategy) | CorrelationDescription identity semantic strategy _ <- correlations]
         ++ map expectationLine expectations
     )

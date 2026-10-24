@@ -1,6 +1,7 @@
 module Main (main) where
 
 import ComposeSpec qualified
+import ConcurrentSpec qualified
 import CorrelationSpec qualified
 import CoverageSpec qualified
 import FaultSpec qualified
@@ -29,6 +30,7 @@ main =
         IdempotencySpec.tests,
         ScenarioSpec.tests,
         ComposeSpec.tests,
+        ConcurrentSpec.tests,
         CorrelationSpec.tests,
         HandlerSpec.tests,
         TemporalSpec.tests,

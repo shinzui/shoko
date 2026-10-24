@@ -153,17 +153,18 @@ parseDescription = checked ["scenarioId", "title", "revision", "nodes", "expecta
     <*> list o "correlations" parseCorrelationDescription
 
 nodeValue :: NodeDescription -> Value
-nodeValue (NodeDescription key fixture operation outcomes) =
+nodeValue (NodeDescription key fixture operation outcomes group) =
   object
-    ["nodeId" .= key, "fixture" .= fixture, "operation" .= operationValue operation, "acceptedOutcomes" .= Set.toAscList outcomes]
+    ["nodeId" .= key, "fixture" .= fixture, "operation" .= operationValue operation, "acceptedOutcomes" .= Set.toAscList outcomes, "concurrentGroup" .= group]
 
 parseNode :: Value -> Parser NodeDescription
-parseNode = checked ["nodeId", "fixture", "operation", "acceptedOutcomes"] "node" $ \o ->
+parseNode = checked ["nodeId", "fixture", "operation", "acceptedOutcomes", "concurrentGroup"] "node" $ \o ->
   NodeDescription
     <$> o .: "nodeId"
     <*> o .: "fixture"
     <*> (o .: "operation" >>= parseOperation)
     <*> (Set.fromList <$> o .: "acceptedOutcomes")
+    <*> o .: "concurrentGroup"
 
 expectationDescriptionValue :: ExpectationDescription -> Value
 expectationDescriptionValue (ExpectationDescription key temporal windows subject predicate selected) =
@@ -456,6 +457,7 @@ preflightValue errors = object ["schemaVersion" .= (3 :: Int), "kind" .= ("prefl
   where
     render failure = case failure of
       InvalidDefinition definitionErrors -> object ["code" .= ("invalid-definition" :: Text), "details" .= map definitionValue definitionErrors]
+      ConcurrentCallsUnsupported key -> identified "concurrent-calls-unsupported" key
       MissingHandler key -> identified "missing-handler" key
       MissingSource key -> identified "missing-source" key
       InconsistentSource label -> identified "inconsistent-source" (sourceIdText label)
@@ -480,6 +482,7 @@ definitionValue problem = case problem of
   ActionAfterExpectations -> identified "action-after-expectations" ""
   EmptyOutcomeContract key -> identified "empty-outcome-contract" key
   ConflictingOperation key -> identified "conflicting-operation" key
+  InvalidConcurrentGroup key -> identified "invalid-concurrent-group" key
   InvalidExpectationTemporal key -> identified "invalid-expectation-temporal" key
   EmptyExpectations -> identified "empty-expectations" ""
 
@@ -497,6 +500,7 @@ parsePreflight = withObject "preflight-error" $ \o -> do
   if "id" `elem` fields then (o .: "id" :: Parser Text) >> pure () else pure ()
   case code of
     "invalid-definition" -> InvalidDefinition <$> list o "details" parseDefinition
+    "concurrent-calls-unsupported" -> ConcurrentCallsUnsupported <$> o .: "id"
     "missing-handler" -> MissingHandler <$> o .: "id"
     "missing-source" -> MissingSource <$> o .: "id"
     "inconsistent-source" -> InconsistentSource . SourceId <$> o .: "id"
@@ -522,6 +526,7 @@ parseDefinition = checked ["code", "id"] "definition-error" $ \o -> do
     "action-after-expectations" -> pure ActionAfterExpectations
     "empty-outcome-contract" -> EmptyOutcomeContract <$> o .: "id"
     "conflicting-operation" -> ConflictingOperation <$> o .: "id"
+    "invalid-concurrent-group" -> InvalidConcurrentGroup <$> o .: "id"
     "invalid-expectation-temporal" -> InvalidExpectationTemporal <$> o .: "id"
     "empty-expectations" -> pure EmptyExpectations
     _ -> fail "unknown definition code"

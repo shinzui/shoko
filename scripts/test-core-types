@@ -78,8 +78,10 @@ check False = fail "internal boundary assertion failed"
 data Op a where
   Seed :: Op Text
   Read :: Op Bool
+  Use :: Input Text -> Op Text
 instance Vocabulary Op where
   describeOperation Seed = declareOperation "seed" []
+  describeOperation (Use input) = dependsOn input (declareOperation "use" [])
   describeOperation Read = declareOperation "read" []
 
 polymorphicCheck :: Input a -> Predicate a -> Expectations op ()
@@ -142,7 +144,21 @@ main = do
   let resultDescription ds = Description "result" "Result digest" "1" [] [ExpectationDescription "check" Immediately [] (ResultSubject ds) "yes" Nothing] []
   check (Digest.descriptionDigest (resultDescription ["a", "b", "a"]) /= Digest.descriptionDigest (resultDescription ["a", "a", "b"]))
   check (Digest.descriptionDigest (resultDescription ["a", "a"]) /= Digest.descriptionDigest (resultDescription ["a"]))
-  putStrLn "internal correlation/reference/result boundaries passed"
+  let grouped = scenario "forward-group" "Group dependencies use entry state" "1" $ do
+        concurrently "burst" $ do
+          _ <- act "action" (accept ["ready"] Seed)
+          -- Existing symbolic references may point outside the group, but the
+          -- referenced node must already exist at group entry.
+          _ <- act "uses-later" (accept ["ready"] (Use (R.Reference (R.Ref "later"))))
+          pure ()
+        _ <- given "later" (accept ["ready"] Seed)
+        expect $ holds "yes" (pure True) (O.predicate "yes" id)
+  case inspectScenario grouped of
+    Left errors -> check (errors == [UnresolvedReference "later"])
+    Right _ -> fail "group accepted unavailable external node"
+  let nodeDescription group = Description "node-group" "Group identity" "1" [NodeDescription "node" False (declareOperation "seed" []) (Set.singleton "ready") group] [] []
+  check (Digest.descriptionDigest (nodeDescription Nothing) /= Digest.descriptionDigest (nodeDescription (Just "burst")))
+  putStrLn "internal correlation/reference/result/group boundaries passed"
 ''')
     probe = subprocess.run(
         ['cabal', 'exec', '--', 'runghc', '-XGHC2024', '-XDuplicateRecordFields',

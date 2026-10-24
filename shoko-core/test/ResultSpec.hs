@@ -83,9 +83,12 @@ tests =
                     ActionAfterExpectations,
                     EmptyOutcomeContract "action",
                     EmptyExpectations,
+                    InvalidExpectationTemporal "temporal",
+                    InvalidConcurrentGroup "group",
                     ConflictingOperation "conflicting-operation"
                   ],
                 MissingHandler "handler",
+                ConcurrentCallsUnsupported "member",
                 MissingSource "source",
                 SyntheticConsentRequired,
                 UnselectedCorrelation "op",

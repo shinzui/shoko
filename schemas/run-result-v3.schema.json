@@ -184,13 +184,20 @@
           },
           "minItems": 1,
           "uniqueItems": true
+        },
+        "concurrentGroup": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "nodeId",
         "fixture",
         "operation",
-        "acceptedOutcomes"
+        "acceptedOutcomes",
+        "concurrentGroup"
       ],
       "additionalProperties": false
     },
@@ -1164,7 +1171,8 @@
                       "empty-outcome-contract",
                       "empty-expectations",
                       "conflicting-operation",
-                      "invalid-expectation-temporal"
+                      "invalid-expectation-temporal",
+                      "invalid-concurrent-group"
                     ]
                   },
                   "id": {

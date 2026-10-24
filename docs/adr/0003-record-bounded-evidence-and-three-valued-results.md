@@ -174,3 +174,13 @@ unresolved, timed-out, and faulted checks have no evaluation time. Boolean
 forcing, including demanded projections and equality, stays inside the bounded
 exception boundary. Synchronous faults retain partial reports; cancellation
 propagates. Observation subjects cannot use `Immediately`.
+
+Concurrent-stage implementation, 2026-10-24: all group members are admitted
+behind a common start gate under nested asynchronous scopes. Each retains its
+own deadline, context, denied-access/substep records and timing. Ordinary member
+failures settle admitted siblings, retain declaration-order evidence, and suppress
+later stages and every expectation. Worker-local classification forces public
+summaries under the bounded synchronous-fault boundary so lazy faults cannot
+cancel siblings. External cancellation cancels and joins the group before resource
+finalization. Schema v3 and the v3 description digest retain nullable node group
+membership; concurrency does not enable automatic retries of mutations.

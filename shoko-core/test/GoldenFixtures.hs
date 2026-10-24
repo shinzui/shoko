@@ -19,7 +19,7 @@ resultFixtures = do
     accountRun
       ( scenario "toy-account" "Provision a toy account" "v3" $ do
           qualified <- given "agent" (accept ["ready"] Qualified)
-          created <- act "create" (accept ["created"] (Create (fromRef qualified) True))
+          created <- concurrently "creation" $ act "create" (accept ["created"] (Create (fromRef qualified) True))
           selected <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (fromRef created)
           expect $ do
             eventually "account-exists" (correlatedBy selected $ observe "is-created" (Created (fromRef created)) id)
@@ -55,7 +55,7 @@ accountRun selected includeIdentity = do
           "toy-binary-v1"
           (if includeIdentity then Just "toy-implementation-v1" else Nothing)
           (if includeIdentity then Just (TargetIdentity "toy-fixture" "toy-namespace-uid" "toy-build-v1") else Nothing)
-  case resolveScenario testEnvironment options (memoryBinding calls) selected of
+  case resolveScenario testEnvironment options (adjustHandlers (\role _ -> fmap (if role == ActionOperation then allowConcurrentCalls else id)) (memoryBinding calls)) selected of
     Left errors -> fail (show errors)
     Right resolved ->
       runScenario

@@ -111,7 +111,7 @@ the first claim with a working consumer before any API changes.
 - [x] Milestone 1 (2026-10-24; `nix develop --command just test`: all 85 tests passed): an in-memory idempotency consumer proves sequential retry, payload
   conflict, Fail on duplicate effects, and Unknown on unavailable evidence with the
   current API; the response-agreement gap is recorded with a concrete example.
-- [ ] Milestone 2: `holds` and `agreeOn` result checks are inspectable, evaluated after
+- [x] Milestone 2 (2026-10-24; `just check` passed, including all eight Nix checks): `holds` and `agreeOn` result checks are inspectable, evaluated after
   actions without an evidence source, and reported in result schema v3.
 - [ ] Milestone 3: `concurrently` groups run independent actions together behind a start
   barrier; preflight requires handlers that opt into concurrent calls; a deterministic
@@ -120,10 +120,10 @@ the first claim with a working consumer before any API changes.
   docs, catalogs, CHANGELOG, and ADRs 0002/0003 describe the new semantics.
 
 
-Milestone 2 implementation checkpoint, 2026-10-24: all 97 core tests,
-type-boundary probes, seven schema-v3 goldens, 51 CLI invocations, adapter checks,
-and documentation validation pass. The full `just check` reached its Nix package
-checks against the immutable Milestone 2 snapshot; that final build is still running.
+Milestone 3 implementation checkpoint, 2026-10-24: all 111 core tests, group
+reference/digest probes, and seven v3 goldens pass. The full concurrency test group
+passed 20 consecutive Cabal runs with no failures. Full adapter/CLI/Nix validation
+continues while the independent host and release documentation are completed.
 
 ## Surprises & Discoveries
 

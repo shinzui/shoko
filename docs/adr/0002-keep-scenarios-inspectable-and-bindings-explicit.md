@@ -191,3 +191,14 @@ at least two references. Both are source-free expectations activated once after
 all actions, including deferred declarations. Inspection retains their ordered
 node dependencies, predicate identity, and windows without evaluating values.
 They require no handler, source, capability, baseline, or correlation selection.
+
+Concurrent-stage implementation, 2026-10-24: a scenario has a fixed sequence of
+stages, each containing one ordinary action or a declared concurrent group of
+independent actions. Group labels are namespace-qualified inspection identities;
+member node IDs retain their ordinary namespace. Groups permit only actions,
+namespaces, pure values and binds. Fixtures, expectations, correlations, nested or
+empty groups, and member-to-member dependencies fail definition validation. Every
+member reads only pre-group values. Bindings explicitly promise reentrancy and
+coexistence on the shared resource using `allowConcurrentCalls`; preflight checks
+that promise before acquisition, and binding composition preserves it without
+granting it. No remote ordering, fairness, or overlap is implied by the start gate.

@@ -3,7 +3,8 @@
 
 module Shoko.Runner (runScenario) where
 
-import Control.Concurrent.Async (mapConcurrently)
+import Control.Concurrent.Async (mapConcurrently, wait, withAsync)
+import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar)
 import Control.Exception (SomeAsyncException, SomeException, evaluate, fromException, mask, throwIO, try)
 import Control.Monad (forM, forM_)
 import Data.Dynamic (toDyn)
@@ -14,6 +15,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Text qualified as Text
 import Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, liftIO, runEff)
 import Effectful.Dispatch.Dynamic (interpret, send)
 import Shoko.Action
@@ -49,7 +51,7 @@ runBinding approved selectedBinding resource =
       ( \_ -> \case
           ExecuteAction role context op ->
             case bindingHandler selectedBinding role op of
-              Right (Just (ActionHandler _ perform)) | permitted op -> liftIO (perform resource context)
+              Right (Just (ActionHandler _ _ perform)) | permitted op -> liftIO (perform resource context)
               _ -> pure (ActionUnavailable "undeclared-operation")
           ExecuteObservation context op ->
             case bindingHandler selectedBinding ObservationOperation op of
@@ -250,7 +252,7 @@ trySync action = do
     Right value -> pure (Right value)
 
 stepOperation :: (Vocabulary op) => Step op -> Text
-stepOperation (Step _ _ action) = case describeOperation (actionOperation action) of OperationInfo key _ _ _ -> key
+stepOperation (Step _ _ _ action) = case describeOperation (actionOperation action) of OperationInfo key _ _ _ -> key
 
 expectationOperation :: (Vocabulary op) => Expectation op -> Maybe Text
 expectationOperation ResultCheck {} = Nothing
@@ -283,7 +285,24 @@ runSteps ::
 runSteps approved binding resource runClock@(Clock now _ _ _) end propagated = go Map.empty []
   where
     go values results [] = pure (values, results, Nothing)
-    go values results (Step key fixture action : rest) = do
+    go values results (step@(Step _ _ group _) : rest) = do
+      let (stage, later) = case group of
+            Nothing -> ([step], rest)
+            Just label -> let (members, remaining) = span (inGroup label) rest in (step : members, remaining)
+      completed <- case group of
+        Nothing -> traverse (runOne Nothing values) stage
+        Just _ -> do
+          gate <- newEmptyMVar
+          let spawn [] workers = putMVar gate () >> traverse wait (reverse workers)
+              spawn (member : members) workers = withAsync (runOne (Just gate) values member) $ \worker -> spawn members (worker : workers)
+          spawn stage []
+      let next = foldl (\acc (value, _) -> maybe acc (\(key, dynamic) -> Map.insert key dynamic acc) value) values completed
+          evidence = map snd completed
+      if any ((/= Pass) . actionVerdict) evidence
+        then pure (next, results ++ evidence, Just PrerequisiteUnavailable)
+        else go next (results ++ evidence) later
+    inGroup label (Step _ _ group _) = group == Just label
+    runOne gate values (Step key fixture _ action) = do
       let op = actionOperation action
           info@(OperationInfo opKey _ _ _) = describeOperation op
           accepted = acceptedTags action
@@ -291,28 +310,47 @@ runSteps approved binding resource runClock@(Clock now _ _ _) end propagated = g
       substeps <- newIORef []
       denied <- newIORef Nothing
       let context = makeContext runClock end end values info Nothing Nothing propagated substeps denied
-      outcome <- attempt runClock end $ runBinding approved binding resource (send (ExecuteAction (if fixture then FixtureOperation else ActionOperation) context op))
+      outcome <- attempt runClock end $ do
+        maybe (pure ()) readMVar gate
+        entered <- now
+        if entered > end
+          then pure (Nothing, DeadlineExceeded, [], Nothing)
+          else do
+            observed <- runBinding approved binding resource (send (ExecuteAction (if fixture then FixtureOperation else ActionOperation) context op))
+            deniedAccess <- readIORef denied
+            substepResults <- readIORef substeps
+            let substepProblems = [problem | SubstepEvidence _ _ _ problem <- substepResults, problem /= Satisfied]
+                classified = case observed of
+                  ActionUnavailable _ -> Left SourceUnavailable
+                  ActionObserved received output -> validatedOutcome received output []
+                  ActionObservedWithDetails received output summaries -> validatedOutcome received output summaries
+                (tag, why, details, value) = case classified of
+                  Left failure -> (Nothing, failure, [], Nothing)
+                  Right (received, result, publicDetails) ->
+                    (Just received, if Set.member received accepted then Satisfied else Mismatch, publicDetails, Just (toDyn result))
+                finalReason = case (deniedAccess, substepProblems) of
+                  (Just _, _) -> UndeclaredOperation
+                  (_, problem : _) -> problem
+                  _ -> why
+            -- Force classification and public details inside the worker's exception
+            -- boundary so an ordinary fault cannot cancel already admitted siblings.
+            _ <- evaluate (finalReason `seq` maybe () (\name -> Text.length name `seq` ()) tag `seq` forcePublicDetails details)
+            pure (tag, finalReason, details, if finalReason == Satisfied then value else Nothing)
       finished <- now
-      deniedAccess <- readIORef denied
       substepResults <- readIORef substeps
-      let substepProblems = [substepReason | SubstepEvidence _ _ _ substepReason <- substepResults, substepReason /= Satisfied]
-          observedResult = case outcome of
-            Left failure -> Left failure
-            Right (ActionUnavailable _) -> Left SourceUnavailable
-            Right (ActionObserved received value) -> validatedOutcome received value []
-            Right (ActionObservedWithDetails received value safeDetails) -> validatedOutcome received value safeDetails
-          (tag, why, details) = case observedResult of
-            Left failure -> (Nothing, failure, [])
-            Right (observed, _, publicDetails) -> (Just observed, if Set.member observed accepted then Satisfied else Mismatch, publicDetails)
-          finalReason = case (outcome, deniedAccess, substepProblems) of
-            (Left failure, _, _) -> failure
-            (_, Just _, _) -> UndeclaredOperation
-            (_, _, []) -> why
-            (_, _, problem : _) -> problem
-          evidence = ActionEvidence key opKey (Set.toAscList accepted) tag started finished finalReason substepResults details
-      case (observedResult, finalReason) of
-        (Right (_, value, _), Satisfied) -> go (Map.insert key (toDyn value) values) (results ++ [evidence]) rest
-        _ -> pure (values, results ++ [evidence], Just PrerequisiteUnavailable)
+      let (tag, why, details, value) = case outcome of
+            Left failure -> (Nothing, failure, [], Nothing)
+            Right classified -> classified
+          evidence = ActionEvidence key opKey (Set.toAscList accepted) tag started finished why substepResults details
+      pure (fmap (key,) value, evidence)
+
+forcePublicDetails :: [(Text, PublicValue)] -> ()
+forcePublicDetails [] = ()
+forcePublicDetails ((key, value) : rest) = Text.length key `seq` forceValue value `seq` forcePublicDetails rest
+  where
+    forceValue (PublicChoice choice) = Text.length choice `seq` ()
+    forceValue (PublicCount count) = count `seq` ()
+    forceValue (PublicFlag flag) = flag `seq` ()
 
 makeContext ::
   Clock ->

@@ -46,6 +46,6 @@ combineBindings name left right = Binding name lifecycle acquire (const []) hand
     handlers role (InR op) = fmap (markOwner True . focus snd) <$> internalHandler right role op
 
 markOwner :: Bool -> Handler resource a -> Handler resource a
-markOwner _ handler@(ActionHandler _ _) = handler
+markOwner _ handler@(ActionHandler _ _ _) = handler
 markOwner side (ObservationHandler contract requirement (Source label strength capture path) perform) =
   ObservationHandler contract requirement (Source label strength capture (side : path)) perform
