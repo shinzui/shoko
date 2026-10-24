@@ -153,6 +153,14 @@ remain in Surprises & Discoveries; they are not current release blockers.
 
 ## Surprises & Discoveries
 
+CI discovery (2026-10-24): repository Actions permissions reported
+`enabled: false`, so pushing the implementation did not schedule Linux checks.
+Actions was enabled to run the existing CI workflow required by this plan;
+a subsequent plan-checkpoint push triggers that gate. The code checkpoint is
+`105fbf8`, with all 63 Kafka groups and strict catalog validation passing locally.
+Final native and Linux results remain required before completion.
+
+
 Release-source validation on 2026-10-21 found that the local corpus has fixes absent from
 the selected release. Hackage still lists 5.3.0 as the newest normal release; its upstream
 tag is `e80c3220c46f4b6b2a1cd5007fca5e6df7f22ba1`. In that tarball,
