@@ -209,7 +209,7 @@ in  Schema.Project::{
         , kind = Schema.DocKind.Guide
         , audience = Schema.DocAudience.Module
         , description = Some
-            "Typed descriptions, binding policy, bounded evidence, and result v2"
+            "Typed descriptions, binding policy, bounded evidence, result checks, concurrent stages, and result v3"
         , location = Schema.DocLocation.LocalFile "docs/core.md"
         }
       , Schema.DocRef::{

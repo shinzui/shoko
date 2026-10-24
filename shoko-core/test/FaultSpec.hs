@@ -42,12 +42,15 @@ tests =
             capture _ (Clock now _ _ _) _ = do
               tick <- now
               pure (Right (Baseline (SourceId "another-source") tick Nothing))
-        result <- evalIO (run (accountBindingWith (Hooks acquire release capture action observation)))
+        result <- evalIO (runSelected baselineScenario (accountBindingWith (Hooks acquire release capture action observation)))
         evalIO (readIORef calls) >>= (=== 1)
         case result of
           Verification VerificationResult {verdict = v, expectations = children} -> do
             v === Unknown
-            map (\ExpectationResult {reason = why} -> why) children === [InvalidEvidence]
+            map (\ExpectationResult {reason = why} -> why) children === [InvalidEvidence, InvalidEvidence]
+            case children of
+              [_, ExpectationResult _ Unknown InvalidEvidence (ResultEvidence (ResultCheckEvidence [] Nothing))] -> pure ()
+              _ -> fail "baseline failure fabricated result evaluation"
           _ -> fail "expected unavailable evidence",
       testPropertyNamed "a different business key cannot satisfy an observation" "wrongBusinessKey" $ withTests 1 $ property $ do
         calls <- evalIO (newIORef 0)
@@ -64,8 +67,16 @@ tests =
           _ -> fail "expected unavailable correlated evidence"
     ]
   where
-    run binding = do
+    run = runSelected accountScenario
+    runSelected selected binding = do
       (clock, _) <- newMicroClock (UTCTime (fromGregorian 2026 10 18) 0)
-      case resolveScenario ledgerEnvironment testOptions binding accountScenario of
+      case resolveScenario ledgerEnvironment testOptions binding selected of
         Left errors -> fail (show errors)
         Right resolved -> runScenario clock (LogicalInput "fault-v1" []) resolved
+
+baselineScenario :: Scenario Account
+baselineScenario = scenario "baseline-results" "Baseline failure suppresses result checks" "1" $ do
+  selected <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (pure "toy-key")
+  expect $ do
+    eventually "observed" (correlatedBy selected $ observe "exists" (Created (pure "toy-key")) id)
+    holds "result" (pure True) (predicate "true" id)

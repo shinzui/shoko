@@ -27,7 +27,7 @@ common common
 
   build-depends:
     base >=4.21 && <4.22,
-    shoko-core >=0.2 && <0.3,
+    shoko-core >=0.3 && <0.4,
     text >=2.1.4 && <2.2,
 
 library
@@ -77,7 +77,10 @@ executable shoko-consumer-host
   import: common
   hs-source-dirs: test/ConsumerHost
   main-is: Main.hs
-  other-modules: Registration
+  other-modules:
+    Idempotency
+    Registration
+
   ghc-options: -threaded
   build-depends:
     aeson >=2.2.4.1 && <2.4,

@@ -13,6 +13,10 @@ since: "unreleased"
 packages:
   - "shoko-core"
 interface:
+  - "Shoko.Expectation.holds"
+  - "Shoko.Expectation.agreeOn"
+  - "Shoko.Scenario.concurrently"
+  - "Shoko.Binding.allowConcurrentCalls"
   - "Shoko.scenario"
   - "Shoko.given"
   - "Shoko.act"
@@ -39,7 +43,7 @@ evidence:
 
 # Inspectable typed scenarios
 
-Consumers describe operations in a typed vocabulary and assemble a fixed sequence of fixtures and actions followed by temporal expectations. Named references carry typed outputs into later operations; inspection exposes public identifiers and requirements without running handlers.
+Consumers describe operations in a typed vocabulary and assemble a fixed sequence of fixture/action stages followed by observation expectations and source-free result checks. Named references carry typed outputs into later operations; inspection exposes public identifiers and requirements without running handlers.
 
 Reusable `ScenarioBuilder` blocks support lexical namespaces, named predicate composition, and deferred expectation declarations. Vocabulary sums and result-preserving hoists embed existing blocks; `combineBindings` combines component resource lifetimes. Scenario-owned correlation handles distinguish repeated instances of the same semantic business key.
 
@@ -50,3 +54,11 @@ The scenario structure is fixed before execution. Runtime branching and per-stag
 ## Use and evidence
 
 See the [core guide](../core.md) and [account consumer](../../shoko-core/test/Consumer/Account.hs).
+
+Result checks inspect ordered dependencies and predicate labels without exposing
+values. Concurrent groups inspect membership and reject member dependencies or
+non-action declarations. Each group handler explicitly promises concurrent-call
+safety; ordinary member failures retain admitted sibling evidence and block later
+stages. See [IdempotencySpec](../../shoko-core/test/IdempotencySpec.hs),
+[ResultCheckSpec](../../shoko-core/test/ResultCheckSpec.hs), and
+[ConcurrentSpec](../../shoko-core/test/ConcurrentSpec.hs).

@@ -184,3 +184,10 @@ summaries under the bounded synchronous-fault boundary so lazy faults cannot
 cancel siblings. External cancellation cancels and joins the group before resource
 finalization. Schema v3 and the v3 description digest retain nullable node group
 membership; concurrency does not enable automatic retries of mutations.
+
+Contract freeze, 2026-10-24: core 0.3 freezes schema v3 with result subjects,
+result-check evidence, `Immediately`, and nullable concurrent-group membership.
+The decoder accepts only v3. Completion after a result check's cutoff is
+Unknown/DeadlineExceeded with no completion time, even when timer delivery lags
+Boolean evaluation. The independent host exercises Pass/Fail and replay/race
+controls in JSON and text with private order-ID sentinels excluded from both.

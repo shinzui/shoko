@@ -395,6 +395,7 @@ runResultCheck runClock@(Clock now _ _ _) runEnd activation values (ResultCheck 
   let (verdict, reason, completed) = case outcome of
         Left why -> (Unknown, why, Nothing)
         Right Nothing -> (Unknown, PrerequisiteUnavailable, Nothing)
+        Right (Just (_, tick)) | tick > cutoff -> (Unknown, DeadlineExceeded, Nothing)
         Right (Just (answer, tick)) -> (if answer then Pass else Fail, if answer then Satisfied else Mismatch, Just tick)
   pure (ExpectationResult key verdict reason (ResultEvidence (ResultCheckEvidence (inputDependencies input) completed)))
 runResultCheck _ _ _ _ Expectation {} = error "observation dispatched as result check"

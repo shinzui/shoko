@@ -16,9 +16,13 @@ current vocabulary catalog.
 
 ## Scenario authoring
 
+- [concurrent group](concurrent-group.md) — A declared nonempty set of independent actions admitted together as one stage in a fixed scenario.
+- [idempotency key](idempotency-key.md) — A caller-supplied identity used to recognize repeated submissions of the same logical operation.
+- [result check](result-check.md) — A source-free expectation evaluated once over typed prior results or constants.
+
 - [action](action.md) — A scenario operation that may change the system and declares which domain outcomes are acceptable.
 - [composite action](composite-action.md) — An action implemented through named substeps declared in its operation description.
-- [expectation](expectation.md) — A named requirement that applies a temporal rule to an observation.
+- [expectation](expectation.md) — A named requirement over an observation or typed scenario results.
 - [fixture](fixture.md) — A scenario step that establishes a declared precondition before the workflow actions.
 - [input](input.md) — A typed description of a value supplied to an operation, possibly depending on earlier step results.
 - [observation](observation.md) — A read-only operation paired with a named predicate for deciding whether returned values match.

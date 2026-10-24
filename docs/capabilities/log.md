@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-24
+* **Idempotency**: Document source-free result checks, opted-in concurrent stages, and closed schema v3 results with implementation evidence.
 * **Addition**: Add CAP-13 for bounded Kafka topic evidence, with public-runner broker contracts, explicit history limits, and observer non-interference.
 
 ## 2026-10-23

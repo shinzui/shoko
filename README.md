@@ -171,3 +171,8 @@ The specification describes the broader direction and the validation records the
 
 Revision 2026-10-19: add reusable, namespaced workflow composition and explicit
 correlation selection to the public API outline.
+
+Sequential idempotency retries, source-free response comparisons (`holds`,
+`agreeOn`), and opted-in concurrent action groups are covered by the
+[core guide](docs/core.md#idempotency-scenarios) and
+[compiled host demonstrations](docs/scenario-hosts.md#idempotency-demonstrations).

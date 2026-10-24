@@ -31,7 +31,7 @@ evidence:
 
 # Execution policy preflight
 
-Resolution combines scenario requirements with the selected binding's declarations and checks the environment's permitted capability set. Synthetic operations also require per-run consent. Missing handlers or sources and unsupported correlation fail before scenario resource acquisition.
+Resolution combines scenario requirements with the selected binding's declarations and checks the environment's permitted capability set. Synthetic operations also require per-run consent. Concurrent action members require explicit handler opt-in before acquisition. Missing handlers or sources and unsupported correlation fail before scenario resource acquisition.
 
 ## Limits
 

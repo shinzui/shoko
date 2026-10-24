@@ -90,6 +90,83 @@ scenario concatenation or extraction API. Every wrapper owns its revision, which
 must change when the shared predicates or recipe change. Runs acquire fresh
 resources and produce separate reports.
 
+## Idempotency scenarios
+
+Sequential retries are ordinary `act` nodes that reuse an idempotency key. Name
+accepted replay and conflict tags explicitly. Compare responses with `agreeOn`,
+and separately count the durable side effect with `exactlyOnce`:
+
+```haskell
+key <- given "key" (accept ["issued"] NewKey)
+original <- act "original" (accept ["created"] (Submit (fromRef key) (pure "basket-1")))
+retry <- act "retry" (accept ["replayed"] (Submit (fromRef key) (pure "basket-1")))
+selected <- correlate (CorrelationAlias "order") (BusinessKeyName "idempotencyKey") (fromRef key)
+expect $ within evidenceWindow $ do
+  agreeOn "same-order" "orderId" orderId original (retry :| [])
+  exactlyOnce "one-effect" $ correlatedBy selected $
+    observeThat (OrderPlaced (fromRef key)) (predicate "placed" id)
+```
+
+Race duplicates in a declared group; returned references can feed ordinary
+post-action expectations:
+
+```haskell
+let attempt n = act ("attempt-" <> n) (accept ["created", "replayed"] (Submit (fromRef key) (pure "basket-1")))
+(a, b, c) <- concurrently "burst" ((,,) <$> attempt "1" <*> attempt "2" <*> attempt "3")
+expectAfterActions $ within evidenceWindow $ do
+  agreeOn "same-order" "orderId" orderId a (b :| [c])
+  holds "one-creation" (traverse fromRef (a :| [b, c]))
+    (predicate "single-created" ((== 1) . length . NonEmpty.filter created))
+```
+
+These snippets use `NonEmpty (..)` and qualified `Data.List.NonEmpty` imports.
+The complete vocabulary and runnable examples live in
+[`Consumer.Idempotency`](../shoko-core/test/Consumer/Idempotency.hs).
+`evidenceWindow` is a positive duration shorter than the execution budget,
+leaving time for the closing history read. `exactlyOnce` counts distinct evidence
+occurrences in complete durable history; it does not count remote executions.
+
+`holds key input predicate` checks any applicative `Input`, including constants
+and heterogeneous combinations, without a `Typeable` constraint on its result.
+`agreeOn key label project original others` requires a nonempty list of other
+references of the same type, compares projections without rendering values,
+and needs neither `Show` nor `Typeable` on the projection. Repeating one reference
+is legal but proves nothing about distinct calls. Its explicit projection label
+is part of inspection. Dependency order and duplicates are retained.
+
+Result checks require no handler, source, baseline, capability, or correlation.
+Their temporal is `Immediately`: one evaluation at the shared activation after
+all actions, including deferred checks. Nested `within` windows and the total
+execution deadline take their minimum; there is no polling or default eventually
+window. True is Pass, false is Fail, unavailable prerequisites and timeout are
+Unknown. Projection/predicate faults retain a sanitized partial runner report;
+asynchronous cancellation propagates. Evidence records only dependency IDs and
+nullable completion time; skipped, unresolved, faulted, and timed-out checks have
+no evaluation time. Observations cannot use `Immediately`.
+
+`concurrently label builder` allows actions, namespaces, pure values, and bind.
+It rejects fixtures, expectations, correlations, execution-ID declarations,
+nested/empty groups, and dependencies between group members. Members may read
+only values available before their group. Labels are namespace-qualified and
+share identifier uniqueness with nodes and expectations, while node IDs keep
+their ordinary namespaces. A singleton group is valid.
+
+Each member's action handler must use `allowConcurrentCalls`; otherwise preflight
+returns `ConcurrentCallsUnsupported` before acquisition. This promises both
+reentrant calls and safe coexistence with all other opted-in action handlers on
+the shared resource. `focus`, `adjustContract`, and `combineBindings` preserve the
+promise, and composition does not grant it. Applied to an observation handler,
+the helper is an identity and its accessor returns False.
+
+A group admits all members behind one start gate using the same prior values.
+It guarantees no remote ordering, fairness, or overlap. Admitted siblings settle
+after an ordinary member failure; evidence follows declaration order, later stages
+stop, and all expectations become unavailable. Every member remains bounded by
+the run deadline, and external cancellation cancels and joins workers before
+resource cleanup. Mutating actions are never retried automatically.
+
+## Running and reporting
+
 Inspection and resolution are pure; execution uses the single bounded runner:
 
 ```haskell
@@ -223,7 +300,7 @@ failure makes an otherwise passing result Unknown and preserves an existing Fail
 Real cancellation attempts finalization within the same finite grace and then
 remains cancellation.
 
-`encodeRunResult` and `decodeRunResult` own explicit v2 fields and tags. The decoder
+`encodeRunResult` and `decodeRunResult` own explicit v3 fields and tags. The decoder
 checks the version, known fields/tags, typed values, and description digest; decode
 errors omit input fragments. The digest is SHA-256 of a versioned fixed-order JSON
 array of public description fields, with counts delimiting variable sequences.
@@ -247,3 +324,5 @@ git diff -- shoko-core/test/golden/
 
 Revision 2026-10-19: document composable builders, handler-owned sources, explicit
 correlation instances, vocabulary hoisting, typed boundaries, and result v2.
+
+Revision 2026-10-24: document result checks, concurrent action stages, handler opt-in, and result schema v3.

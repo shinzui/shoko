@@ -103,6 +103,7 @@
               export SHOKO_CONFIG_SCHEMA=${./schemas/config-v1.schema.json}
               export SHOKO_RESULT_SCHEMA=${./schemas/run-result-v3.schema.json}
               export SHOKO_DEMO_CONFIG=${./config/demo.yaml}
+              export SHOKO_IDEMPOTENCY_CONFIG=${./config/idempotency-demo.yaml}
               python ${./scripts/test-cli} --binaries dist/build
               runHook postCheck
             '';

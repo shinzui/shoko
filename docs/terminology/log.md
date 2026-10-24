@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-24
+* **Idempotency**: Define TERM-50 idempotency key, TERM-51 result check, and TERM-52 concurrent group, with public API anchors and bounded execution semantics; align expectation, scenario, and runner definitions.
+
 ## 2026-10-21
 * **Kafka topics**: Extend TERM-2 and TERM-16 to name Kafka retention, compaction, partition ends, and sticky history loss as durable-history conditions.
 

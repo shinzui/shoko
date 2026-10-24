@@ -14,9 +14,9 @@ Runtime permission grants such as `ReadState` have a separate meaning; see
 
 | ID | Capability | What it provides |
 | --- | --- | --- |
-| CAP-1 | [Inspectable typed scenarios](inspectable-typed-scenarios.md) | Define typed workflow scenarios and inspect their declared operations, dependencies, outcomes, and expectations without executing them. |
+| CAP-1 | [Inspectable typed scenarios](inspectable-typed-scenarios.md) | Define typed workflow scenarios and inspect their declared operations, concurrent groups, dependencies, outcomes, and source-free result checks without executing them. |
 | CAP-2 | [Execution policy preflight](execution-policy-preflight.md) | Reject invalid bindings, denied permissions, unsupported correlation, production execution, and missing synthetic consent before acquiring scenario resources. |
-| CAP-3 | [Bounded evidence verification](bounded-evidence-verification.md) | Execute scenarios with finite deadlines, correlated evidence, three temporal assertions, and bounded cleanup while preserving uncertain outcomes. |
+| CAP-3 | [Bounded evidence verification](bounded-evidence-verification.md) | Execute scenarios with finite deadlines, correlated observations, source-free result checks, concurrent stages, and bounded cleanup while preserving uncertain outcomes. |
 | CAP-4 | [Versioned result contract with explicit public summaries](versioned-private-result-contract.md) | Encode and decode versioned verification results with explicit safe summaries, description identity, and partial evidence for faults. |
 | CAP-5 | [Scoped PostgreSQL evidence](scoped-postgresql-evidence.md) | Observe business-key-scoped PostgreSQL state through typed parameterized queries and read-only transactions bounded by the remaining run budget. |
 | CAP-6 | [Allowlisted HTTP operations](allowlisted-http-operations.md) | Perform declared HTTP actions and business-key-scoped GET observations with explicit domain decoding, finite limits, and safe evidence. |

@@ -1,7 +1,7 @@
 ---
 type: "Term"
 title: "expectation"
-description: "A named requirement that applies a temporal rule to an observation."
+description: "A named requirement over an observation or typed scenario results."
 generated:
   by: "openai/gpt-6"
   at: "2026-10-19T02:45:50Z"
@@ -22,9 +22,9 @@ anchors:
 
 # expectation
 
-A named requirement that applies a temporal rule to an observation.
+A named requirement over an observation or typed scenario results.
 
-For example, an account must eventually exist, or a delivery event must occur exactly once in a finite window. Sibling expectations share one activation time and run concurrently. Each retains its own verdict and evidence in the result.
+Result checks evaluate once after actions without an observation source. For example, an account must eventually exist, or a delivery event must occur exactly once in a finite window. Sibling expectations share one activation time and run concurrently. Each retains its own verdict and evidence in the result.
 
 See the [implementation or guide](../../shoko-core/src/Shoko/Expectation.hs).
 

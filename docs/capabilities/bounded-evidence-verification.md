@@ -38,7 +38,7 @@ evidence:
 
 # Bounded evidence verification
 
-The runner captures source baselines before fixtures and actions, resolves declared inputs, and runs sibling expectations concurrently. It supports business-key correlation, including a key returned by an action, and execution-ID correlation when a binding explicitly supports propagation. Handlers and declared composite substeps share finite execution deadlines.
+The runner captures source baselines before fixtures and actions, resolves declared inputs, and runs sibling expectations concurrently. Source-free result checks evaluate once from prior values, and declared concurrent action groups retain admitted sibling evidence after ordinary failures. It supports business-key correlation, including a key returned by an action, and execution-ID correlation when a binding explicitly supports propagation. Handlers and declared composite substeps share finite execution deadlines.
 
 `eventually`, `never`, and `exactlyOnce` evaluate bounded evidence. Fail dominates Unknown, which dominates Pass. Expected typed domain rejections can pass a negative scenario. Required cleanup has its own finite grace; cancellation still propagates after finalization is attempted.
 

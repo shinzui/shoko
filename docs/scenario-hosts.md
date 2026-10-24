@@ -29,7 +29,7 @@ nix develop --command cabal run shoko-consumer-host -- run registration-reused -
 
 Explanation shows `inviter.qualified`, `invitee.qualified`, the correlation IDs
 `inviter.registration`, `invitee.registration`, and `account`, their semantic keys,
-and each expectation's selection. Runs exit 0 with schema-valid v2 reports. The
+and each expectation's selection. Runs exit 0 with schema-valid v3 reports. The
 composed report resolves two distinct registrations and the invitee's account.
 Each standalone process starts its fixture allocation at one, with independent
 scenario and run IDs. These are in-memory verifier examples.
@@ -110,7 +110,7 @@ Do not put secret values directly into YAML. Optional `target.name`,
 `redaction.extraFields` can remove additional logical-parameter/supporting-data
 fields by name; it cannot enable raw payload rendering or disable mandatory secrecy.
 
-JSON run output is exactly one core v2 document on stdout; diagnostics use stderr.
+JSON run output is exactly one core v3 document on stdout; diagnostics use stderr.
 Text output starts with the verdict and retains expectation reasons, source,
 correlation, searched intervals, and disposition. Exit codes are 0 Pass, 1 Fail,
 2 usage/configuration/policy/target preflight, 3 Unknown, and 4 runner/command fault.
@@ -126,7 +126,7 @@ builds should not be treated as pinned release builds.
 
 Revision 2026-10-19: move correlation declarations into scenarios, use handler-based
 compiled bindings, and demonstrate shared concrete workflows in independent and
-combined hosts with v2 reports.
+combined hosts with v3 reports.
 
 
 The separate native `shoko-email-smoke` example demonstrates typed email bindings and
@@ -140,3 +140,22 @@ finite budgets and approved test-account requirements.
 Hosts using `Shoko.Adapter.Kafka` must build executables with `ghc-options: -threaded`
 for the `rdkafka-hs` callback machinery. The managed shell supplies librdkafka headers
 and libraries; see [dependency evidence](dependencies.md#kafka-selection).
+
+## Idempotency demonstrations
+
+The independent host owns `idempotent-retry` and `concurrent-duplicates` in
+[`Idempotency.hs`](../shoko-cli/test/ConsumerHost/Idempotency.hs).
+
+```bash
+nix develop --command cabal run shoko-consumer-host -- explain concurrent-duplicates --config config/idempotency-demo.yaml
+nix develop --command cabal run shoko-consumer-host -- run idempotent-retry --config config/idempotency-demo.yaml
+SHOKO_IMPLEMENTATION=non-idempotent nix develop --command cabal run shoko-consumer-host -- run concurrent-duplicates --config config/idempotency-demo.yaml
+SHOKO_IMPLEMENTATION=race-prone nix develop --command cabal run shoko-consumer-host -- run concurrent-duplicates --config config/idempotency-demo.yaml
+```
+
+Both scenarios Pass/exit 0 with `demo` and Fail/exit 1 with `non-idempotent`.
+The `race-prone` control passes sequential retries but fails all three concurrent
+invariants. A bounded test rendezvous makes that race deterministic. Explanation
+shows group membership and source-free result checks without running operations.
+The config grants `ReadEvents`; short evidence windows leave execution time for
+history closure. These examples verify local in-memory services only.

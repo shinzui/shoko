@@ -1,6 +1,6 @@
 cabal-version: 3.12
 name: shoko-core
-version: 0.2.0.0
+version: 0.3.0.0
 synopsis: Evidence-based distributed workflow verification
 description:
   Inspectable typed workflow descriptions, capability preflight, and a bounded

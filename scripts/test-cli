@@ -23,6 +23,7 @@ else:
 
 config_schema_path = Path(os.environ.get("SHOKO_CONFIG_SCHEMA", root / "schemas/config-v1.schema.json"))
 result_schema_path = Path(os.environ.get("SHOKO_RESULT_SCHEMA", root / "schemas/run-result-v3.schema.json"))
+idempotency_demo = str(os.environ.get("SHOKO_IDEMPOTENCY_CONFIG", root / "config/idempotency-demo.yaml"))
 demo = str(os.environ.get("SHOKO_DEMO_CONFIG", root / "config/demo.yaml"))
 schema = json.loads(config_schema_path.read_text())
 Draft202012Validator.check_schema(schema)
@@ -38,6 +39,7 @@ def call(binary, args, code=0, extra=None, result=False):
     completed = subprocess.run([str(binary), *args], env=clean | (extra or {}), capture_output=True, text=True, timeout=15)
     assert completed.returncode == code, (args, completed.returncode, completed.stdout, completed.stderr)
     assert secret not in completed.stdout + completed.stderr
+    assert "SECRET-ORDER-" not in completed.stdout + completed.stderr
     assert "PRIVATE-DEMO-FAULT-SENTINEL" not in completed.stdout + completed.stderr
     if result:
         document = json.loads(completed.stdout)
@@ -91,6 +93,25 @@ for name in ("registration-alone", "registration-reused"):
     standalone.append(result)
 assert standalone[0]["runId"] != standalone[1]["runId"]
 assert standalone[0]["description"]["scenarioId"] != standalone[1]["description"]["scenarioId"]
+
+# Process-level idempotency controls use only the independent installed consumer.
+explained_orders = json.loads(call(host, ["explain", "concurrent-duplicates", "--config", idempotency_demo, "--format", "json"]).stdout)["description"]
+assert [node["concurrentGroup"] for node in explained_orders["nodes"] if not node["fixture"]] == ["burst"] * 3
+assert [check["subject"]["kind"] for check in explained_orders["expectations"]] == ["result", "result", "observation"]
+text_orders = call(host, ["explain", "concurrent-duplicates", "--config", idempotency_demo]).stdout
+assert "same-order immediately orderId:(agree) from attempt-1,attempt-2,attempt-3" in text_orders
+for name in ("idempotent-retry", "concurrent-duplicates"):
+    for implementation, expected_code in (("demo", 0), ("non-idempotent", 1), ("race-prone", 0 if name == "idempotent-retry" else 1)):
+        document = json.loads(call(host, ["run", name, "--config", idempotency_demo, "--format", "json"], expected_code,
+                                   extra={"SHOKO_IMPLEMENTATION": implementation}, result=True).stdout)
+        assert document["schemaVersion"] == 3
+        assert document["report"]["verdict"] == ("pass" if expected_code == 0 else "fail")
+        # Text reports have the same private-value boundary as JSON.
+        text = call(host, ["run", name, "--config", idempotency_demo], expected_code,
+                    extra={"SHOKO_IMPLEMENTATION": implementation}).stdout
+        assert text.startswith("Pass\n" if expected_code == 0 else "Fail\n")
+        if name == "concurrent-duplicates" and implementation == "race-prone":
+            assert [check["reason"] for check in document["report"]["expectations"]] == ["mismatch"] * 3
 
 with tempfile.TemporaryDirectory(prefix="shoko-cli-") as temporary:
     owned = Path(temporary)
@@ -164,4 +185,4 @@ validator.validate({})
 validator.validate({"policy": {"executionMs": 100, "capabilities": ["ReadState"]}})
 for invalid in ({"policy": {"executionMs": 0}}, {"allowSynthetic": True}, {"output": {"format": "xml"}}):
     assert not validator.is_valid(invalid)
-print(f"CLI process protocol passed {checks} invocations, all five exits, independent positive/negative/composed hosts, fresh workflow instances, schema keys, secrets, and atomic persistence.")
+print(f"CLI process protocol passed {checks} invocations, all five exits, independent positive/negative/composed/idempotency hosts, fresh workflow instances, schema keys, secrets, and atomic persistence.")

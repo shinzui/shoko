@@ -45,4 +45,4 @@ import Shoko.Scenario (Scenario, ScenarioBuilder, act, concurrently, correlate, 
 
 -- | Version of the public core package.
 version :: Text
-version = "0.2.0.0"
+version = "0.3.0.0"

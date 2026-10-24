@@ -23,7 +23,7 @@ evidence:
     proves: "Round trips, strict decoding, description digest checks, and secret-sentinel exclusions."
   - kind: "conformance"
     resource: "schemas/run-result-v3.schema.json"
-    proves: "The public version 2 JSON structure."
+    proves: "The public version 3 JSON structure."
   - kind: "example"
     resource: "shoko-core/test/golden/unknown.json"
     proves: "A retained uncertain verification report with evidence."
@@ -31,7 +31,7 @@ evidence:
 
 # Versioned result contract with explicit public summaries
 
-The v2 result format separates verification, preflight failure, and runner fault. Reports retain action outcomes, expectation reasons, source and correlation information, timing, cleanup disposition, and available partial evidence. A digest identifies the public scenario description separately from logical input and build identity.
+The v3 result format separates verification, preflight failure, and runner fault. Reports retain action outcomes, expectation reasons, source and correlation information, timing, cleanup disposition, and available partial evidence. A digest identifies the public scenario description separately from logical input and build identity.
 
 Only explicit public choices, counts, and flags cross the result boundary. Raw typed operation values have no automatic serialization path. The decoder checks versions, known fields and tags, typed values, and description digest consistency.
 
@@ -42,3 +42,9 @@ A binding or host author must choose non-secret public identifiers and summaries
 ## Use and evidence
 
 See the [core report guide](../core.md), [schema](../../schemas/run-result-v3.schema.json), and [golden fixtures](../../shoko-core/test/golden/README.md).
+
+Expectation subjects and evidence have closed observation/result alternatives.
+Result evidence contains ordered node dependencies and a nullable evaluation time,
+without compared values. Node descriptions retain nullable concurrent-group labels.
+The v3 description digest includes subject kinds, dependencies, and group membership;
+the decoder rejects v2 and invalid temporal/subject combinations.

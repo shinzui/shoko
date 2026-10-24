@@ -53,6 +53,7 @@ tests =
         result <- evalIO $ run $ do
           key <- given "key" (accept ["unexpected"] NewKey)
           expect $ holds "skipped" (fromRef key) (predicate "present" (/= ""))
+        decodeRunResult (encodeRunResult result) === Right result
         children result === [ExpectationResult "skipped" Unknown PrerequisiteUnavailable (ResultEvidence (ResultCheckEvidence ["key"] Nothing))],
       testPropertyNamed "projection and equality exceptions retain sanitized partial reports" "exceptions" $ once $ do
         mapM_
@@ -71,6 +72,14 @@ tests =
       testPropertyNamed "nested windows bound a single evaluation without polling" "bounded" $ once $ do
         result <- evalIO $ run $ expect $ within (duration 200) $ within (duration 20) $ holds "slow" (pure ()) (predicate "blocked" slow)
         children result === [ExpectationResult "slow" Unknown DeadlineExceeded (ResultEvidence (ResultCheckEvidence [] Nothing))],
+      testPropertyNamed "completion after the cutoff cannot pass" "lateCompletion" $ once $ do
+        ticks <- evalIO (newIORef (MonotonicTime 0))
+        let Clock _ wall _ _ = realClock
+            clock = Clock (readIORef ticks) wall (const (pure ())) (\_ action -> Just <$> action)
+            late answer = unsafePerformIO (writeIORef ticks (MonotonicTime 30000) >> pure answer)
+            selected = orders $ expect $ within (duration 20) $ holds "late" (pure True) (predicate "late" late)
+        result <- evalIO $ execute clock (ordersBinding Idempotent) selected
+        children result === [ExpectationResult "late" Unknown DeadlineExceeded (ResultEvidence (ResultCheckEvidence [] Nothing))],
       testPropertyNamed "predicate leaf validation includes projection labels" "labels" $ once $ do
         assert (isLeft (inspectScenario (orders $ expect $ holds "bad" (pure True) (onPart "bad label" id (predicate "yes" id))))),
       testPropertyNamed "unresolved sibling correlation leaves result checks running" "siblingCorrelation" $ once $ do

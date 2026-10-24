@@ -113,17 +113,12 @@ the first claim with a working consumer before any API changes.
   current API; the response-agreement gap is recorded with a concrete example.
 - [x] Milestone 2 (2026-10-24; `just check` passed, including all eight Nix checks): `holds` and `agreeOn` result checks are inspectable, evaluated after
   actions without an evidence source, and reported in result schema v3.
-- [ ] Milestone 3: `concurrently` groups run independent actions together behind a start
+- [x] Milestone 3 (2026-10-24; all 112 core tests, 20 consecutive final-tree concurrency runs, and the full `just check` passed): `concurrently` groups run independent actions together behind a start
   barrier; preflight requires handlers that opt into concurrent calls; a deterministic
   race-prone binding fails and an atomic one passes.
-- [ ] Milestone 4: the consumer host demonstrates Pass and Fail through the CLI, and
+- [x] Milestone 4 (2026-10-24; 65 CLI invocations, all eight native Nix checks, and `just check-docs` with 13 capabilities and 52 terms passed): the consumer host demonstrates Pass and Fail through the CLI, and
   docs, catalogs, CHANGELOG, and ADRs 0002/0003 describe the new semantics.
 
-
-Milestone 3 implementation checkpoint, 2026-10-24: all 111 core tests, group
-reference/digest probes, and seven v3 goldens pass. The full concurrency test group
-passed 20 consecutive Cabal runs with no failures. Full adapter/CLI/Nix validation
-continues while the independent host and release documentation are completed.
 
 ## Surprises & Discoveries
 
@@ -151,6 +146,14 @@ The proposed race-only service should pass sequential retries. It cannot serve a
 CLI's always-failing implementation for both scenarios. Milestone 4 now separates
 `NonIdempotent` from `RaceProne`. A common start gate permits concurrent execution but
 does not prove handler overlap; deterministic race tests need their own rendezvous.
+
+Implementation, 2026-10-24: Boolean completion is checked against the cutoff
+as well as the clock's bounded-call result. A deliberately late completion at
+30,000 microseconds for a 20,000-microsecond window remains
+`Unknown/DeadlineExceeded` with `evaluatedAt = Nothing`. This avoids letting
+late timer delivery turn an expired comparison into Pass. The independent host
+also uses private `SECRET-ORDER-` values; all 65 JSON/text process checks exclude
+them from output.
 
 Schema and release integration also needs edits outside the original file list:
 `flake.module.nix` embeds the v2 schema path in two checks, while both
@@ -223,9 +226,36 @@ Schema and release integration also needs edits outside the original file list:
   Date: 2026-10-20
 
 
+- Decision: Freeze schema v3 with observation/result subjects and evidence, nullable
+  result completion times, `Immediately`, and nullable node concurrent-group membership.
+  Rationale: the core consumer, seven goldens, strict decoder/schema probes, and 65
+  independent-host CLI invocations now exercise the complete contract. Core 0.3 and
+  the first-party dependency bounds move together; v2 is historical only.
+  Date: 2026-10-24
+
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Completed 2026-10-24. Core 0.3 provides inspectable `holds` and `agreeOn`
+checks over private typed results, declared concurrent action stages with binding
+opt-in, and schema v3 with truthful completion evidence and group membership.
+The independent host demonstrates sequential replay and concurrent duplicates:
+atomic handling passes both, non-idempotent handling fails both, and the
+check-then-insert control passes sequential retry but fails all three concurrent
+invariants. JSON and text exclude private order-ID sentinels.
+
+Validation passed in the final implementation: all 112 core tests; 20 consecutive
+runs of the concurrency group; all adapter, workflow, CLI, type-boundary, and
+schema gates under `just check`, including all eight native Nix checks; and
+`just check-docs` with 13 capabilities and 52 terms. The seven golden documents
+retain both observation and result evidence. ADRs 0002 and 0003 preserve the
+source-free check, fixed-stage, admission/cancellation, privacy, cutoff, and v3
+contract decisions. No acceptance work remains for this plan.
+
+The main lessons are that response equality needs no fabricated observation
+source, a common start gate does not itself prove handler overlap, and a
+bounded rendezvous makes a race control deterministic. These local in-memory
+consumers establish the verifier's behavior; a real service needs its own
+context-owned binding and complete history contract.
 
 
 ## Context and Orientation
