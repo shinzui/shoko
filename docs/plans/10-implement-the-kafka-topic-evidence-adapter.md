@@ -82,22 +82,21 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
 
 ## Progress
 
-- [ ] M1 — Toolchain and broker fixture accepted: librdkafka and `c2hs` are in the
-  Seihou-managed dev shell, `rdkafka-hs` 1.0.0.1 is pinned by commit in `cabal.project` and
-  `flake.module.nix`, `scripts/test-kafka` boots an owned KRaft broker, and the spike checks
-  prove assign-only reading without subscription, partition-attributed EOF, watermark
-  offsets, header/key/timestamp decoding, read-committed visibility, deterministic
-  teardown, and zero observer groups, both locally and in `nix flake check` on Linux CI.
+- [x] M1 — Toolchain and owned broker accepted (2026-10-24): Seihou 0.35.0
+  supplies librdkafka/c2hs, Cabal and Nix pin the released 1.0.0.1 commit, and
+  the assign-only, attributed EOF, watermark, header, transaction, and teardown
+  spike passes locally, in native macOS checks, and in Linux CI. Broker snapshots
+  prove no observer groups, unexpected topics, or application-offset changes.
 - [x] M2 — Store-neutral scan refactor and client-backed Kafka reader accepted
   (2026-10-24): all 63 local Kafka groups pass through the real client and
   controlled seam, including the public-runner first slice, descriptor/policy
   rejection before allocation, and independent partition identities. The native
   adapter check also passes all 19 groups for each SQL store (38 total).
-- [ ] M3 — Complete Kafka contract suite integrated into `just check` and the native Nix
-  check: missing/undecodable correlation, page exhaustion, cutoff ambiguity, crossing reads,
-  unverified history, deadline with consumer release, outage before mutation, transactional
-  visibility, truncation detection, and group/topic/offset non-interference all pass; CI is
-  green.
+- [x] M3 — Full Kafka contracts and gates accepted (2026-10-24): all 63 groups
+  pass locally and in both native platforms. The public runner proves correlation,
+  cardinality, finite coverage, cutoffs, transactional visibility, truncation,
+  partition changes, bounded release, and non-interference. `just check` and
+  `nix flake check` pass; Linux CI succeeds on `40c341a`.
 - [x] M4 — Contract, documentation, and catalog integration accepted
   (2026-10-24): Kafka workflow declarations and endpoint validation pass, CAP-13
   and the guides/ADRs describe the usable reader, and `just check-docs` validates
@@ -105,36 +104,22 @@ the broker. `just check` and the native Nix adapter check include the same fixtu
   and `git diff --check` pass locally.
 
 
-Current handoff (2026-10-24): the upstream blocker is resolved by the published
-`rdkafka-hs` 1.0.0.1 release (tag object `33e2ab5f31be57e14c9820d4ad99032d3e9b41f1`,
-commit `45d9e21ad3c72b56c482173e17ca3fa2bd8b1bc7`).
-[IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3) is completed.
-Cabal and Nix now pin that same commit, and all 37 original spike/controlled
-checks pass without a local header reversal. The public `kafka` constructor and
-client-backed `KafkaPort` are implemented; a first complete slice passed 44
-checks, including repeated exactly-once reads, cardinality, empty history,
-pre-baseline exclusion, independent three-partition readers, and zero allocation
-for policy/descriptor rejection. All 63 Kafka groups now pass locally, including actual transactions, retained
-cutoff ambiguity, socket release, partition growth during a read, and real record
-deletion. The fixture confirms group/topic/offset non-interference and private
-stderr. Full regression/native gates and Linux CI remain to be accepted.
+Completion evidence (2026-10-24): the implementation is accepted at commit
+`40c341a84d590a0280847ec2ee345eb91aed7092` by [Linux CI](https://github.com/shinzui/shoko/actions/runs/40051027433). Its log records the
+complete 63-group Cabal Kafka pass and successful
+`checks.x86_64-linux.shoko-adapters`. That native check runs the same owned
+Kafka fixture unconditionally in its `checkPhase`. The native macOS adapter
+also passes all 63 groups and both 19-group SQL stores. The full local `just check`
+passes, including all native flake checks, using one Nix build job and two build
+cores to avoid the previously observed parallel-build contention. No deadline or
+production request bound was relaxed. Strict documentation/catalog validation,
+Mori validation, formatting, workflow checks, and `git diff --check` pass.
 
-The toolchain remains Seihou 0.35.0, GHC 9.12.4, librdkafka 2.15.0, c2hs 0.28.8,
-and Apache Kafka 4.3.1 with JRE 17.0.19. M4 documentation and the CAP-13 record
-are implemented. The first native full flake run from the preceding checkpoint
-had ten-second workflow-test timeouts during parallel compilation; recheck that
-gate at the final candidate rather than treating the earlier failure as accepted.
-All local acceptance gates now pass: the full broker suite, regression tests,
-and the native adapter and full flake checks. Linux CI on the pushed
-implementation passed all 63 Kafka groups in Linux Cabal at
-https://github.com/shinzui/shoko/actions/runs/40047314301, then failed the
-existing native workflow fixture because its generated executable used
-`/usr/bin/env`, unavailable inside the Linux sandbox. The fixture now uses
-`sys.executable`. The next run found a scheduling dependency in the existing
-correlation-isolation fixture: its unavailable sibling could advance the shared
-fake clock beyond the valid siblings’ equal deadlines. That check now has a
-shorter window, preserving all three expected verdicts independently of
-scheduling. M1 and M3 remain open only for required full Linux CI acceptance.
+The shipped client is `rdkafka-hs` 1.0.0.1, immutable commit
+`45d9e21ad3c72b56c482173e17ca3fa2bd8b1bc7`. The public `kafka` constructor and
+client-backed port are usable; CAP-13 records their evidence and limits. All four
+milestones are complete. The historical blockers below explain the progression;
+they are resolved and do not represent remaining work.
 
 Blocker history: on 2026-10-21 M1 was blocked because Hackage `hw-kafka-client` 5.3.0 could
 not construct an assign-only consumer, its EOF errors omitted partition identity, and its
@@ -145,10 +130,9 @@ as the renamed successor package `rdkafka-hs`
 1.0.0.0 (`mori://shinzui/rdkafka-hs`, tag `v1.0.0.0`, commit
 `63031a21d070819fe89afbacb6ce76238816748f`), and
 [IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2) is `completed`
-there with that release as its resolution. That release initially permitted the
-M1 pin and spike to proceed; IR-3 now gates
-the client binding of `KafkaPort`, the public `kafka` constructor, and the
-real-broker contract groups of M2/M3 behind the same M1 → M2 → M3 → M4 order. See
+there with that release as its resolution. That release initially permitted the M1 pin and spike to proceed.
+IR-3 then gated the client binding and real-broker contracts until 1.0.0.1
+resolved it; the M1 → M2 → M3 → M4 acceptance order was preserved. See
 the Decision Log entries dated 2026-10-22 for the pin and the Cross-repository references
 for the API.
 
@@ -169,7 +153,10 @@ expectation could advance a shared fake clock to the same cutoff used by valid
 siblings, causing one of their first reads to be skipped according to thread
 scheduling. A shorter window on the cross-instance expectation preserves the
 required `[Pass, Pass, Unknown]` result under either ordering. No production
-clock, runner behavior, or timeout was changed.
+clock, runner behavior, or timeout was changed. The corrected case passes
+300 repetitions across one, two, and four runtime capabilities, and all 78
+core groups pass in Cabal and the native macOS check. Full Linux acceptance
+is recorded in Progress.
 
 Linux native fixture discovery (2026-10-24): the second run passed all 63
 Kafka groups and non-interference checks, then failed `checks.workflow-v2`
@@ -184,8 +171,8 @@ acceptance requires unavailable evidence plus bounded return and socket release;
 a native transport failure may race with the host deadline. The fixture now
 accepts only the two contracted unavailable categories (`kafka-source-deadline`
 or `kafka-source-unavailable`), reports the fixed category, and retains both
-one-second timing/EOF bounds. It still rejects every observed outcome. Linux CI
-must pass this corrected assertion before M1/M3 completion.
+one-second timing/EOF bounds. It still rejects every observed outcome. The subsequent Linux Cabal run passed the corrected assertion;
+completed full Linux acceptance is recorded in Progress.
 
 
 CI discovery (2026-10-24): repository Actions permissions reported
@@ -193,7 +180,7 @@ CI discovery (2026-10-24): repository Actions permissions reported
 Actions was enabled to run the existing CI workflow required by this plan;
 a subsequent plan-checkpoint push triggers that gate. The code checkpoint is
 `105fbf8`, with all 63 Kafka groups and strict catalog validation passing locally.
-Final native and Linux results remain required before completion.
+Completed native and Linux results are recorded in Progress.
 
 
 Release-source validation on 2026-10-21 found that the local corpus has fixes absent from
@@ -526,17 +513,28 @@ history. The public reader's first 44-group broker slice passes with this fix.
 
 ## Outcomes & Retrospective
 
-Implementation resumed on 2026-10-24 with the fixed 1.0.0.1 release. The
-client-backed reader, public runner contracts, and catalog/docs are implemented.
-All 63 Kafka groups, the native adapter derivation, `just check-docs`, and the
-full local `just check` pass. Linux CI remains in progress. The local full check
-uses `NIX_CONFIG` with `max-jobs = 1` and `cores = 2` to avoid the previously
-observed parallel-build workflow-test contention; no test deadline or production
-request bound was relaxed. The 1.0.0.0 header-order blocker is resolved,
-and the scanner now preserves observed loss even across failed scans. Do not
-mark this plan complete until the full broker, native, regression, and Linux CI
-acceptance below is recorded. Durable client selection and loss semantics are
-distilled in ADR 0001 and ADR 0003.
+Completed on 2026-10-24. Shōko now provides a public bounded Kafka topic reader
+under the existing `EventQuery`/`EventEvidence` model. It supports record-key,
+header, and payload-field correlation, committed-visible baselines, stable
+partition occurrence identities, conservative cutoff coverage, and sticky loss
+tracking across failed scans. Client acquisition follows policy/descriptor
+validation, every operation shares the remaining request budget, and every client
+is synchronously destroyed.
+
+All 63 Kafka contracts pass in local Cabal, native macOS, Linux Cabal, and the
+Linux native check. The shared 38 SQL-store groups and the complete local/CI
+checks pass. [Linux acceptance](https://github.com/shinzui/shoko/actions/runs/40051027433) covers implementation commit
+`40c341a84d590a0280847ec2ee345eb91aed7092`. CAP-13 and the guides describe the usable API; ADR 0001,
+ADR 0003, and ADR 0004 retain the dependency, visibility/lifecycle, and scope
+decisions. No required implementation work remains in this plan.
+
+The upstream spike caught reversed duplicate-header order before promotion;
+1.0.0.1 fixes it without a local workaround. Broker integration also led to
+immediate persistence of observed history loss and a portable assertion that
+accepts the two fixed unavailable outcomes while preserving timing and socket
+bounds. Complete history still requires the owner's append-only promise;
+compaction detection, execution-ID propagation, Redpanda compatibility, and real
+staging access are deliberately outside this capability.
 
 
 ## Context and Orientation
@@ -607,7 +605,7 @@ As of 2026-10-24 the public client-backed Kafka reader exists. Cabal and Nix pin
 scanner contracts, and public-runner contracts in `Kafka/Broker.hs`, and the
 workflow schema accepts `kafka` and `kafka://`. Seihou 0.35.0 enables the Kafka
 client shell while private Redpanda stays disabled. CAP-13 describes the reader;
-final acceptance is tracked in Progress. Staging topic ownership and access remain
+completed acceptance is recorded in Progress. Staging topic ownership and access remain
 separate from these local fixture checks.
 
 
