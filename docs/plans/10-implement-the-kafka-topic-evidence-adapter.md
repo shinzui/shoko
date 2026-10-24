@@ -126,9 +126,12 @@ had ten-second workflow-test timeouts during parallel compilation; recheck that
 gate at the final candidate rather than treating the earlier failure as accepted.
 All local acceptance gates now pass: the full broker suite, regression tests,
 and the native adapter and full flake checks. Linux CI on the pushed
-implementation is being rerun after correcting the portable silent-broker
-assertion; the first run is retained at
-https://github.com/shinzui/shoko/actions/runs/40045067775. M1 and M3 remain open only for the required Linux CI acceptance.
+implementation passed all 63 Kafka groups in Linux Cabal at
+https://github.com/shinzui/shoko/actions/runs/40047314301, then failed the
+existing native workflow fixture because its generated executable used
+`/usr/bin/env`, unavailable inside the Linux sandbox. The fixture now uses
+`sys.executable`; Linux CI must accept that correction. M1 and M3 remain open
+only for the required Linux CI acceptance.
 
 Blocker history: on 2026-10-21 M1 was blocked because Hackage `hw-kafka-client` 5.3.0 could
 not construct an assign-only consumer, its EOF errors omitted partition identity, and its
@@ -155,6 +158,13 @@ remain in Surprises & Discoveries; they are not current release blockers.
 
 
 ## Surprises & Discoveries
+
+Linux native fixture discovery (2026-10-24): the second run passed all 63
+Kafka groups and non-interference checks, then failed `checks.workflow-v2`
+with `kubectl-unavailable`. Its generated fake executable used an
+`/usr/bin/env python3` shebang, which is absent in the Linux Nix sandbox.
+The fixture now writes the current `sys.executable` into that shebang.
+Production workflow behavior and all deadlines are unchanged.
 
 Linux fixture discovery (2026-10-24): the first Linux run passed 62 of 63
 Kafka groups and failed the silent-broker test's exact reason assertion. The

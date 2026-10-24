@@ -22,8 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SENTINEL = "WORKFLOW-SECRET-SENTINEL"
 
 
-FAKE = '''#!/usr/bin/env python3
-import json, os, sys, time
+FAKE = '''import json, os, sys, time
 from pathlib import Path
 args = sys.argv[1:]
 root = Path(os.environ["WORKFLOW_FAKE_ROOT"])
@@ -104,7 +103,7 @@ class WorkflowV2(unittest.TestCase):
         self.resources = fixture_resources(self.contract)
         self.manifest = self.root / "workflow.json"
         binary = self.root / "kubectl"
-        binary.write_text(FAKE)
+        binary.write_text(f"#!{sys.executable}\n{FAKE}")
         binary.chmod(0o700)
         self.env = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ["PATH"], WORKFLOW_FAKE_ROOT=str(self.root), KUBECONFIG=str(self.root / "missing"))
 
