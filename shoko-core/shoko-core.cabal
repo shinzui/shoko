@@ -66,6 +66,7 @@ library
     Shoko.Internal.Call
     Shoko.Internal.Correlation
     Shoko.Internal.Digest
+    Shoko.Internal.Predicate
     Shoko.Internal.Reference
 
   build-depends:
@@ -96,6 +97,7 @@ test-suite shoko-core-test
     HandlerSpec
     IdempotencySpec
     PolicySpec
+    ResultCheckSpec
     ResultSpec
     RuntimeSpec
     ScenarioSpec

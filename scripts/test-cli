@@ -22,7 +22,7 @@ else:
     host = Path(subprocess.check_output(["cabal", "list-bin", "shoko-consumer-host"], text=True).strip())
 
 config_schema_path = Path(os.environ.get("SHOKO_CONFIG_SCHEMA", root / "schemas/config-v1.schema.json"))
-result_schema_path = Path(os.environ.get("SHOKO_RESULT_SCHEMA", root / "schemas/run-result-v2.schema.json"))
+result_schema_path = Path(os.environ.get("SHOKO_RESULT_SCHEMA", root / "schemas/run-result-v3.schema.json"))
 demo = str(os.environ.get("SHOKO_DEMO_CONFIG", root / "config/demo.yaml"))
 schema = json.loads(config_schema_path.read_text())
 Draft202012Validator.check_schema(schema)
@@ -74,7 +74,7 @@ explained = json.loads(call(host, ["explain", "composed-registration", "--format
 assert [entry["correlationId"] for entry in explained["correlations"]] == ["inviter.registration", "invitee.registration", "account"]
 assert [entry["correlationId"] for entry in explained["expectations"]] == ["inviter.registration", "invitee.registration", "account"]
 composed = json.loads(call(host, ["run", "composed-registration", "--format", "json"], result=True).stdout)
-assert composed["schemaVersion"] == 2
+assert composed["schemaVersion"] == 3
 report = composed["report"]
 assert report["verdict"] == "pass"
 assert [entry["correlationId"] for entry in report["correlations"]] == ["inviter.registration", "invitee.registration", "account"]

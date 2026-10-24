@@ -22,7 +22,7 @@ evidence:
     resource: "shoko-core/test/ResultSpec.hs"
     proves: "Round trips, strict decoding, description digest checks, and secret-sentinel exclusions."
   - kind: "conformance"
-    resource: "schemas/run-result-v2.schema.json"
+    resource: "schemas/run-result-v3.schema.json"
     proves: "The public version 2 JSON structure."
   - kind: "example"
     resource: "shoko-core/test/golden/unknown.json"
@@ -41,4 +41,4 @@ A binding or host author must choose non-secret public identifiers and summaries
 
 ## Use and evidence
 
-See the [core report guide](../core.md), [schema](../../schemas/run-result-v2.schema.json), and [golden fixtures](../../shoko-core/test/golden/README.md).
+See the [core report guide](../core.md), [schema](../../schemas/run-result-v3.schema.json), and [golden fixtures](../../shoko-core/test/golden/README.md).

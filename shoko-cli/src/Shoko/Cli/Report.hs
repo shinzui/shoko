@@ -10,7 +10,7 @@ import Shoko.Identifier
 import Shoko.Prelude
 import Shoko.Result
 import Shoko.Result.Json
-import Shoko.Scenario (CorrelationDescription (..), Description (..), ExpectationDescription (..), NodeDescription (..))
+import Shoko.Scenario (CorrelationDescription (..), Description (..), ExpectationDescription (..), ExpectationSubject (..), NodeDescription (..))
 import System.Directory (removeFile)
 import System.FilePath (takeDirectory)
 import System.IO (hClose, hFlush, openBinaryTempFile)
@@ -51,7 +51,7 @@ renderText (Verification (VerificationResult description _ runId environment bin
         <> Text.pack (show expected)
         <> "; reason="
         <> Text.pack (show reason)
-    expectationLine (ExpectationResult name outcome reason (Evidence source _ baseline activation finished coverage _ count gaps cutoff _)) =
+    expectationLine (ExpectationResult name outcome reason (ObservationEvidence (Evidence source _ baseline activation finished coverage _ count gaps cutoff _))) =
       name
         <> ": "
         <> Text.pack (show outcome)
@@ -75,6 +75,8 @@ renderText (Verification (VerificationResult description _ runId environment bin
         <> Text.pack (show count)
         <> "; gaps="
         <> Text.pack (show gaps)
+    expectationLine (ExpectationResult name outcome reason (ResultEvidence (ResultCheckEvidence dependencies completed))) =
+      name <> ": " <> Text.pack (show outcome) <> " " <> Text.pack (show reason) <> "; from=" <> Text.intercalate "," dependencies <> "; evaluatedAt=" <> Text.pack (show completed)
 
 -- | Write all bytes before atomically linking the completed inode into place.
 -- createLink fails if another run already owns the target, including races.
@@ -104,8 +106,9 @@ redactResult fields result = case result of
     redactReport (VerificationResult description digest runId environment binding build implementation target (LogicalInput recipe parameters) correlation policy started finished executionStart deadline verdict actions expectations disposition) =
       VerificationResult description digest runId environment binding build implementation target (LogicalInput recipe (keep parameters)) correlation policy started finished executionStart deadline verdict (map redactAction actions) (map redactExpectation expectations) disposition
     redactAction (ActionEvidence node operation outcomes observed start end reason substeps details) = ActionEvidence node operation outcomes observed start end reason substeps (keep details)
-    redactExpectation (ExpectationResult name verdict reason (Evidence source operation baseline activation finished coverage identities count gaps cutoff details)) =
-      ExpectationResult name verdict reason (Evidence source operation baseline activation finished coverage identities count gaps cutoff (keep details))
+    redactExpectation (ExpectationResult name verdict reason (ObservationEvidence (Evidence source operation baseline activation finished coverage identities count gaps cutoff details))) =
+      ExpectationResult name verdict reason (ObservationEvidence (Evidence source operation baseline activation finished coverage identities count gaps cutoff (keep details)))
+    redactExpectation child@ExpectationResult {evidence = ResultEvidence _} = child
 
 selectedFor :: Description -> Text -> Text
 selectedFor (Description _ _ _ _ expectations _) key = case [selected | ExpectationDescription identity _ _ _ _ selected <- expectations, identity == key] of
@@ -118,5 +121,8 @@ renderDescription description@(Description key title revision nodes expectations
     ( ["Scenario " <> key <> " (" <> revision <> ")", title]
         ++ ["node " <> identity <> ": " <> operation | NodeDescription identity _ (OperationInfo operation _ _ _) _ <- nodes]
         ++ ["correlation " <> correlationIdText identity <> ": key=" <> businessKeyNameText semantic <> "; strategy=" <> Text.pack (show strategy) | CorrelationDescription identity semantic strategy _ <- correlations]
-        ++ ["expectation " <> identity <> ": correlation=" <> selectedFor description identity | ExpectationDescription identity _ _ _ _ _ <- expectations]
+        ++ map expectationLine expectations
     )
+  where
+    expectationLine (ExpectationDescription identity _ _ (ResultSubject dependencies) predicate _) = identity <> " immediately " <> predicate <> " from " <> Text.intercalate "," dependencies
+    expectationLine (ExpectationDescription identity _ _ (ObservationSubject _) _ _) = "expectation " <> identity <> ": correlation=" <> selectedFor description identity

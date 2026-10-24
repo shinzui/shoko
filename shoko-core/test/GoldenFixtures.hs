@@ -15,7 +15,17 @@ import Shoko.Scenario (DefinitionError (..))
 
 resultFixtures :: IO [(FilePath, RunResult)]
 resultFixtures = do
-  positive <- accountRun accountScenario True
+  positive <-
+    accountRun
+      ( scenario "toy-account" "Provision a toy account" "v3" $ do
+          qualified <- given "agent" (accept ["ready"] Qualified)
+          created <- act "create" (accept ["created"] (Create (fromRef qualified) True))
+          selected <- correlate (CorrelationAlias "account") (BusinessKeyName "accountId") (fromRef created)
+          expect $ do
+            eventually "account-exists" (correlatedBy selected $ observe "is-created" (Created (fromRef created)) id)
+            holds "response" (fromRef created) (predicate "present" (/= ""))
+      )
+      True
   rejection <- accountRun rejectionScenario False
   failed <- ledgerRun 2 False
   unknown <- ledgerRun 0 True
@@ -65,7 +75,15 @@ ledgerRun copies unavailable = do
     ledgerEnvironment
     testOptions
     (ledgerBinding rows readCalls unavailable)
-    (ledgerScenario copies (if unavailable then Eventually else ExactlyOnce)) of
+    ( scenario "toy-delivery" "Count append-only deliveries" "v3" $ do
+        receipt <- act "append" (accept ["appended"] (Append copies))
+        selected <- correlate (CorrelationAlias "delivery") (BusinessKeyName "deliveryId") (fromRef receipt)
+        expect $ do
+          if unavailable then pure () else holds "response" (fromRef receipt) (predicate "wrong-key" (== "different"))
+          if unavailable
+            then eventually "delivery-count" (correlatedBy selected $ observe "delivered" (Deliveries (fromRef receipt)) id)
+            else exactlyOnce "delivery-count" (correlatedBy selected $ observe "delivered" (Deliveries (fromRef receipt)) id)
+    ) of
     Left errors -> fail (show errors)
     Right resolved -> runScenario clock (LogicalInput "ledger-recipe-v1" [("copies", PublicCount (toInteger copies))]) resolved
 

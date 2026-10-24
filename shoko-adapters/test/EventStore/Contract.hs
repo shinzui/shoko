@@ -100,7 +100,7 @@ captureForTest handler clock label
       resolved <- either (fail . show) pure (resolveScenario environment options selectedBinding selectedScenario)
       result <- runScenario clock (LogicalInput "capture" []) resolved
       pure $ case result of
-        Verification VerificationResult {expectations = ExpectationResult {evidence = Evidence {baseline = Just base}} : _} -> Right base
+        Verification VerificationResult {expectations = ExpectationResult {evidence = ObservationEvidence (Evidence {baseline = Just base})} : _} -> Right base
         _ -> Left "capture-unavailable"
 
 withConnection :: Text.Text -> (C.Connection -> IO a) -> IO a

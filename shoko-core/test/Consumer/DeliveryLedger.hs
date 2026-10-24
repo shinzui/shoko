@@ -22,6 +22,7 @@ ledgerScenario copies temporal = scenario "toy-delivery" "Count append-only deli
   receipt <- act "append" (accept ["appended"] (Append copies))
   selected <- correlate (CorrelationAlias "delivery") (BusinessKeyName "deliveryId") (fromRef receipt)
   expect $ case temporal of
+    Immediately -> error "not an observation temporal"
     Eventually -> eventually "delivery-count" (correlatedBy selected $ observe "delivered" (Deliveries (fromRef receipt)) id)
     Never -> never "delivery-count" (correlatedBy selected $ observe "delivered" (Deliveries (fromRef receipt)) id)
     ExactlyOnce -> exactlyOnce "delivery-count" (correlatedBy selected $ observe "delivered" (Deliveries (fromRef receipt)) id)

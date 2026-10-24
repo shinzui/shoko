@@ -24,7 +24,7 @@ tests =
       testPropertyNamed "attempts depend on the same key" "dependencies" $ once $ case inspectScenario retryScenario of
         Right Description {nodes = nodes} -> [deps | NodeDescription {operation = OperationInfo "orders.submit" _ deps _} <- nodes] === [["key"], ["key"]]
         Left errors -> fail (show errors),
-      testPropertyNamed "response agreement currently needs fabricated sampled evidence" "comparisonWorkaround" $ once $ run Idempotent False comparisonScenario >>= (=== Pass)
+      testPropertyNamed "different responses fail source-free agreement" "agreement" $ once $ run NonIdempotent False (retryAccepting ["created", "replayed"]) >>= (=== Fail)
     ]
 
 once :: PropertyT IO () -> Property
@@ -39,11 +39,3 @@ run behavior unavailable selected = do
       evalIO (runScenario clock (LogicalInput "idempotency" []) resolved) >>= \case
         Verification VerificationResult {verdict = result} -> pure result
         other -> fail (show other)
-
-comparisonScenario :: Scenario Orders
-comparisonScenario = scenario "comparison" "Compare order IDs" "v1" $ do
-  key <- given "key" (accept ["issued"] NewKey)
-  original <- act "original" (accept ["created"] (Submit (fromRef key) (pure "basket-1")))
-  retry <- act "retry" (accept ["replayed"] (Submit (fromRef key) (pure "basket-1")))
-  selected <- correlate (CorrelationAlias "order") (BusinessKeyName "idempotencyKey") (fromRef key)
-  expect $ eventually "same-order" $ correlatedBy selected $ observeThat (SameOrder (fromRef original) (fromRef retry)) (predicate "same" id)

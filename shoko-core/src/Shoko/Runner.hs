@@ -11,7 +11,7 @@ import Data.Dynamic qualified as Dynamic
 import Data.IORef
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, liftIO, runEff)
@@ -27,6 +27,7 @@ import Shoko.Internal.Binding (Binding (..), Handler (..), Source (..))
 import Shoko.Internal.Call (CallContext (..))
 import Shoko.Internal.Correlation
 import Shoko.Internal.Digest qualified as Digest
+import Shoko.Internal.Predicate (testPredicate)
 import Shoko.Internal.Reference (evaluateInput)
 import Shoko.Observation
 import Shoko.Prelude
@@ -91,7 +92,7 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
         ) = resolvedParts resolved
       runEnd = addDuration start budget
       register finalizer = atomicModifyIORef' finalizers (\fs -> (finalizer : fs, ()))
-      approved = Set.fromList (map stepOperation steps ++ map expectationOperation expectations)
+      approved = Set.fromList (map stepOperation steps ++ mapMaybe expectationOperation expectations)
       finishReport (actionResults, expectationResults, selected, primary) cleanup = do
         finishedUtc <- wall
         let finalVerdict = aggregateVerdicts (primary : [Unknown | any failedCleanup cleanup])
@@ -166,10 +167,12 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
               Nothing -> do
                 results <-
                   mapConcurrently
-                    ( \expectation@(Expectation _ _ _ observation) ->
-                        case observationCorrelation observation >>= (\handle -> Map.lookup (correlationRefId handle) resolvedCorrelations) of
-                          Nothing -> pure (unexecuted activation CorrelationLost baselines expectation)
-                          Just value -> runExpectation approved binding resource runClock runEnd activation values value propagated baselines resolved expectation
+                    ( \expectation -> case expectation of
+                        ResultCheck {} -> runResultCheck runClock runEnd activation values expectation
+                        Expectation _ _ _ observation ->
+                          case observationCorrelation observation >>= (\handle -> Map.lookup (correlationRefId handle) resolvedCorrelations) of
+                            Nothing -> pure (unexecuted activation CorrelationLost baselines expectation)
+                            Just value -> runExpectation approved binding resource runClock runEnd activation values value propagated baselines resolved expectation
                     )
                     expectations
                 pure
@@ -182,10 +185,11 @@ runResolved runClock@(Clock now wall _ _) logical resolved = mask $ \restore -> 
       sourceFor role op = case bindingHandler binding role op of
         Right (Just handler) -> sourceId <$> handlerSource handler
         _ -> Nothing
+      unexecuted _ why _ (ResultCheck key _ input _) = ExpectationResult key Unknown why (ResultEvidence (ResultCheckEvidence (inputDependencies input) Nothing))
       unexecuted tick why baselines (Expectation key _ _ observation) =
         let OperationInfo opKey _ _ _ = describeOperation (observationOperation observation)
             source = fromMaybe (SourceId "unavailable") (sourceFor ObservationOperation (observationOperation observation))
-         in ExpectationResult key Unknown why (Evidence source opKey (Map.lookup source baselines) tick tick Nothing [] 0 True runEnd [])
+         in ExpectationResult key Unknown why (ObservationEvidence (Evidence source opKey (Map.lookup source baselines) tick tick Nothing [] 0 True runEnd []))
   acquired <- try (restore (attempt runClock runEnd (acquire register)))
   case acquired of
     Left (exception :: SomeException) -> do
@@ -248,9 +252,10 @@ trySync action = do
 stepOperation :: (Vocabulary op) => Step op -> Text
 stepOperation (Step _ _ action) = case describeOperation (actionOperation action) of OperationInfo key _ _ _ -> key
 
-expectationOperation :: (Vocabulary op) => Expectation op -> Text
+expectationOperation :: (Vocabulary op) => Expectation op -> Maybe Text
+expectationOperation ResultCheck {} = Nothing
 expectationOperation (Expectation _ _ _ observation) = case describeOperation (observationOperation observation) of
-  OperationInfo key _ _ _ -> key
+  OperationInfo key _ _ _ -> Just key
 
 resolveDeclaration :: Text -> Map Text Dynamic.Dynamic -> CorrelationDeclaration -> Either Reason Correlation
 resolveDeclaration runKey _ ExecutionDeclaration = Right (ByExecutionId runKey)
@@ -339,6 +344,23 @@ makeContext runClock@(Clock now _ _ _) end cutoff values (OperationInfo _ _ decl
       atomicModifyIORef' records (\es -> (es ++ [SubstepEvidence key started finished why], ()))
       pure $ either (const (Left "substep-unavailable")) Right result
 
+-- Resolve and force the final Boolean inside the same bounded exception boundary.
+runResultCheck :: Clock -> MonotonicTime -> MonotonicTime -> Map Text Dynamic.Dynamic -> Expectation op -> IO ExpectationResult
+runResultCheck runClock@(Clock now _ _ _) runEnd activation values (ResultCheck key windows input test) = do
+  let cutoff = minimum (runEnd : map (addDuration activation) windows)
+  outcome <- attempt runClock cutoff $ case evaluateInput values input of
+    Left _ -> pure Nothing
+    Right value -> do
+      answer <- evaluate (testPredicate test value)
+      completed <- now
+      pure (Just (answer, completed))
+  let (verdict, reason, completed) = case outcome of
+        Left why -> (Unknown, why, Nothing)
+        Right Nothing -> (Unknown, PrerequisiteUnavailable, Nothing)
+        Right (Just (answer, tick)) -> (if answer then Pass else Fail, if answer then Satisfied else Mismatch, Just tick)
+  pure (ExpectationResult key verdict reason (ResultEvidence (ResultCheckEvidence (inputDependencies input) completed)))
+runResultCheck _ _ _ _ Expectation {} = error "observation dispatched as result check"
+
 data SearchState = SearchState !(Set Text) !Int !Bool !(Maybe Coverage) !Bool ![(Text, PublicValue)]
 
 runExpectation ::
@@ -357,6 +379,8 @@ runExpectation ::
   ResolvedScenario op resource ->
   Expectation op ->
   IO ExpectationResult
+runExpectation _ _ _ runClock runEnd activation values _ _ _ _ resultCheck@ResultCheck {} =
+  runResultCheck runClock runEnd activation values resultCheck
 runExpectation
   approved
   binding
@@ -391,24 +415,26 @@ runExpectation
               key
               verdict
               why
-              ( Evidence
-                  source
-                  opKey
-                  base
-                  activation
-                  finished
-                  latest
-                  (Set.toAscList identities)
-                  count
-                  (gaps || missingId)
-                  cutoff
-                  details
+              ( ObservationEvidence $
+                  Evidence
+                    source
+                    opKey
+                    base
+                    activation
+                    finished
+                    latest
+                    (Set.toAscList identities)
+                    count
+                    (gaps || missingId)
+                    cutoff
+                    details
               )
         close state@(SearchState ids _ gaps latest missingId _) =
           let complete = case latest of
                 Just (Coverage DurableHistory from through True) -> from <= baselineTick && through >= cutoff && advertised == DurableHistory
                 _ -> False
            in case temporal of
+                Immediately -> final state InvalidEvidence Unknown
                 Eventually
                   | gaps || latest == Nothing -> final state SourceUnavailable Unknown
                   | advertised == DurableHistory && not complete -> final state CoverageIncomplete Unknown

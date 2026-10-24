@@ -16,6 +16,7 @@ module Shoko.Scenario
     Description (..),
     NodeDescription (..),
     ExpectationDescription (..),
+    ExpectationSubject (..),
     DefinitionError (..),
     inspectScenario,
     Step (..),
@@ -32,6 +33,7 @@ import Shoko.Environment
 import Shoko.Expectation
 import Shoko.Identifier
 import Shoko.Internal.Correlation
+import Shoko.Internal.Predicate (predicateKey, validResultPredicate)
 import Shoko.Internal.Reference (Ref (..))
 import Shoko.Observation
 import Shoko.Prelude
@@ -104,11 +106,14 @@ data NodeDescription = NodeDescription
   }
   deriving stock (Eq, Show, Generic)
 
+data ExpectationSubject = ObservationSubject !OperationInfo | ResultSubject ![Text]
+  deriving stock (Eq, Show, Generic)
+
 data ExpectationDescription = ExpectationDescription
   { expectationId :: !Text,
     temporal :: !Temporal,
     windows :: ![Duration],
-    operation :: !OperationInfo,
+    subject :: !ExpectationSubject,
     predicate :: !Text,
     correlationId :: !(Maybe CorrelationId)
   }
@@ -132,6 +137,7 @@ data DefinitionError
   | EmptyOutcomeContract !Text
   | EmptyExpectations
   | ConflictingOperation !Text
+  | InvalidExpectationTemporal !Text
   deriving stock (Eq, Show, Generic)
 
 -- Internal traversal assigns only symbolic references. It never invokes IO.
@@ -167,9 +173,14 @@ uniqueExecution = go False
     go seen (entry : rest) = entry : go seen rest
 
 invalidExpectationNames :: Expectations op a -> [Entry op]
-invalidExpectationNames es = [InvalidNamespace | Expectation key _ _ _ <- expectationList es, Text.null key]
+invalidExpectationNames es = [InvalidNamespace | e <- expectationList es, Text.null (expectationName e)]
+  where
+    expectationName (Expectation key _ _ _) = key
+    expectationName (ResultCheck key _ _ _) = key
 
 qualifyExpectation :: [Text] -> Expectation op -> Expectation op
+qualifyExpectation prefix (ResultCheck key windows input test) =
+  ResultCheck (Text.intercalate "." (prefix ++ [key])) windows input test
 qualifyExpectation prefix (Expectation key t windows observation) =
   Expectation (Text.intercalate "." (prefix ++ [key])) t windows observation
 
@@ -186,7 +197,7 @@ scenarioParts (Scenario key title revision program) =
       identifiers = key : map nodeKey nodeDescriptions ++ map expectationKey expectationDescriptions
       errors =
         validateEntries (Set.fromList (map nodeKey nodeDescriptions)) Set.empty False entries
-          ++ conflictingOperations (map (\(NodeDescription _ _ info _) -> info) nodeDescriptions ++ map (\(ExpectationDescription _ _ _ info _ _) -> info) expectationDescriptions)
+          ++ conflictingOperations (map (\(NodeDescription _ _ info _) -> info) nodeDescriptions ++ [info | ExpectationDescription _ _ _ (ObservationSubject info) _ _ <- expectationDescriptions])
           ++ duplicateErrors identifiers
           ++ duplicateErrors (map (correlationIdText . declarationId) declarations)
           ++ [InvalidIdentifier | any Text.null (title : revision : identifiers)]
@@ -203,12 +214,13 @@ scenarioParts (Scenario key title revision program) =
         fixture
         (describeOperation (actionOperation action))
         (acceptedTags action)
+    describeExpectation (ResultCheck k windows input test) = ExpectationDescription k Immediately windows (ResultSubject (inputDependencies input)) (predicateKey test) Nothing
     describeExpectation (Expectation k t windows observation) =
       ExpectationDescription
         k
         t
         windows
-        (describeOperation (observationOperation observation))
+        (ObservationSubject (describeOperation (observationOperation observation)))
         (predicateId observation)
         (correlationRefId <$> observationCorrelation observation)
     validateEntries _ _ _ [] = []
@@ -221,9 +233,14 @@ scenarioParts (Scenario key title revision program) =
               ++ [EmptyOutcomeContract k | Set.null (acceptedTags action)]
               ++ [UnresolvedReference dep | dep <- deps, Set.notMember dep known]
               ++ validateEntries final (Set.insert k known) afterExpect rest
-      ExpectEntry strict (Expectation _ _ _ observation) ->
+      ExpectEntry strict (ResultCheck _ _ input test) ->
+        [InvalidIdentifier | not (validResultPredicate test)]
+          ++ [UnresolvedReference dep | dep <- inputDependencies input, Set.notMember dep (if strict then known else final)]
+          ++ validateEntries final known (afterExpect || strict) rest
+      ExpectEntry strict (Expectation k temporal _ observation) ->
         let info@(OperationInfo _ _ deps _) = describeOperation (observationOperation observation)
          in validateOperation info
+              ++ [InvalidExpectationTemporal k | temporal == Immediately]
               ++ [InvalidIdentifier | not (validPredicate observation)]
               ++ [UnresolvedReference dep | dep <- deps, Set.notMember dep (if strict then known else final)]
               ++ validateEntries final known (afterExpect || strict) rest

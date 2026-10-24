@@ -48,7 +48,7 @@ tests =
               assert (isLeft (decodeRunResult (encode (Object (KeyMap.insert "schemaVersion" (toJSON (999 :: Int)) fields)))))
               assert (isLeft (decodeRunResult (encode (Object (KeyMap.insert "reason" (String "satisfied") fields)))))
               let bad = Object (KeyMap.insert "undeclared" (String "SECRET-PARSER-SENTINEL") fields)
-              decodeRunResult (encode bad) === Left "invalid shoko result v2"
+              decodeRunResult (encode bad) === Left "invalid shoko result v3"
               let changedReport = case KeyMap.lookup "report" fields of
                     Just (Object report) -> Object (KeyMap.insert "descriptionDigest" (String "wrong") report)
                     _ -> Null
@@ -56,7 +56,7 @@ tests =
             _ -> fail "expected result object"
           _ -> fail "expected report fixtures",
       testPropertyNamed "malformed typed causes and correlation selections are rejected" "malformedTypedTags" $ withTests 1 $ property $ do
-        let cause value = object ["schemaVersion" .= (2 :: Int), "kind" .= ("preflight-error" :: Text.Text), "errors" .= [object ["code" .= ("handler-construction-failed" :: Text.Text), "id" .= ("operation" :: Text.Text), "cause" .= value]]]
+        let cause value = object ["schemaVersion" .= (3 :: Int), "kind" .= ("preflight-error" :: Text.Text), "errors" .= [object ["code" .= ("handler-construction-failed" :: Text.Text), "id" .= ("operation" :: Text.Text), "cause" .= value]]]
         mapM_
           (\value -> assert (isLeft (decodeRunResult (encode (cause value)))))
           [ object ["code" .= ("endpoint-not-allowlisted" :: Text.Text)],
@@ -64,9 +64,9 @@ tests =
             object ["code" .= ("execution-metadata-unsupported" :: Text.Text), "id" .= ("unexpected" :: Text.Text)],
             object ["code" .= ("future-cause" :: Text.Text), "id" .= ("endpoint" :: Text.Text)]
           ]
-        let malformed = object ["schemaVersion" .= (2 :: Int), "kind" .= ("preflight-error" :: Text.Text), "errors" .= [object ["code" .= ("incompatible-correlation" :: Text.Text), "id" .= ("operation" :: Text.Text), "correlationId" .= Null]]]
+        let malformed = object ["schemaVersion" .= (3 :: Int), "kind" .= ("preflight-error" :: Text.Text), "errors" .= [object ["code" .= ("incompatible-correlation" :: Text.Text), "id" .= ("operation" :: Text.Text), "correlationId" .= Null]]]
         assert (isLeft (decodeRunResult (encode malformed)))
-        let foreignField = object ["schemaVersion" .= (2 :: Int), "kind" .= ("preflight-error" :: Text.Text), "errors" .= [object ["code" .= ("missing-handler" :: Text.Text), "id" .= ("operation" :: Text.Text), "cause" .= object ["code" .= ("execution-metadata-unsupported" :: Text.Text)]]]]
+        let foreignField = object ["schemaVersion" .= (3 :: Int), "kind" .= ("preflight-error" :: Text.Text), "errors" .= [object ["code" .= ("missing-handler" :: Text.Text), "id" .= ("operation" :: Text.Text), "cause" .= object ["code" .= ("execution-metadata-unsupported" :: Text.Text)]]]]
         assert (isLeft (decodeRunResult (encode foreignField))),
       testPropertyNamed "all reason tags have an explicit wire encoding" "reasonTags" $
         withTests 1 $
@@ -129,7 +129,7 @@ tests =
                 calls <- evalIO (readIORef readCalls)
                 assert (calls > 1)
                 case children of
-                  [ExpectationResult {evidence = Evidence {matchingOccurrenceIds = ids, matchCount = count}}] -> do
+                  [ExpectationResult {evidence = ObservationEvidence (Evidence {matchingOccurrenceIds = ids, matchCount = count})}] -> do
                     ids === ["0"]
                     count === 1
                   _ -> fail "expected one cardinality result"

@@ -26,16 +26,16 @@ encodeRunResult = encode . resultValue
 -- Decode errors intentionally omit input fragments and parser exception text.
 decodeRunResult :: ByteString -> Either Text RunResult
 decodeRunResult bytes = case eitherDecode bytes >>= parseEither parseResult of
-  Left _ -> Left "invalid shoko result v2"
+  Left _ -> Left "invalid shoko result v3"
   Right result -> Right result
 
 resultValue :: RunResult -> Value
 resultValue (Verification report) =
   object
-    ["schemaVersion" .= (2 :: Int), "kind" .= ("verification" :: Text), "report" .= reportValue report]
+    ["schemaVersion" .= (3 :: Int), "kind" .= ("verification" :: Text), "report" .= reportValue report]
 resultValue (RunnerFault why partial) =
   object
-    [ "schemaVersion" .= (2 :: Int),
+    [ "schemaVersion" .= (3 :: Int),
       "kind" .= ("runner-fault" :: Text),
       "reason" .= tag reasons why,
       "report" .= fmap reportValue partial
@@ -45,7 +45,7 @@ resultValue (PreflightFailure errors) = preflightValue errors
 parseResult :: Value -> Parser RunResult
 parseResult = withObject "run-result" $ \o -> do
   version <- o .: "schemaVersion" :: Parser Int
-  unless (version == 2) (fail "unsupported version")
+  unless (version == 3) (fail "unsupported version")
   kind <- o .: "kind" :: Parser Text
   exactFields o $ case kind of
     "verification" -> ["schemaVersion", "kind", "report"]
@@ -166,25 +166,38 @@ parseNode = checked ["nodeId", "fixture", "operation", "acceptedOutcomes"] "node
     <*> (Set.fromList <$> o .: "acceptedOutcomes")
 
 expectationDescriptionValue :: ExpectationDescription -> Value
-expectationDescriptionValue (ExpectationDescription key temporal windows operation predicate selected) =
+expectationDescriptionValue (ExpectationDescription key temporal windows subject predicate selected) =
   object
     [ "expectationId" .= key,
       "temporal" .= tag temporals temporal,
       "windowsMicros" .= map durationMicros windows,
-      "operation" .= operationValue operation,
+      "subject" .= subjectValue subject,
       "predicateId" .= predicate,
       "correlationId" .= fmap correlationIdText selected
     ]
 
 parseExpectationDescription :: Value -> Parser ExpectationDescription
-parseExpectationDescription = checked ["expectationId", "temporal", "windowsMicros", "operation", "predicateId", "correlationId"] "expectation-description" $ \o ->
-  ExpectationDescription
-    <$> o .: "expectationId"
-    <*> enumField o "temporal" temporals
-    <*> list o "windowsMicros" parseDuration
-    <*> (o .: "operation" >>= parseOperation)
-    <*> o .: "predicateId"
-    <*> (fmap (fmap CorrelationId) (o .: "correlationId"))
+parseExpectationDescription = checked ["expectationId", "temporal", "windowsMicros", "subject", "predicateId", "correlationId"] "expectation-description" $ \o -> do
+  key <- o .: "expectationId"
+  temporal <- enumField o "temporal" temporals
+  windows <- list o "windowsMicros" parseDuration
+  subject <- o .: "subject" >>= parseSubject
+  predicate <- o .: "predicateId"
+  selected <- fmap (fmap CorrelationId) (o .: "correlationId")
+  unless (case subject of ObservationSubject _ -> temporal /= Immediately; ResultSubject _ -> temporal == Immediately && selected == Nothing) (fail "invalid expectation subject")
+  pure (ExpectationDescription key temporal windows subject predicate selected)
+
+subjectValue :: ExpectationSubject -> Value
+subjectValue (ObservationSubject operation) = object ["kind" .= ("observation" :: Text), "operation" .= operationValue operation]
+subjectValue (ResultSubject dependencies) = object ["kind" .= ("result" :: Text), "dependencies" .= dependencies]
+
+parseSubject :: Value -> Parser ExpectationSubject
+parseSubject = withObject "subject" $ \o -> do
+  kind <- o .: "kind" :: Parser Text
+  case kind of
+    "observation" -> exactFields o ["kind", "operation"] >> (ObservationSubject <$> (o .: "operation" >>= parseOperation))
+    "result" -> exactFields o ["kind", "dependencies"] >> (ResultSubject <$> o .: "dependencies")
+    _ -> fail "unknown subject kind"
 
 operationValue :: OperationInfo -> Value
 operationValue (OperationInfo key required dependencies substeps) =
@@ -257,10 +270,12 @@ parseExpectation = checked ["expectationId", "verdict", "reason", "evidence"] "e
     <*> enumField o "reason" reasons
     <*> (o .: "evidence" >>= parseEvidence)
 
-evidenceValue :: Evidence -> Value
-evidenceValue (Evidence source operation baseline started finished coverage identities count gaps deadline details) =
+evidenceValue :: ExpectationEvidence -> Value
+evidenceValue (ResultEvidence (ResultCheckEvidence dependencies completed)) = object ["kind" .= ("result" :: Text), "dependencies" .= dependencies, "evaluatedAt" .= fmap monotonicMicros completed]
+evidenceValue (ObservationEvidence (Evidence source operation baseline started finished coverage identities count gaps deadline details)) =
   object
-    [ "source" .= sourceIdText source,
+    [ "kind" .= ("observation" :: Text),
+      "source" .= sourceIdText source,
       "operationId" .= operation,
       "baseline" .= fmap baselineValue baseline,
       "pollStartedAt" .= monotonicMicros started,
@@ -273,8 +288,20 @@ evidenceValue (Evidence source operation baseline started finished coverage iden
       "supportingData" .= map publicValue details
     ]
 
-parseEvidence :: Value -> Parser Evidence
-parseEvidence = checked ["source", "operationId", "baseline", "pollStartedAt", "finishedAt", "coverage", "matchingOccurrenceIds", "matchCount", "gaps", "evidenceDeadline", "supportingData"] "evidence" $ \o ->
+parseEvidence :: Value -> Parser ExpectationEvidence
+parseEvidence = withObject "evidence" $ \o -> do
+  kind <- o .: "kind" :: Parser Text
+  case kind of
+    "result" -> do
+      exactFields o ["kind", "dependencies", "evaluatedAt"]
+      ResultEvidence <$> (ResultCheckEvidence <$> o .: "dependencies" <*> (fmap (fmap MonotonicTime) (o .: "evaluatedAt")))
+    "observation" -> do
+      exactFields o ["kind", "source", "operationId", "baseline", "pollStartedAt", "finishedAt", "coverage", "matchingOccurrenceIds", "matchCount", "gaps", "evidenceDeadline", "supportingData"]
+      ObservationEvidence <$> parseObservationEvidence o
+    _ -> fail "unknown evidence kind"
+
+parseObservationEvidence :: Object -> Parser Evidence
+parseObservationEvidence o =
   Evidence
     <$> (SourceId <$> o .: "source")
     <*> o .: "operationId"
@@ -413,7 +440,7 @@ capabilityTags =
   ]
 
 temporals :: [(Text, Temporal)]
-temporals = [("eventually", Eventually), ("never", Never), ("exactly-once", ExactlyOnce)]
+temporals = [("eventually", Eventually), ("never", Never), ("exactly-once", ExactlyOnce), ("immediately", Immediately)]
 
 strengths :: [(Text, CoverageStrength)]
 strengths = [("sampled-state", SampledState), ("durable-history", DurableHistory)]
@@ -425,7 +452,7 @@ dispositions :: [(Text, Disposition)]
 dispositions = [("cleaned", Cleaned), ("retained", Retained), ("failed", CleanupFailed), ("timed-out", CleanupTimedOut)]
 
 preflightValue :: [PreflightError] -> Value
-preflightValue errors = object ["schemaVersion" .= (2 :: Int), "kind" .= ("preflight-error" :: Text), "errors" .= map render errors]
+preflightValue errors = object ["schemaVersion" .= (3 :: Int), "kind" .= ("preflight-error" :: Text), "errors" .= map render errors]
   where
     render failure = case failure of
       InvalidDefinition definitionErrors -> object ["code" .= ("invalid-definition" :: Text), "details" .= map definitionValue definitionErrors]
@@ -453,6 +480,7 @@ definitionValue problem = case problem of
   ActionAfterExpectations -> identified "action-after-expectations" ""
   EmptyOutcomeContract key -> identified "empty-outcome-contract" key
   ConflictingOperation key -> identified "conflicting-operation" key
+  InvalidExpectationTemporal key -> identified "invalid-expectation-temporal" key
   EmptyExpectations -> identified "empty-expectations" ""
 
 parsePreflight :: Value -> Parser PreflightError
@@ -494,6 +522,7 @@ parseDefinition = checked ["code", "id"] "definition-error" $ \o -> do
     "action-after-expectations" -> pure ActionAfterExpectations
     "empty-outcome-contract" -> EmptyOutcomeContract <$> o .: "id"
     "conflicting-operation" -> ConflictingOperation <$> o .: "id"
+    "invalid-expectation-temporal" -> InvalidExpectationTemporal <$> o .: "id"
     "empty-expectations" -> pure EmptyExpectations
     _ -> fail "unknown definition code"
 

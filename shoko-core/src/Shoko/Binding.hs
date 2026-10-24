@@ -292,6 +292,7 @@ resolveScenario
                       sources
                     )
       stepContract declaredCorrelations (Step _ fixture action) = requirements declaredCorrelations (if fixture then FixtureOperation else ActionOperation) (actionOperation action) False Nothing
+      expectationContract _ (ResultCheck _ _ _ _) = ([], Set.empty, [])
       expectationContract declaredCorrelations (Expectation _ _ _ observation) = requirements declaredCorrelations ObservationOperation (observationOperation observation) True (observationCorrelation observation)
       validTarget Nothing = True
       validTarget (Just (TargetIdentity targetName targetNamespace revision)) = all (/= "") [targetName, targetNamespace, revision]

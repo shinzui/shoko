@@ -184,3 +184,10 @@ reader state for capture and observation. Decoder identity remains the author's
 query-sharing obligation. The former external correlation plan and separate
 adapter contract/baseline helpers have been removed without compatibility aliases.
 The public core, adapter, and scenario-host guides describe the current API.
+
+Result-check implementation, 2026-10-24: `holds` declares a named predicate over
+an applicative `Input`; `agreeOn` compares an explicitly labelled projection of
+at least two references. Both are source-free expectations activated once after
+all actions, including deferred declarations. Inspection retains their ordered
+node dependencies, predicate identity, and windows without evaluating values.
+They require no handler, source, capability, baseline, or correlation selection.

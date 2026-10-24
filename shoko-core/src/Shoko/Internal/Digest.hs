@@ -21,15 +21,17 @@ descriptionDigest (Description key title revision nodes expectations correlation
   Text.pack $ concatMap hex $ BS.unpack $ SHA256.hash $ LBS.toStrict $ encode chunks
   where
     chunks =
-      ["shoko-description-v2", key, title, revision]
+      ["shoko-description-v3", key, title, revision]
         ++ counted (concatMap node nodes)
         ++ counted (concatMap expectation expectations)
         ++ counted (concatMap declaration correlations)
     counted values = Text.pack (show (length values)) : values
     node (NodeDescription nodeKey fixture info outcomes) =
       [nodeKey, if fixture then "fixture" else "action"] ++ operation info ++ counted (Set.toAscList outcomes)
-    expectation (ExpectationDescription expectationKey temporal windows info predicate selected) =
-      [expectationKey, Text.pack (show temporal), predicate] ++ maybe ["none"] (\key' -> ["selected", correlationIdText key']) selected ++ counted (map (Text.pack . show . durationMicros) windows) ++ operation info
+    expectation (ExpectationDescription expectationKey temporal windows subject predicate selected) =
+      [expectationKey, Text.pack (show temporal), predicate] ++ maybe ["none"] (\key' -> ["selected", correlationIdText key']) selected ++ counted (map (Text.pack . show . durationMicros) windows) ++ describeSubject subject
+    describeSubject (ObservationSubject info) = "observation" : operation info
+    describeSubject (ResultSubject deps) = "result" : counted deps
     declaration (CorrelationDescription identity semantic strategy deps) =
       [correlationIdText identity, businessKeyNameText semantic, Text.pack (show strategy)] ++ counted deps
     operation (OperationInfo opKey caps deps substeps) =

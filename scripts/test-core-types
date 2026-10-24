@@ -62,7 +62,9 @@ import Shoko.Identifier
 import Shoko.Internal.Correlation qualified as C
 import Shoko.Internal.Reference qualified as R
 import Shoko.Internal.Digest qualified as Digest
-import Shoko.Observation
+import Shoko.Observation hiding (predicate)
+import Shoko.Observation qualified as O
+import Unsafe.Coerce (unsafeCoerce)
 import Shoko.Scenario
 import Shoko.Environment
 import Shoko.Expectation
@@ -79,6 +81,11 @@ data Op a where
 instance Vocabulary Op where
   describeOperation Seed = declareOperation "seed" []
   describeOperation Read = declareOperation "read" []
+
+polymorphicCheck :: Input a -> Predicate a -> Expectations op ()
+polymorphicCheck = holds "polymorphic"
+heterogeneousCheck :: Ref Text -> Ref Bool -> Expectations op ()
+heterogeneousCheck a b = holds "heterogeneous" ((,) <$> fromRef a <*> fromRef b) (O.predicate "test" snd)
 
 main :: IO ()
 main = do
@@ -120,7 +127,22 @@ main = do
       changedSelection = [ExpectationDescription a b c d e (Just (CorrelationId "changed")) | ExpectationDescription a b c d e _ <- expectations]
   mapM_ (\ds -> check (replace ds expectations /= digest)) variants
   check (replace declarations changedSelection /= digest)
-  putStrLn "internal correlation/reference boundaries passed"
+  let resultScenario strict = scenario "result-forward" "Result dependencies" "1" $ do
+        (if strict then expect else expectAfterActions) $ holds "check" (R.Reference (R.Ref "later") :: Input Text) (O.predicate "present" (/= ""))
+        _ <- given "later" (accept ["ready"] Seed)
+        pure ()
+  case inspectScenario (resultScenario True) of
+    Left errors -> check (UnresolvedReference "later" `elem` errors && ActionAfterExpectations `elem` errors)
+    Right _ -> fail "strict forward result accepted"
+  _ <- either (fail . show) pure (inspectScenario (resultScenario False))
+  let malformed = unsafeCoerce ((), [Expectation "check" Immediately [] (observe "yes" Read id)]) :: Expectations Op ()
+  case inspectScenario (scenario "invalid-temporal" "Invalid temporal" "1" (expect malformed)) of
+    Left errors -> check (errors == [InvalidExpectationTemporal "check"])
+    Right _ -> fail "observation Immediately accepted"
+  let resultDescription ds = Description "result" "Result digest" "1" [] [ExpectationDescription "check" Immediately [] (ResultSubject ds) "yes" Nothing] []
+  check (Digest.descriptionDigest (resultDescription ["a", "b", "a"]) /= Digest.descriptionDigest (resultDescription ["a", "a", "b"]))
+  check (Digest.descriptionDigest (resultDescription ["a", "a"]) /= Digest.descriptionDigest (resultDescription ["a"]))
+  putStrLn "internal correlation/reference/result boundaries passed"
 ''')
     probe = subprocess.run(
         ['cabal', 'exec', '--', 'runghc', '-XGHC2024', '-XDuplicateRecordFields',

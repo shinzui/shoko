@@ -1,6 +1,7 @@
 module Consumer.Idempotency where
 
 import Data.IORef
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Shoko
@@ -15,13 +16,11 @@ data Orders a where
   NewKey :: Orders Text
   Submit :: Input Text -> Input Text -> Orders Submission
   OrderPlaced :: Input Text -> Orders Bool
-  SameOrder :: Input Submission -> Input Submission -> Orders Bool
 
 instance Vocabulary Orders where
   describeOperation NewKey = declareOperation "orders.new-key" []
   describeOperation (Submit key payload) = dependsOn ((,) <$> key <*> payload) (declareOperation "orders.submit" [WriteState])
   describeOperation (OrderPlaced key) = dependsOn key (declareOperation "orders.placed" [ReadEvents])
-  describeOperation (SameOrder a b) = dependsOn ((,) <$> a <*> b) (declareOperation "orders.same" [])
 
 data Behavior = Idempotent | NonIdempotent | RaceProne
   deriving stock (Eq, Show)
@@ -43,24 +42,6 @@ ordersBindingWith behavior unavailable = binding "orders" acquire (const (pure C
     handlers FixtureOperation NewKey = Right (Just (actionHandler noRequirements (\_ _ -> pure (ActionObserved "issued" "key-1"))))
     handlers ActionOperation (Submit key payload) = Right (Just (actionHandler noRequirements (submit key payload)))
     handlers ObservationOperation (OrderPlaced key) = Right (Just (observationHandler noRequirements (RequiresBusinessKey (BusinessKeyName "idempotencyKey")) source (poll key)))
-    handlers ObservationOperation (SameOrder a b) =
-      Right
-        ( Just
-            ( observationHandler
-                noRequirements
-                (RequiresBusinessKey (BusinessKeyName "idempotencyKey"))
-                (sampledSource (SourceId "fabricated-comparison"))
-                ( \_ context -> do
-                    left <- resolveInput context a
-                    right <- resolveInput context b
-                    let Clock now _ _ _ = callClock context
-                    tick <- now
-                    pure $ case (left, right) of
-                      (Right x, Right y) -> Observed [Occurrence Nothing (orderId x == orderId y)] (Coverage SampledState tick tick True)
-                      _ -> ObservationUnavailable "missing-response"
-                )
-            )
-        )
     handlers _ _ = Right Nothing
     source = newSource (SourceId "orders.history") DurableHistory $ \resource (Clock now _ _ _) -> do
       tick <- now
@@ -100,15 +81,17 @@ retryScenario = retryAccepting ["replayed"]
 retryAccepting :: [Text] -> Scenario Orders
 retryAccepting tags = scenario "idempotent-retry" "Retry an order" "v1" $ do
   key <- given "key" (accept ["issued"] NewKey)
-  _ <- act "original" (accept ["created"] (Submit (fromRef key) (pure "basket-1")))
-  _ <- act "retry" (accept tags (Submit (fromRef key) (pure "basket-1")))
+  original <- act "original" (accept ["created"] (Submit (fromRef key) (pure "basket-1")))
+  retry <- act "retry" (accept tags (Submit (fromRef key) (pure "basket-1")))
+  expectAfterActions $ agreeOn "same-order" "orderId" orderId original (retry :| [])
   checkEffect key
 
 conflictScenario :: Scenario Orders
 conflictScenario = scenario "payload-conflict" "Reject changed payload" "v1" $ do
   key <- given "key" (accept ["issued"] NewKey)
-  _ <- act "original" (accept ["created"] (Submit (fromRef key) (pure "basket-1")))
-  _ <- act "conflict" (accept ["key-conflict"] (Submit (fromRef key) (pure "basket-2")))
+  original <- act "original" (accept ["created"] (Submit (fromRef key) (pure "basket-1")))
+  retry <- act "conflict" (accept ["key-conflict"] (Submit (fromRef key) (pure "basket-2")))
+  expectAfterActions $ agreeOn "same-order" "orderId" orderId original (retry :| [])
   checkEffect key
 
 checkEffect :: Ref Text -> ScenarioBuilder Orders ()

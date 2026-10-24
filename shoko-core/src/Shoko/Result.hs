@@ -2,6 +2,7 @@ module Shoko.Result
   ( Verdict (..),
     aggregateVerdicts,
     ExpectationResult (..),
+    ExpectationEvidence (..),
     VerificationResult (..),
     RunResult (..),
     LogicalInput (..),
@@ -35,11 +36,14 @@ data LogicalInput = LogicalInput
   }
   deriving stock (Eq, Show, Generic)
 
+data ExpectationEvidence = ObservationEvidence !Evidence | ResultEvidence !ResultCheckEvidence
+  deriving stock (Eq, Show, Generic)
+
 data ExpectationResult = ExpectationResult
   { expectationId :: !Text,
     verdict :: !Verdict,
     reason :: !Reason,
-    evidence :: !Evidence
+    evidence :: !ExpectationEvidence
   }
   deriving stock (Eq, Show, Generic)
 

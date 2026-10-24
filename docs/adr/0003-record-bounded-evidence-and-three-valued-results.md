@@ -162,3 +162,15 @@ An unavailable scan cannot erase the fact that history loss was already observed
 Release each assign-only client synchronously under the request's remaining
 budget; a poll timeout never counts as partition EOF. Correlation uses the last
 header in wire order, including when a header name repeats.
+
+Result-check implementation, 2026-10-24: result schema v3 replaces v2 and uses
+closed observation/result alternatives for expectation subjects and evidence.
+`Immediately` means one evaluation at the shared post-action activation, bounded
+by the minimum of execution deadline and all declared windows, without polling.
+A completed true/false check is Pass/Fail; missing inputs, timeouts, and faults
+are Unknown with their specific reason. Result evidence retains dependencies
+and a nullable monotonic completion time, never compared values. Skipped,
+unresolved, timed-out, and faulted checks have no evaluation time. Boolean
+forcing, including demanded projections and equality, stays inside the bounded
+exception boundary. Synchronous faults retain partial reports; cancellation
+propagates. Observation subjects cannot use `Immediately`.

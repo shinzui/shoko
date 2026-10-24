@@ -1,6 +1,7 @@
 module Shoko.Evidence
   ( Reason (..),
     Evidence (..),
+    ResultCheckEvidence (..),
     SubstepEvidence (..),
     ActionEvidence (..),
   )
@@ -59,5 +60,12 @@ data Evidence = Evidence
     gaps :: !Bool,
     evidenceDeadline :: !MonotonicTime,
     supportingData :: ![(Text, PublicValue)]
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Only dependencies and completed evaluation time are public.
+data ResultCheckEvidence = ResultCheckEvidence
+  { dependencies :: ![Text],
+    evaluatedAt :: !(Maybe MonotonicTime)
   }
   deriving stock (Eq, Show, Generic)

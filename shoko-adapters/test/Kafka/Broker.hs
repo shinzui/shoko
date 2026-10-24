@@ -68,7 +68,7 @@ observe (H.Backend _ readEvents _) base = do
   readEvents (callFor realClock base (H.plusMicros started 10000000) (H.plusMicros started 10000000))
 
 hasPublicFlag :: Text -> Bool -> (RunResult, Int) -> Bool
-hasPublicFlag name wanted (Verification VerificationResult {expectations = ExpectationResult {evidence = Evidence {supportingData = details}} : _}, _) = (name, O.PublicFlag wanted) `elem` details
+hasPublicFlag name wanted (Verification VerificationResult {expectations = ExpectationResult {evidence = ObservationEvidence (Evidence {supportingData = details})} : _}, _) = (name, O.PublicFlag wanted) `elem` details
 hasPublicFlag _ _ _ = False
 
 tests :: Broker -> TestTree

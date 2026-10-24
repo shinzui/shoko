@@ -161,7 +161,7 @@ tests =
         case result of
           Verification VerificationResult {expectations = children} -> do
             map (\ExpectationResult {verdict = v} -> v) children === [Unknown, Pass]
-            let activations = [tick | ExpectationResult {evidence = Evidence {pollStartedAt = tick}} <- children]
+            let activations = [tick | ExpectationResult {evidence = ObservationEvidence (Evidence {pollStartedAt = tick})} <- children]
             case activations of
               [first, second] -> first === second
               _ -> fail "expected two sibling activations"

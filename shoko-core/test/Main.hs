@@ -8,6 +8,7 @@ import HandlerSpec qualified
 import Hedgehog (property, withTests, (===))
 import IdempotencySpec qualified
 import PolicySpec qualified
+import ResultCheckSpec qualified
 import ResultSpec qualified
 import RuntimeSpec qualified
 import ScenarioSpec qualified
@@ -35,5 +36,6 @@ main =
         CoverageSpec.tests,
         PolicySpec.tests,
         ResultSpec.tests,
+        ResultCheckSpec.tests,
         FaultSpec.tests
       ]

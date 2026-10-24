@@ -1,1 +1,1 @@
-{"errors":[{"capabilities":["external-side-effect"],"code":"capabilities-denied"}],"kind":"preflight-error","schemaVersion":2}
+{"errors":[{"capabilities":["external-side-effect"],"code":"capabilities-denied"}],"kind":"preflight-error","schemaVersion":3}

@@ -26,11 +26,10 @@ module Shoko.Observation
   )
 where
 
-import Data.Char (isAlphaNum, isAscii)
-import Data.Text qualified as Text
 import Shoko.Clock (MonotonicTime)
 import Shoko.Correlation (CorrelationRef)
 import Shoko.Identifier (SourceId)
+import Shoko.Internal.Predicate
 import Shoko.Prelude
 
 data Observation op a = Observation !Text !(op a) (a -> Bool) ![Text] !(Maybe CorrelationRef)
@@ -47,32 +46,11 @@ predicateId (Observation key _ _ _ _) = key
 matches :: Observation op a -> a -> Bool
 matches (Observation _ _ test _ _) = test
 
-data Predicate a = Predicate ![Text] !Text (a -> Bool)
-
-predicate :: Text -> (a -> Bool) -> Predicate a
-predicate key = Predicate [key] key
-
-infixr 3 .&&.
-
-infixr 2 .||.
-
-(.&&.), (.||.) :: Predicate a -> Predicate a -> Predicate a
-Predicate ls l f .&&. Predicate rs r g = Predicate (ls ++ rs) ("(" <> l <> " and " <> r <> ")") (\a -> f a && g a)
-Predicate ls l f .||. Predicate rs r g = Predicate (ls ++ rs) ("(" <> l <> " or " <> r <> ")") (\a -> f a || g a)
-
-negated :: Predicate a -> Predicate a
-negated (Predicate leaves key test) = Predicate leaves ("not(" <> key <> ")") (not . test)
-
-onPart :: Text -> (b -> a) -> Predicate a -> Predicate b
-onPart label project (Predicate leaves key test) = Predicate (label : leaves) (label <> ":(" <> key <> ")") (test . project)
-
 observeThat :: op a -> Predicate a -> Observation op a
 observeThat op (Predicate leaves key test) = Observation key op test leaves Nothing
 
 validPredicate :: Observation op a -> Bool
-validPredicate (Observation key _ _ leaves _) = not (Text.null key) && all valid leaves
-  where
-    valid label = not (Text.null label) && Text.all (\c -> isAscii c && (isAlphaNum c || c `elem` ['_', '-', '.'])) label
+validPredicate (Observation key _ _ leaves _) = validLabels key leaves
 
 data CoverageStrength = SampledState | DurableHistory
   deriving stock (Eq, Ord, Show, Generic)
