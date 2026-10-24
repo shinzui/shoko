@@ -21,3 +21,4 @@ result-*
 __pycache__/
 .shoko/runs/
 .dev/
+.shoko/
