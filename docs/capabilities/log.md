@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-24
+* **Addition**: Add CAP-13 for bounded Kafka topic evidence, with public-runner broker contracts, explicit history limits, and observer non-interference.
+
 ## 2026-10-23
 * **Addition**: Add CAP-12 for bounded API-backed email evidence and controlled input sending, with compiled loopback consumers and offline smoke-host checks.
 

@@ -27,11 +27,11 @@ constraints:
   tasty == 1.5.4,
   tasty-hedgehog == 1.4.0.2
 
--- Immutable commit of v1.0.0.0; distributed as a GitHub release, not on Hackage.
+-- Immutable commit of v1.0.0.1; distributed as a GitHub release, not on Hackage.
 source-repository-package
   type: git
   location: https://github.com/shinzui/rdkafka-hs.git
-  tag: 63031a21d070819fe89afbacb6ce76238816748f
+  tag: 45d9e21ad3c72b56c482173e17ca3fa2bd8b1bc7
 
 package shoko-core
   ghc-options: -Werror

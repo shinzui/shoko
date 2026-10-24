@@ -55,12 +55,11 @@ checkpoint rows must remain unchanged. No staging access is required.
 `shoko-observer-` group, no topic outside the `fixture-` prefix, and no change to
 the application's committed offsets resulted. Sanitized broker log tails from a
 failed run are kept under the ignored `.dev/kafka-tests/`. The suite combines
-controlled scanner checks and a direct released-client spike against the real
-broker. The spike currently fails on reversed header wire order in `rdkafka-hs`
-1.0.0.0 ([IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3));
-the client-backed reader remains gated on a fixed release. The shell enables
-`nix.kafka = true` for librdkafka and adds `c2hs` for the client's FFI build. Every executable linking
-`rdkafka-hs` must use `-threaded` (see [dependency evidence](dependencies.md)).
+controlled scanner checks, a direct released-client spike, and public-runner
+contracts against the real broker. `rdkafka-hs` 1.0.0.1 fixes the header-order
+regression found by the spike. The shell enables `nix.kafka = true` for librdkafka
+and adds `c2hs` for the client's FFI build. Every executable linking `rdkafka-hs`
+must use `-threaded` (see [dependency evidence](dependencies.md)).
 First-party code treats warnings as errors through `cabal.project` and the Nix
 package definition. Dependencies retain their own warning policy. CI invokes the
 same commands on Ubuntu; local acceptance is also checked on Apple Silicon macOS.

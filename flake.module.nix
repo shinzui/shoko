@@ -10,8 +10,8 @@
             (pkgs.fetchFromGitHub {
               owner = "shinzui";
               repo = "rdkafka-hs";
-              rev = "63031a21d070819fe89afbacb6ce76238816748f";
-              hash = "sha256-ndzJox3LOnVwbFV2qkoB9ii9DDINyLuxvrNLXFTxAwQ=";
+              rev = "45d9e21ad3c72b56c482173e17ca3fa2bd8b1bc7";
+              hash = "sha256-lno5sy1FDVLTzHeunuUmnbqNAMGGrFymWyJg/5KgwuM=";
             })
             { };
           # Released packages newer than the managed all-cabal-hashes snapshot.

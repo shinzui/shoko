@@ -1,6 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 
-module Kafka.Contract (tests) where
+module Kafka.Contract where
 
 import Control.Monad (unless, when)
 import Data.Aeson (Value (..), encode, object, (.=))
@@ -92,7 +92,10 @@ instance Vocabulary Op where
   describeOperation Events = OperationInfo "fixture.read" (Set.singleton ReadEvents) [] []
 
 captureForTest :: Handler () (EventEvidence Bool) -> Clock -> SourceId -> IO (Either Text.Text Baseline)
-captureForTest handler clock label
+captureForTest = captureForTestWith 2000
+
+captureForTestWith :: Int -> Handler () (EventEvidence Bool) -> Clock -> SourceId -> IO (Either Text.Text Baseline)
+captureForTestWith budget handler clock label
   | fmap sourceId (handlerSource handler) /= Just label = pure (Left "source-mismatch")
   | otherwise = do
       let handlers :: OperationRole -> Op a -> Either HandlerBuildError (Maybe (Handler () a))
@@ -103,7 +106,7 @@ captureForTest handler clock label
             selectedCorrelation <- correlate (CorrelationAlias "probe") (BusinessKeyName "accountId") (pure "one")
             expect $ within (duration 1) $ never "probe" (correlatedBy selectedCorrelation $ Observation.observe "false" Events (const False))
           duration n = either (error . Text.unpack) id (milliseconds n)
-          environment = Environment "local" False (Set.singleton ReadEvents) (Policy (duration 2000) (duration 1) (duration 1) (duration 100))
+          environment = Environment "local" False (Set.singleton ReadEvents) (Policy (duration budget) (duration 1) (duration 1) (duration 100))
           options = RunOptions "00000000-0000-0000-0000-000000000001" False "fixture" Nothing Nothing
       resolved <- either (fail . show) pure (resolveScenario environment options selectedBinding selectedScenario)
       result <- runScenario clock (LogicalInput "capture" []) resolved
@@ -112,10 +115,13 @@ captureForTest handler clock label
         _ -> Left "capture-unavailable"
 
 run :: Backend -> Text.Text -> IO () -> Text.Text -> IO (RunResult, Int)
-run backend selected produceAction assertion = do
+run = runWith 4000 200
+
+runWith :: Int -> Int -> Backend -> Text.Text -> IO () -> Text.Text -> IO (RunResult, Int)
+runWith budgetMillis windowMillis backend selected produceAction assertion = do
   polls <- newIORef (0 :: Int)
-  budget <- right (milliseconds 4000)
-  window <- right (milliseconds 200)
+  budget <- right (milliseconds budgetMillis)
+  window <- right (milliseconds windowMillis)
   poll <- right (milliseconds 20)
   let Backend capture observe metadata = backend
       binding = Shoko.binding "topic-fixture" (\_ -> pure ()) (\_ -> pure Retained) handlers
@@ -510,6 +516,19 @@ controlledTests bounded =
       emit retained "other" 3
       truncating <- open retained bounded byKey
       run truncating "one" (truncateBefore retained 0 4) "never" >>= expectVerdict Unknown,
+    test "a loss observed before a failing read remains sticky after recovery" $ do
+      controlled <- newControlled 1
+      reader@(Backend capture _ _) <- open controlled bounded byKey
+      base <- capture realClock topicSource >>= right
+      overrideWatermarks controlled 0 (Just (Watermarks 2 2))
+      duringRead controlled (failWith controlled (Just KafkaUnavailable))
+      observeAgain reader base >>= \case
+        ObservationUnavailable _ -> pure ()
+        _ -> fail "injected trailing watermark failure was not observed"
+      failWith controlled Nothing
+      overrideWatermarks controlled 0 (Just (Watermarks 0 0))
+      recovered <- observeAgain reader base
+      check (coverageComplete recovered == Just False && detail "low-watermark-intact" recovered == Just (Observation.PublicFlag False)),
     test "a read-committed end below one already observed is history loss" $ do
       controlled <- newControlled 1
       reader@(Backend capture _ _) <- open controlled bounded byKey

@@ -26,6 +26,7 @@ Runtime permission grants such as `ReadState` have a separate meaning; see
 | CAP-10 | [Explicit Kubernetes target identity checks](explicit-kubernetes-target-identity.md) | Check declared Kubernetes namespace and workload identities twice through explicit read-only targeting and retain a sanitized private identity artifact. |
 | CAP-11 | [Declarative scenario catalog inspection](declarative-scenario-catalog-inspection.md) | Validate ready and pending entries and delegate pure inspection to explicitly bound compiled hosts. |
 | CAP-12 | [API-backed email evidence and controlled input](api-backed-email-evidence.md) | Observe new correlated mail through bounded Resend reads and send approved inputs with independent receipt. |
+| CAP-13 | [Bounded Kafka topic evidence](bounded-kafka-topic-evidence.md) | Read correlated finite topic histories with committed-visible baselines, attributed partition ends, and no consumer-group or offset mutation. |
 
 ## Maintenance
 

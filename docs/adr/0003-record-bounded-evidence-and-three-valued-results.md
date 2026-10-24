@@ -155,3 +155,10 @@ read-committed end below one already observed, or a partition-set change is
 history loss that stays sticky for the run. `AppendOnlyDuringRun` for a topic is
 the owner's promise that neither retention nor compaction removes records during
 the run; compaction cannot be detected by the reader.
+
+Kafka implementation clarification, 2026-10-24: persist observed watermark or
+partition-set losses immediately, even if a later operation in the scan fails.
+An unavailable scan cannot erase the fact that history loss was already observed.
+Release each assign-only client synchronously under the request's remaining
+budget; a poll timeout never counts as partition EOF. Correlation uses the last
+header in wire order, including when a header name repeats.

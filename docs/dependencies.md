@@ -225,28 +225,29 @@ other Hackage package is viable: `librdkafka` and `kafka` are 0.0.0.0 placeholde
 only encodes the wire protocol.
 
 The selected client is [rdkafka-hs](mori://shinzui/rdkafka-hs/packages/rdkafka-hs)
-**1.0.0.0**, released on GitHub on 2026-10-22. Reverified on 2026-10-23, annotated
-tag `v1.0.0.0` (`e499013e3a8a84328834bb0b0755332263c4cdee`) peels to
-`63031a21d070819fe89afbacb6ce76238816748f`. Cabal's `source-repository-package`
+**1.0.0.1**, released on GitHub on 2026-10-23. The annotated tag `v1.0.0.1`
+(`33e2ab5f31be57e14c9820d4ad99032d3e9b41f1`) peels to
+`45d9e21ad3c72b56c482173e17ca3fa2bd8b1bc7`. Cabal's `source-repository-package`
 and the hashed Nix `callCabal2nix` override select that same immutable commit;
-component bounds are `>=1.0 && <1.1`. It is not on Hackage (`preferred.json`
+component bounds are `>=1.0.0.1 && <1.1`. It is not on Hackage (`preferred.json`
 returns 404): distribution is tag-only per
 [ADR-7](mori://shinzui/rdkafka-hs/okf/adrs/concepts/ADR-7). The narrowed,
 owner-authorized ADR 0001 exception lasts until a Hackage release supplies the
 same observer API. No working-tree patches, branch pins, or relaxed bounds are used.
 
-[IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2) is
-completed: `newAssignedConsumer` skips subscription, `pollMessageAttributed`
-retains partition EOF origin, and `destroyConsumer` frees sockets synchronously.
+[IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2) provides
+assign-only construction, attributed EOF, and synchronous destruction.
+[IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3) is completed
+in 1.0.0.1: consumed headers preserve their wire order, including duplicate names.
+The broker spike passes all 37 original checks against this release. Version
+1.0.0.0 remains the recorded failing baseline; Shōko has no local header reversal.
+
 The client requires GHC 9.12 or newer and librdkafka 2.15 or newer, enforced by
 its build-time header check. The Seihou 0.35.0 shell enables `nix.kafka`, supplies
 **librdkafka 2.15.0**, and exports its header, library, and pkg-config paths.
 The shell also supplies **c2hs 0.28.8**, the client's FFI generator. The Cabal
 freeze includes this build tool and its transitive dependencies. Private Redpanda
-remains disabled. The Shōko spike found reversed header wire order in 1.0.0.0;
-[IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3) blocks
-promotion into the client-backed adapter. The pin currently serves reproduction
-and toolchain validation, and must advance to a fixed tagged release.
+remains disabled.
 
 The development and test tool **Apache Kafka 2.13-4.3.1** (JRE 17.0.19) comes from
 the pinned Nixpkgs revision `d5dfd8e6716dde34398bc14bc87c10dece9c8c68` as

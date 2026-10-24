@@ -257,14 +257,13 @@ The reader never joins a consumer group, commits offsets, or creates topics.
 Read-only enforcement for a staging observer is a broker ACL contract owned by the
 environment.
 
-Status: the scanner and handler are tested through the public runner against a
-controlled topic model. The released-client spike uses
-[rdkafka-hs](mori://shinzui/rdkafka-hs/packages/rdkafka-hs) 1.0.0.0 and found that
-it reverses header wire order, breaking last-duplicate selection. The public
-`kafka` constructor remains gated on a release resolving
-[IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3);
-hosts cannot yet allocate a client-backed reader. Executables linking the client
-must use `-threaded`. See [dependency evidence](dependencies.md).
+Allocate a fresh run-local reader with `kafka settings source query`, then bind
+`kafkaObservation source query` using the same descriptor. Allocation performs no
+broker IO: policy resolution precedes the pre-action source baseline. The client
+is [rdkafka-hs](mori://shinzui/rdkafka-hs/packages/rdkafka-hs) 1.0.0.1, whose
+consumed headers preserve wire order. Every client is destroyed synchronously
+on return, error, or deadline cancellation. Executables must use `-threaded`.
+See [dependency evidence](dependencies.md).
 
 ```bash
 nix develop --command just test-kafka

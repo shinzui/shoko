@@ -3,6 +3,7 @@
 -- client binding can be verified separately. It has no stability promise.
 module Shoko.Adapter.Kafka.Internal where
 
+import Control.Exception (bracket, try)
 import Data.Aeson qualified as Aeson
 import Data.ByteString (ByteString)
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit, isHexDigit)
@@ -15,7 +16,12 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Data.Time (UTCTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.UUID qualified as UUID
+import Data.UUID.V4 qualified as UUID
 import Data.Unique (hashUnique, newUnique)
+import Kafka.Consumer qualified as C
+import Kafka.Metadata qualified as M
 import Shoko.Adapter.EventStore.Internal
 import Shoko.Binding
 import Shoko.Clock
@@ -93,6 +99,118 @@ data KafkaPort = KafkaPort
 
 newtype Kafka a = Kafka (Reader a)
 
+-- | Allocate run-local bookkeeping only. Broker connections are acquired by
+-- baseline capture and observations, after the runner's policy preflight.
+kafka :: KafkaSettings -> SourceId -> EventQuery a -> IO (Either Text (Kafka a))
+kafka settings = kafkaReader (kafkaClientPort settings)
+
+newKafkaConsumer :: KafkaSettings -> IO (Either C.KafkaError C.KafkaConsumer)
+newKafkaConsumer (KafkaSettings servers properties) = do
+  unique <- UUID.toText <$> UUID.nextRandom
+  C.newAssignedConsumer $
+    C.extraProps properties
+      <> C.brokersList (map C.BrokerAddress servers)
+      <> C.groupId (C.ConsumerGroupId ("shoko-observer-" <> unique))
+      <> C.clientId (C.ClientId "shoko-topic-observer")
+      <> C.noAutoCommit
+      <> C.noAutoOffsetStore
+      <> C.extraProp "enable.partition.eof" "true"
+      <> C.extraProp "allow.auto.create.topics" "false"
+      <> C.extraProp "isolation.level" "read_committed"
+      <> C.extraProp "fetch.wait.max.ms" "10"
+      <> C.callbackPollMode C.CallbackPollModeSync
+      <> C.setCallback (C.errorCallback (\_ _ -> pure ()))
+      <> C.setCallback (C.logCallback (\_ _ _ -> pure ()))
+
+kafkaClientPort :: KafkaSettings -> KafkaPort
+kafkaClientPort = kafkaClientPortWith . newKafkaConsumer
+
+-- | Acquisition seam for lifecycle/preflight tests. Every successful client
+-- belongs to one operation and is synchronously destroyed before it returns.
+kafkaClientPortWith :: IO (Either C.KafkaError C.KafkaConsumer) -> KafkaPort
+kafkaClientPortWith acquire = KafkaPort metadata marks readOne
+  where
+    withClient :: Clock -> MonotonicTime -> (C.KafkaConsumer -> IO (Either KafkaFailure a)) -> IO (Either KafkaFailure a)
+    withClient clock@(Clock _ _ _ bound) deadline action = do
+      remainingMillis clock deadline >>= \case
+        Left err -> pure (Left err)
+        Right _ -> do
+          answer <- bound deadline $
+            try @C.KafkaError $
+              bracket acquire (either (const (pure ())) C.destroyConsumer) $ \case
+                Left _ -> pure (Left KafkaUnavailable)
+                Right client -> action client
+          pure $ case answer of
+            Nothing -> Left KafkaDeadline
+            Just (Left _) -> Left KafkaUnavailable
+            Just (Right result) -> result
+    timed :: Clock -> MonotonicTime -> (C.Timeout -> IO (Either C.KafkaError a)) -> IO (Either KafkaFailure a)
+    timed clock deadline action =
+      remainingMillis clock deadline >>= either (pure . Left) (\millis -> either (Left . clientFailure) Right <$> action (C.Timeout millis))
+    metadata clock deadline topic = withClient clock deadline $ \client ->
+      timed clock deadline (\budget -> M.topicMetadata client budget (C.TopicName topic)) `andThen` \(M.KafkaMetadata _ topics _) ->
+        pure $ case [entry | entry@(M.TopicMetadata actual _ _) <- topics, actual == C.TopicName topic] of
+          [] -> Left KafkaTopicMissing
+          [M.TopicMetadata _ partitions Nothing] -> do
+            ids <- traverse partitionId partitions
+            if null ids || length ids /= Set.size (Set.fromList ids) then Left KafkaUnavailable else Right ids
+          [M.TopicMetadata _ _ (Just err)] -> Left (clientFailure err)
+          _ -> Left KafkaUnavailable
+    partitionId (M.PartitionMetadata (C.PartitionId partition) Nothing _ _ _)
+      | partition >= 0 && toInteger partition <= toInteger (maxBound :: Int32) = Right (fromIntegral partition)
+    partitionId _ = Left KafkaUnavailable
+    marks clock deadline topic partition = withClient clock deadline $ \client ->
+      timed clock deadline (\budget -> M.partitionWatermarkOffsets client budget (C.TopicName topic) (C.PartitionId (fromIntegral partition))) `andThen` \case
+        M.WatermarkOffsets actual selected (C.Offset low) (C.Offset high)
+          | actual == C.TopicName topic && selected == C.PartitionId (fromIntegral partition) && low >= 0 && high >= low -> pure (Right (Watermarks low high))
+        _ -> pure (Left KafkaUnavailable)
+    readOne clock deadline topic partition start limit = withClient clock deadline $ \client -> do
+      let selected = C.PartitionId (fromIntegral partition)
+          named = C.TopicName topic
+          poll records count =
+            remainingMillis clock deadline >>= \case
+              Left err -> pure (Left err)
+              Right millis ->
+                C.pollMessageAttributed client (C.Timeout (min 100 millis)) >>= \case
+                  Right (C.ConsumerRecord actual found (C.Offset offset) timestamp headers key value)
+                    | actual == named && found == selected -> do
+                        let record = KafkaRecord offset (recordTime timestamp) key (C.headersToList headers) value
+                            accumulated = record : records
+                        if count + 1 >= limit
+                          then pure (Right (PartitionRead (reverse accumulated) False))
+                          else poll accumulated (count + 1)
+                  Left (C.ConsumerMessageError (C.KafkaResponseError C.RdKafkaRespErrPartitionEof) (Just actual) (Just found) (Just (C.Offset offset)))
+                    | actual == named && found == selected && offset >= start -> pure (Right (PartitionRead (reverse records) True))
+                  Left (C.ConsumerMessageError (C.KafkaResponseError C.RdKafkaRespErrTimedOut) Nothing Nothing Nothing) -> poll records count
+                  Left (C.ConsumerMessageError err _ _ _) -> pure (Left (clientFailure err))
+                  _ -> pure (Left KafkaUnavailable)
+      remainingMillis clock deadline >>= \case
+        Left err -> pure (Left err)
+        Right _ ->
+          C.assign client [C.TopicPartition named selected (C.PartitionOffset start)] >>= \case
+            Just err -> pure (Left (clientFailure err))
+            Nothing -> poll [] 0
+
+-- Every timed native call receives only the remaining whole milliseconds.
+remainingMillis :: Clock -> MonotonicTime -> IO (Either KafkaFailure Int)
+remainingMillis (Clock now _ _ _) deadline = do
+  current <- now
+  let remaining = differenceMicros deadline current `div` 1000
+  pure $ if remaining <= 0 then Left KafkaDeadline else Right (fromInteger (min remaining (toInteger (maxBound :: Int))))
+
+clientFailure :: C.KafkaError -> KafkaFailure
+clientFailure = \case
+  C.KafkaResponseError C.RdKafkaRespErrTimedOut -> KafkaDeadline
+  C.KafkaResponseError C.RdKafkaRespErrUnknownTopicOrPart -> KafkaTopicMissing
+  C.KafkaResponseError C.RdKafkaRespErrUnknownTopic -> KafkaTopicMissing
+  _ -> KafkaUnavailable
+
+recordTime :: C.Timestamp -> Maybe UTCTime
+recordTime = \case
+  C.CreateTime (C.Millis millis) -> Just (posixSecondsToUTCTime (fromIntegral millis / 1000))
+  C.LogAppendTime (C.Millis millis) -> Just (posixSecondsToUTCTime (fromIntegral millis / 1000))
+  C.NoTimestamp -> Nothing
+
 -- | Run-local scan state. Offsets are typed here; the baseline token is only
 -- a diagnostic rendering and is never parsed back. Losses are sticky.
 data TopicState = TopicState
@@ -139,10 +257,24 @@ kafkaScanner port topic (EventQuery (Limits pageSize pages _) _ _ mode _ _) stat
     partitionsOf clock deadline =
       topicPartitions port clock deadline topic >>= \case
         Left err -> pure (Left (failure err))
-        Right found
-          | Set.size (Set.fromList found) > maxPartitions -> pure (Left "kafka-partition-limit")
-          | otherwise -> pure (Right (Set.fromList found))
-    watermarks clock deadline partition = either (Left . failure) Right <$> partitionWatermarks port clock deadline topic partition
+        Right found -> do
+          let selected = Set.fromList found
+          modifyIORef' state (fmap (\current@(TopicState starts _ lost _) -> current {historyLost = lost || selected /= Map.keysSet starts}))
+          pure $ if Set.size selected > maxPartitions then Left "kafka-partition-limit" else Right selected
+    watermarks clock deadline partition =
+      (either (Left . failure) Right <$> partitionWatermarks port clock deadline topic partition) `andThen` \mark -> do
+        -- Persist a loss as soon as its watermark is observed, even when a
+        -- later partition read fails or exhausts its deadline.
+        modifyIORef' state . fmap $ \current@(TopicState starts ends lost lowLost) ->
+          let start = Map.findWithDefault 0 partition starts
+              lowGone = lowOffset mark > start
+              rewound = visibleEndOffset mark < Map.findWithDefault start partition ends
+           in current
+                { historyLost = lost || lowGone || rewound,
+                  lowWatermarkLost = lowLost || lowGone,
+                  observedEnds = Map.insertWith max partition (visibleEndOffset mark) ends
+                }
+        pure (Right mark)
     baselineOffsets clock deadline =
       guarded clock deadline $
         partitionsOf clock deadline `andThen` \found ->

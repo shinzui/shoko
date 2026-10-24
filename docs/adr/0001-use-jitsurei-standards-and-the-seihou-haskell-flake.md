@@ -39,7 +39,7 @@ stores in both Cabal and native Nix checks. See [dependency evidence](../depende
 
 Kafka client selection, revised 2026-10-23: enable the managed `nix.kafka`
 option through Seihou 0.35.0. The selected client is
-[rdkafka-hs](mori://shinzui/rdkafka-hs/packages/rdkafka-hs) 1.0.0.0, the maintained
+[rdkafka-hs](mori://shinzui/rdkafka-hs/packages/rdkafka-hs) 1.0.0.1, the maintained
 successor to hw-kafka-client. Its published GitHub tag completes
 [IR-2](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-2), providing
 assign-only construction, partition-attributed EOF, synchronous destruction, and
@@ -51,7 +51,8 @@ or bounds waivers are permitted. Apache Kafka is a development/test fixture;
 private Redpanda stays disabled. See [dependency evidence](../dependencies.md).
 
 Promote a Kafka client into the public adapter only after its broker-backed
-spike passes, including ordered duplicate headers. Version 1.0.0.0 reverses
+spike passes, including ordered duplicate headers. Version 1.0.0.0 reversed
 consumed header order; [IR-3](mori://shinzui/rdkafka-hs/okf/improvement-requests/concepts/IR-3)
-requests the fix and a tagged release. Keep the failing contract visible;
-do not compensate by reversing headers inside Shōko or patching the dependency.
+was completed by the 1.0.0.1 release. Keep that regression in the normal suite.
+Preserve the wire order supplied by the fixed client; do not compensate with a
+local reversal or patch the dependency.
