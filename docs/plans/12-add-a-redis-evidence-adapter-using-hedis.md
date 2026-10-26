@@ -10,6 +10,23 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-26T14:56:29Z
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-26T22:20:12Z
+      verdict: "changes-requested"
+      note: "Initial review: reject silently ignored authentication/TLS settings; specify runtime key-limit failures and opaque module ownership; cover TLS lifecycle before claiming support."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-26T22:22:56Z
+      verdict: "approved"
+      note: "Re-review after update: configuration, key-limit and module ownership findings resolved; bounded plain/TLS release remains an explicit implementation gate. Documentation, local links and fence checks pass."
+  revisions:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-26T22:20:12Z
+      mode: "update"
+      note: "Apply review corrections to connection validation, bounded keys, internal module ownership, and TLS lifecycle acceptance."
 ---
 
 # Add a Redis evidence adapter using Hedis
@@ -61,6 +78,18 @@ was created with `mina ci --json 'Add a Redis adapter using Hedis'` at the user'
 
 ## Surprises & Discoveries
 
+2026-10-26 review: released Hedis 0.16.4 authenticates only when `connectAuth`
+is present, even if `connectUsername` is set. It also applies TLS only to a
+host/port endpoint; a Unix-socket endpoint with TLS parameters silently uses a
+plain handle. Reject these ambiguous configurations before IO. Evidence is in
+`createConnection` and `ConnectionContext.connect` under
+[the Hedis repository](mori://informatikr/hedis/repos/hedis), at the release commit
+recorded below (source-file artifact URIs are pending).
+
+The same release closes plain handles under `uninterruptibleMask_`, and TLS
+release calls `TLS.bye` before closing the context and handle. Wrapping the call
+in `Clock.bounded` alone does not prove bounded teardown; the lifecycle controls
+must exercise pending output and TLS shutdown as well as blocked reads.
 
 
 ## Decision Log
@@ -86,6 +115,10 @@ transaction. The pair distinguishes a missing key from an existing empty string
 without an unbounded `GET`. Transaction failure is unavailable evidence. Do not
 silently fall back to separate, racing reads if the deployment denies transactions.
 
+2026-10-26 review revision: reject username-without-password and TLS-on-Unix-socket
+configuration, define a separate runtime key-limit failure, and keep shared query
+constructors in a non-exposed internal module. Preserve the intended connection
+and privacy contract with explicit TLS and teardown acceptance controls.
 
 ## Outcomes & Retrospective
 
@@ -146,6 +179,7 @@ The canonical package is [Hedis](mori://informatikr/hedis/packages/hedis), resol
 with `mori path`. It has no curated DocRefs. Under the canonical repository
 [mori://informatikr/hedis/repos/hedis](mori://informatikr/hedis/repos/hedis), inspect
 `src/Database/Redis/Connection.hs`, `src/Database/Redis/Transactions.hs`,
+`src/Database/Redis/ConnectionContext.hs`, `src/Database/Redis/ProtocolPipelining.hs`,
 `src/Database/Redis/Commands.hs`, `src/Database/Redis/ManualCommands.hs`, and
 `hedis.cabal`; artifact-level URIs for these source files are pending.
 
@@ -167,6 +201,9 @@ happen in `runRedis`. `connectTimeout` covers establishment, not the entire requ
 can also raise a synchronous exception for an unexpected `EXEC` reply. These are
 all relevant transport failure paths, including errors evaluated lazily. No raw
 `Reply`, `TxError` message, or exception text may enter Shōko evidence.
+Release evidence was rechecked on 2026-10-26 during review. The local checkout did
+not have `v0.16.4` as a Git object; use the published archive or upstream tagged
+source when local tag lookup fails, rather than treating corpus HEAD as the release.
 
 
 ## Plan of Work
@@ -182,6 +219,12 @@ the existing common stanza and `-threaded`. Create
 Begin with a bounded string observation, the pure handler, and a small real consumer
 in `shoko-adapters/test/Redis/Contract.hs`, launched by
 `shoko-adapters/test/RedisMain.hs`. Keep fixture/setup Hedis writes in test code.
+Put the shared descriptor representation and closed command compiler in
+`shoko-adapters/src/Shoko/Adapter/Redis/Internal.hs`, listed in Cabal's
+`other-modules`. The public `Query` module re-exports only the opaque types and
+safe constructors/accessors; the umbrella implementation imports the internal
+representation directly. This lets it interpret queries without exposing query
+constructors, resolved keys, or arbitrary Hedis actions to consumers.
 
 Create `scripts/test-redis` using Python's standard library and the owned-process
 pattern in `scripts/test-adapters`. Start `redis-server` with persistence disabled,
@@ -218,10 +261,17 @@ contains one nonempty `BusinessKeyName`, a fixed nonempty byte prefix, and a fix
 byte suffix. Resolve only `ByBusinessKey` with the identical name and a nonempty
 value. The exact Redis key is `prefix <> encodeUtf8 value <> suffix`, with no case
 folding, normalization, interpolation, or glob expansion. Bound the composed key
-to 1024 bytes; reject invalid or oversized scope inputs with closed error codes.
-Mismatch, missing correlation, and execution-only correlation fail before opening
-any socket. Different selected values must remain distinct even when they contain
-quotes, wildcard characters, delimiters, NUL, or non-ASCII text.
+to 1024 bytes. At construction, reject an empty business-key name, an empty prefix,
+or prefix/suffix lengths whose sum exceeds 1023 bytes, leaving room for at least
+one correlation byte. At dispatch, check the UTF-8 byte length of the selected
+value against the remaining budget before concatenation; an oversized result is
+`KeyLimitExceeded`, mapped to `redis-key-limit-exceeded` and Unknown. Mismatch,
+missing/empty correlation, and execution-only correlation are
+`CorrelationUnavailable`. All these failures happen before opening any socket.
+Test keys of exactly 1024 and 1025 bytes, including multibyte correlation values,
+and prove the rejected cases make zero connection attempts.
+Different selected values must remain distinct within a fixed scope even when
+they contain quotes, wildcard characters, delimiters, NUL, or non-ASCII text.
 
 `keyExists` sends one `EXISTS`; `keyAbsent` negates only a successful result.
 `stringValue` returns `Maybe ByteString`, preserving `Nothing` for missing and
@@ -242,12 +292,21 @@ server's successful value reply; Hedis does not expose a general maximum wire-fr
 size, so do not claim protection against arbitrary oversized malicious protocol replies.
 
 Construct `Redis` as an opaque configuration wrapper without `Show`, `Generic`, or
-JSON instances, accepting validated Hedis `ConnectInfo`. Validate database index,
-pool settings, and optional positive connection timeout before use. Internally
-normalize to one connection and one stripe per sample and default no-op hooks;
-preserve the caller's endpoint, authentication, and verified TLS settings. Arbitrary
-instrumentation hooks must not add commands or expose secret values through this
-adapter. Do not connect or resolve host secrets during descriptor construction or
+JSON instances, accepting Hedis `ConnectInfo` through a pure validating constructor.
+Require a nonnegative database index, positive maximum connection count and any
+explicit stripe count, idle time at least 0.5 seconds, and a positive optional
+connection timeout. Reject an empty host or Unix-socket path, TCP port zero,
+an empty supplied username, a username without `connectAuth`, and TLS parameters
+on a Unix-socket endpoint. Hedis would silently ignore the last two settings.
+Do not reject an explicitly supplied empty password solely because it is empty:
+it is distinct from not requesting authentication.
+Internally normalize to one connection and one stripe per sample, default no-op
+hooks, and an empty pool instrumentation label. Preserve the caller's endpoint,
+authentication, and TCP TLS parameters; certificate/trust policy stays host-owned.
+Cap the effective connection timeout to the remaining request budget and convert
+it to a positive, representable microsecond count before giving it to Hedis.
+Arbitrary instrumentation hooks must not add commands or expose secret values
+through this adapter. Do not connect or resolve host secrets during descriptor construction or
 inspection. Settei remains the owning host's configuration boundary, as in ADR 0002.
 
 `redisObservation` declares `ReadState`, `RequiresBusinessKey`, and `sampledSource`
@@ -264,15 +323,20 @@ that permits only the exact read and connection commands needed. Give it access 
 the fixture key prefix, `EXISTS`, `GETRANGE`, `MULTI`, and `EXEC`, plus connection
 setup commands required by the chosen database/authentication settings. Keep the
 writer separate. Direct writer-command attempts using the reader credentials must
-be rejected. Denied commands and authentication failures must produce unavailable
+be rejected. Verify the configured nonzero database is selected using distinct
+values for the same key in database zero and the selected database. The fixture
+reader needs `SELECT` for that case; ordinary `connect` does not issue `PING`.
+Denied commands and authentication failures must produce unavailable
 evidence, including a transaction queued-command denial that makes Hedis throw.
 
 M2 passes when `just test-redis` verifies these data cases and proves denied
 `ReadState` policy causes zero acquisition/socket attempts. Inspecting a scenario
 needs neither a running Redis nor credentials. Use private sentinels in keys,
 payloads, credentials, and injected error text; the actual public JSON and text
-renderers must omit them. Add a compile-time consumer probe if needed to establish
-that callers cannot obtain arbitrary Redis command execution through the adapter.
+renderers must omit them. Invalid connection configurations must return closed
+`RedisConfigError` values before IO. Include a controlled observation showing
+supplied Hedis hooks are not invoked, and a compile-fail consumer probe showing
+the internal module and query constructors are unavailable from the installed library.
 
 
 ### M3 — Prove deadlines, cancellation, concurrency, and coverage limits
@@ -293,6 +357,12 @@ deadline mechanism so the timeout's internal exception cannot be swallowed. Reth
 the completion timestamp as well as the timer result: a value completing after the
 deadline is unavailable even if delivery of the timer was late. Cleanup must not
 turn an expired call into a successful observation or leave a running receive task.
+Hedis 0.16.4's plain-handle close is uninterruptibly masked, and TLS close can
+perform IO. Exercise these paths; a timeout wrapper is not evidence that release
+is interruptible. Do not abandon an unjoined cleanup worker to make a timeout test
+return. If the released API cannot meet the required finite-release contract,
+record the failing case and resolve the lifecycle/dependency design before M3
+can pass; preserve the unfinished gate rather than silently weakening it.
 
 Add `shoko-adapters/test/Redis/Controlled.hs` for controlled clock and cancellation
 cases. Extend `scripts/test-redis` or add
@@ -302,6 +372,17 @@ and that timeout/cancellation closes the client socket, rather than relying only
 on sleeps. Exercise stalls during initial authentication and during a command,
 abrupt disconnect, malformed replies, and command errors containing private text.
 Keep these controls alongside the real Redis consumer, not as a replacement.
+Also use that peer on an ephemeral loopback TCP port with Python's standard-library
+`ssl` support. Store test-only CA/server certificates and a private test key under
+`shoko-adapters/test/Redis/Fixture/`, using a certificate valid for the fixture's
+hostname and a documented validity interval. Configure Hedis to trust only that
+test CA and verify a successful encrypted command plus rejection of an untrusted
+certificate and wrong hostname. Add the test component's direct `tls` dependency
+with bounds compatible with the existing freeze, looking up its API through Mori.
+Exercise a stalled TLS handshake, a peer that stops reading, and cancellation
+during TLS command/release handling under outer hang-detection deadlines. Assert
+all accepted sockets close and all peer workers join. These tests validate the
+already-promised TCP/TLS lifecycle; they need no Redis server TLS build option.
 
 Run concurrent observations for separate correlated keys, with one cancelled or
 failing read while another completes. Verify a later call succeeds, the peer sees
@@ -331,10 +412,11 @@ Redis-specific workflow. The native check must also fail if its server is missin
 Update `docs/adapters.md`, `docs/development.md`, `docs/dependencies.md`, and the
 adapter summary in `README.md`. Include a compiling example drawn from the real
 consumer, exact key mapping, the value limit, required ACL permissions, handling
-of Unknown, and sampled-state limitations. Document the minimum supported Redis
-version as 6.0 for the username/ACL fixture contract, and record the actual tested
-server version provided by the pinned Nix package set without claiming untested
-server or cluster compatibility. Add the Hedis dependency to `mori.dhall` using
+of Unknown, and sampled-state limitations. Document Redis 6.0 as the feature floor
+for username/ACL support and record the actual tested server version provided by
+the pinned Nix package set. Do not describe untested versions as validated; a
+minimum-supported-version claim needs a run against that version. Do not claim
+cluster compatibility. Add the Hedis dependency to `mori.dhall` using
 the existing typed-reference convention and its canonical package identity.
 
 Record the implemented capability in `docs/capabilities/` using that bundle's
@@ -427,21 +509,28 @@ Hedis and Shōko. A matching binary string yields Pass; a conclusive different v
 yields Fail after the bounded polling window; a disconnected server yields Unknown.
 Each result must be rendered through existing JSON/text report functions.
 
-For data correctness, missing returns `Nothing`, empty returns `Just ""`, binary
-bytes round-trip unchanged, and exact-limit bytes succeed. Limit-plus-one and
-wrong-type keys are unavailable, never truncated values or absence. Keys with
-other correlation values cannot satisfy the expectation. Missing/mismatched
-correlation performs no network IO. A short-lived value can disappear between
-samples; this does not prove continuous absence or a count of historical writes.
+For `stringValue` correctness, missing returns `Nothing`, empty returns `Just ""`,
+binary bytes round-trip unchanged, and exact-limit bytes succeed. Limit-plus-one and
+wrong-type keys are unavailable, never truncated values or absence. Existence and
+absence descriptors are type-independent: a list/hash key exists even though a
+string read of it fails. Keys with other correlation values cannot satisfy the
+expectation. Missing/mismatched correlation and oversized composed keys perform
+no network IO; the 1024-byte bound applies after UTF-8 encoding. A short-lived value
+can disappear between samples; this does not prove continuous absence or a count
+of historical writes.
 
 For boundaries, denied policy stops before acquisition, reader credentials reject
 mutation, and missing permissions/authentication/transaction errors yield Unknown.
+Invalid authentication/TLS combinations fail in the pure constructor, while valid
+nonzero database and TCP/TLS settings reach the intended database and verified peer.
 No raw key/value/credential/endpoint/error sentinel appears in inspection or either
-report rendering. Consumer probes import exposed modules only.
+report rendering. Successful consumer probes import exposed modules only;
+negative compilation probes must fail specifically on the prohibited API access.
 
-For lifecycle, controlled stalls, caller cancellation, delayed completion,
+For lifecycle, controlled plain/TLS stalls, caller cancellation, delayed completion,
 concurrent independent reads, and a healthy call after failure establish finite
-completion and socket release. Unavailable samples cannot pass an absence check;
+completion and socket release, including pending-output and TLS shutdown paths.
+Unavailable samples cannot pass an absence check;
 sampled `never` and `exactlyOnce` cannot Pass. Failure tests must demonstrate these
 outcomes using the public runner, not merely inspect adapter constructors.
 
@@ -471,9 +560,11 @@ from a known backup if necessary, preserving other work.
 
 ## Interfaces and Dependencies
 
-The proposed public shape below is implemented in the three new Redis modules
-under `shoko-adapters/src/Shoko/Adapter/`. Types shown without constructors remain
-opaque. The umbrella `Shoko.Adapter.Redis` re-exports the descriptor/evidence
+The proposed public shape below is implemented in the three public Redis modules
+under `shoko-adapters/src/Shoko/Adapter/`, backed by the non-exposed
+`Shoko.Adapter.Redis.Internal` module. Resource and descriptor types shown without
+constructors remain opaque; error types are clarified below.
+The umbrella `Shoko.Adapter.Redis` re-exports the descriptor/evidence
 surface, like `Shoko.Adapter.Postgres`. Use qualified imports in consumers to avoid
 the existing adapters' `Query`, `Sample`, and `runQuery` name collisions.
 
@@ -496,6 +587,7 @@ queryDescription :: Query a -> Text
 -- Shoko.Adapter.Redis.Evidence
 data RedisFailure
   = CorrelationUnavailable
+  | KeyLimitExceeded
   | ConnectionUnavailable
   | AuthenticationUnavailable
   | QueryUnavailable
@@ -520,8 +612,11 @@ runQuery :: CallContext -> Redis -> Query a -> IO (Either RedisFailure (a, Sampl
 observeQuery :: CallContext -> Redis -> Query a -> IO (ObservationOutcome a)
 ```
 
-`QueryConfigError` and `RedisConfigError` are closed constructors for invalid
-fields/limits without echoing input values. `RedisFailure` maps to fixed
+`QueryConfigError` and `RedisConfigError` expose closed, payload-free error
+constructors for the validation cases above, with safe `Eq`/`Show` instances.
+The declarations above omit their constructor lists for brevity; these errors
+are inspectable, whereas `Scope`, `Query`, `ValueLimit`, and `Redis` stay opaque.
+`RedisFailure` maps to fixed
 `redis-...` codes; a Redis command permission error may share `QueryUnavailable`
 with other rejected commands. The public distinction required here is uncertainty
 versus an observed absent value, not preservation of every server error class.
